@@ -11,6 +11,7 @@ import { buildMessages, parsePolishResponse, applyPolish, resetPolish, instructi
 import { buildDoc } from '../core/format.js';
 import { fmtTs } from '../core/time.js';
 import { normalizeChapters } from '../core/subtitles.js';
+import { LOCAL_POLISH } from '../core/settings.js';
 import { pickTrack, readTrack, trackLabel } from '../adapters/index.js';
 import { captureAudio } from './capture.js';
 import { decodeMediaAudio, FastAudioUnavailable } from './fast-audio.js';
@@ -350,9 +351,10 @@ function punctuate(text) {
  * @param {object} args.settings
  * @param {(done:number,total:number)=>void} [args.onProgress]
  * @param {AbortSignal} [args.signal]
- * @returns {Promise<{chunks:number, polished:number, failed:number, removed:number, errors:string[]}>}
+ * @param {{ensure:()=>Promise<object>}} [args.fallback] 自备 LLM 三次失败后的本地回落；ensure 返回本机模型的 LLM 配置
+ * @returns {Promise<{chunks:number, polished:number, failed:number, removed:number, errors:string[], firstError:string}>}
  */
-export async function polishSegments({ segments, sectionIndexOf, meta, settings, onProgress, onSegment, onReset, signal }) {
+export async function polishSegments({ segments, sectionIndexOf, meta, settings, onProgress, onSegment, onReset, signal, fallback }) {
   resetPolish(segments);
   onReset?.();
 
@@ -371,73 +373,111 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
   let polished = 0;
   let removed = 0;
 
+  /** 把一块流式覆盖过的段落还原回原文。 */
+  const revertSeen = (seen) => {
+    for (const id of seen) {
+      const seg = segments[id];
+      if (seg.raw) seg.text = seg.raw;
+      delete seg.raw;
+      seg.state = 'kept';
+      onSegment?.(id);
+    }
+  };
+
+  /** 一块的完整一次尝试：流式覆盖 -> 校验 -> 应用。失败时还原流式痕迹。 */
+  const attemptChunk = async (chunk, llmConfig) => {
+    if (signal?.aborted) throw new AbortError();
+    const messages = buildMessages({
+      segments,
+      chunk,
+      meta,
+      instruction: instructionFor(settings.polishLevel, llmConfig.instruction),
+      glossary: llmConfig.glossary,
+      langHint: meta.language,
+    });
+    let streamed = '';
+    let consumed = 0;
+    const seen = new Set();
+    let reply;
+    try { reply = await llmChat({
+      baseUrl: llmConfig.baseUrl,
+      apiKey: llmConfig.apiKey,
+      model: llmConfig.model,
+      messages,
+    }, (delta) => {
+      streamed += delta;
+      let lastEnd = 0;
+      for (const match of streamed.slice(consumed).matchAll(/\{"id":\s*(\d+),\s*"text":\s*"(?:\\.|[^"\\])*"\}/g)) {
+        lastEnd = match.index + match[0].length;
+        let item;
+        try { item = JSON.parse(match[0]); } catch { continue; }
+        if (seen.has(item.id) || !chunk.ids.includes(item.id)) continue;
+        seen.add(item.id);
+        if (item.text.trim()) {
+          const seg = segments[item.id];
+          seg.raw ??= seg.text;
+          seg.text = item.text.trim();
+          seg.state = 'polished';
+          onSegment?.(item.id);
+        }
+      }
+      consumed += lastEnd;
+    }, signal); } catch (error) {
+      revertSeen(seen);
+      throw error;
+    }
+    const parsed = parsePolishResponse(reply.content);
+    const outcome = applyPolish(segments, chunk.ids, parsed);
+    if (!outcome.applied) {
+      revertSeen(seen);
+      throw new Error(
+        parsed
+          ? '模型返回的条目与请求对不上，这一块保留原文'
+          : '模型没有返回可解析的 JSON，这一块保留原文',
+      );
+    }
+    return outcome;
+  };
+
+  // 本地回落：懒启动一次，之后串行执行，不与自备 LLM 的并发叠加。
+  const usingLocal = String(llm.baseUrl ?? '').replace(/\/+$/, '') === LOCAL_POLISH.baseUrl;
+  let fallbackReady = null;
+  let fallbackEnsureError = null;
+  let fallbackQueue = Promise.resolve();
+  const ensureFallback = () => {
+    if (!fallbackReady) {
+      fallbackReady = Promise.resolve()
+        .then(() => fallback.ensure())
+        .catch((error) => {
+          fallbackEnsureError = error;
+          return null;
+        });
+    }
+    return fallbackReady;
+  };
+
   const results = await mapPool(
     chunks,
     llm.concurrency,
     async (chunk) => {
-      if (signal?.aborted) throw new AbortError();
-      const messages = buildMessages({
-        segments,
-        chunk,
-        meta,
-        instruction: instructionFor(settings.polishLevel, llm.instruction),
-        glossary: llm.glossary,
-        langHint: meta.language,
-      });
-      let streamed = '';
-      let consumed = 0;
-      const seen = new Set();
-      let reply;
-      try { reply = await llmChat({
-        baseUrl: llm.baseUrl,
-        apiKey: llm.apiKey,
-        model: llm.model,
-        messages,
-      }, (delta) => {
-        streamed += delta;
-        let lastEnd = 0;
-        for (const match of streamed.slice(consumed).matchAll(/\{"id":\s*(\d+),\s*"text":\s*"(?:\\.|[^"\\])*"\}/g)) {
-          lastEnd = match.index + match[0].length;
-          let item;
-          try { item = JSON.parse(match[0]); } catch { continue; }
-          if (seen.has(item.id) || !chunk.ids.includes(item.id)) continue;
-          seen.add(item.id);
-          if (item.text.trim()) {
-            const seg = segments[item.id];
-            seg.raw ??= seg.text;
-            seg.text = item.text.trim();
-            seg.state = 'polished';
-            onSegment?.(item.id);
-          }
+      // 一块最多尝试三次；都用自备 LLM 失败后，静默换成本机润色
+      let lastError = new Error('模型未返回可用文本');
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try { return await attemptChunk(chunk, llm); } catch (error) {
+          if (signal?.aborted) throw error;
+          lastError = error;
         }
-        consumed += lastEnd;
-      }, signal); } catch (error) {
-        for (const id of seen) {
-          const seg = segments[id];
-          if (seg.raw) seg.text = seg.raw;
-          delete seg.raw;
-          seg.state = 'kept';
-          onSegment?.(id);
-        }
-        throw error;
       }
-      const parsed = parsePolishResponse(reply.content);
-      const outcome = applyPolish(segments, chunk.ids, parsed);
-      if (!outcome.applied) {
-        for (const id of seen) {
-          const seg = segments[id];
-          if (seg.raw) seg.text = seg.raw;
-          delete seg.raw;
-          seg.state = 'kept';
-          onSegment?.(id);
+      if (!usingLocal && fallback) {
+        const fallbackLlm = await ensureFallback();
+        if (fallbackLlm) {
+          const task = fallbackQueue.then(() => attemptChunk(chunk, fallbackLlm));
+          fallbackQueue = task.catch(() => {});
+          return task;
         }
-        throw new Error(
-          parsed
-            ? '模型返回的条目与请求对不上，这一块保留原文'
-            : '模型没有返回可解析的 JSON，这一块保留原文',
-        );
+        if (fallbackEnsureError) throw new Error(`本机润色未启动：${String(fallbackEnsureError?.message ?? fallbackEnsureError)}`);
       }
-      return outcome;
+      throw lastError;
     },
     (done, total, outcome) => {
       if (outcome?.error && !firstError) firstError = String(outcome.error?.message ?? outcome.error);

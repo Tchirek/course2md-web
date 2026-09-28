@@ -61,6 +61,12 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto',
 };
 
+/** 内置润色模型：FireRedPunc 修正标点，疑难句交给 Qwen3.5-2B。 */
+export const LOCAL_POLISH = {
+  baseUrl: 'http://127.0.0.1:8082/v1',
+  model: 'FireRedPunc+Qwen3.5-2B',
+};
+
 /** 深合并默认值，保证读到的设置永远字段齐全。 */
 export function withDefaults(stored) {
   const settings = deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {});

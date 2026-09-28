@@ -8,7 +8,7 @@ import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
 import { visualSections, captureSectionImages } from './visual.js';
 import { buildDoc, toMarkdown, toPlainText, fileNameFor } from '../core/format.js';
-import { useLocalPolish } from '../core/settings.js';
+import { useLocalPolish, LOCAL_POLISH } from '../core/settings.js';
 import {
   runSubtitlePipeline, runAsrPipeline, polishSegments, finalize, organize,
   MissingSourceError, AbortError,
@@ -350,35 +350,19 @@ class Controller {
     if (!this.built?.segments?.length) return;
     this.polishState = { hasResult: this.polishState.hasResult, running: true, done: 0, total: 0 };
     this.panel.setState({ polish: this.polishState });
-    let polishSettings = this.settings;
     const useLocal = useLocalPolish(this.settings);
     if (this.settings.polishEngine === 'custom' && (!this.settings.llm.baseUrl || !this.settings.llm.model)) {
       throw new Error('请先填写自定义模型的服务地址和模型名');
     }
-    if (useLocal) {
-      const started = await send({ type: 'polish.local.start' });
-      if (started.state === 'error') throw new Error(started.message);
-      let state = started;
-      while (state.state !== 'ready') {
-        if (signal?.aborted) throw new AbortError();
-        this.stageLabel = state.message;
-        this.broadcast();
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        state = await send({ type: 'polish.local.status' });
-        if (state.state === 'error') throw new Error(state.message);
-      }
-      polishSettings = { ...this.settings, llm: {
-        ...this.settings.llm, baseUrl: 'http://127.0.0.1:8082/v1',
-        model: 'FireRedPunc+Qwen3.5-2B', concurrency: 1,
-      } };
-      this.stageLabel = '';
-    }
+    const polishSettings = useLocal ? await this.localPolishSettings(signal) : this.settings;
     const result = await polishSegments({
       segments: this.built.segments,
       sectionIndexOf: this.built.sectionIndexOf,
       meta: this.meta,
       settings: polishSettings,
       signal,
+      // 自备 LLM 三次都失败时，静默换成本机润色
+      fallback: useLocal ? undefined : { ensure: () => this.ensureLocalPolish(signal) },
       onProgress: (done, total) => {
         this.polishState = { ...this.polishState, running: true, done, total };
         this.panel.setState({ polish: this.polishState });
@@ -399,6 +383,40 @@ class Controller {
     this.polishState = { hasResult: true, running: false, done: result.chunks, total: result.chunks };
     this.doc = finalize(this.built, this.meta, this.settings);
     await this.saveCache();
+  }
+
+  /** 本机润色的 LLM 配置（沿用术语表与自定义指令）。 */
+  localPolishLlm() {
+    return { ...this.settings.llm, ...LOCAL_POLISH, concurrency: 1 };
+  }
+
+  /** 启动本机润色服务并等它就绪；启动进度照常显示。 */
+  async localPolishSettings(signal) {
+    await this.waitLocalPolish(signal, (message) => {
+      this.stageLabel = message;
+      this.broadcast();
+    });
+    this.stageLabel = '';
+    return { ...this.settings, llm: this.localPolishLlm() };
+  }
+
+  /** 静默确保本机润色可用：不打扰进度显示，只在失败时抛错。 */
+  async ensureLocalPolish(signal) {
+    await this.waitLocalPolish(signal);
+    return this.localPolishLlm();
+  }
+
+  async waitLocalPolish(signal, onState = () => {}) {
+    const started = await send({ type: 'polish.local.start' });
+    if (started.state === 'error') throw new Error(started.message);
+    let state = started;
+    while (state.state !== 'ready') {
+      if (signal?.aborted) throw new AbortError();
+      onState(state.message);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      state = await send({ type: 'polish.local.status' });
+      if (state.state === 'error') throw new Error(state.message);
+    }
   }
 
   async repolish() {

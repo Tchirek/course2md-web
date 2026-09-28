@@ -70,3 +70,105 @@ test('一块内逐段覆盖原文，完成前即可显示，原版仍可恢复',
     globalThis.chrome = originalChrome;
   }
 });
+
+/** 造一个按调用次数脚本化的 LLM 端口。 */
+function scriptedLlm(replies, calls) {
+  const listeners = [];
+  globalThis.chrome = { runtime: { connect() { return {
+    onMessage: { addListener(fn) { listeners.push(fn); } },
+    onDisconnect: { addListener() {} }, disconnect() {},
+    postMessage(payload) {
+      calls.push(payload);
+      const reply = replies[Math.min(calls.length - 1, replies.length - 1)];
+      listeners[listeners.length - 1](reply);
+    },
+  }; } } };
+}
+
+const OK_CONTENT = '{"segments":[{"id":0,"text":"本机润色。"},{"id":1,"text":"第二句。"}]}';
+const CUSTOM_LLM = { baseUrl: 'https://api.example.com/v1', model: 'm', concurrency: 1, contextChars: 0 };
+const TWO_SEGMENTS = () => [
+  { text: '第一段', start: 0, end: 1 },
+  { text: '第二段', start: 1, end: 2 },
+];
+
+test('润色失败自动重试，第二次尝试成功', async () => {
+  globalThis.window = { addEventListener() {} };
+  const { polishSegments } = await import('../src/content/pipeline.js');
+  const originalChrome = globalThis.chrome;
+  const calls = [];
+  scriptedLlm([
+    { done: true, ok: false, error: '服务端抖了一下' },
+    { done: true, ok: true, content: OK_CONTENT },
+  ], calls);
+  try {
+    const segments = TWO_SEGMENTS();
+    const result = await polishSegments({
+      segments, sectionIndexOf: [0, 0], meta: {},
+      settings: { polishLevel: 'standard', llm: CUSTOM_LLM },
+    });
+    assert.equal(result.failed, 0);
+    assert.equal(calls.length, 2);
+    assert.equal(segments[0].text, '本机润色。');
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
+});
+
+test('自备 LLM 三次失败后静默回落本机 FireRedPunc+Qwen', async () => {
+  globalThis.window = { addEventListener() {} };
+  const { polishSegments } = await import('../src/content/pipeline.js');
+  const originalChrome = globalThis.chrome;
+  const calls = [];
+  scriptedLlm([
+    { done: true, ok: false, error: '自备端点 HTTP 500' },
+    { done: true, ok: false, error: '自备端点 HTTP 500' },
+    { done: true, ok: false, error: '自备端点 HTTP 500' },
+    { done: true, ok: true, content: OK_CONTENT },
+  ], calls);
+  let ensured = 0;
+  try {
+    const segments = TWO_SEGMENTS();
+    const result = await polishSegments({
+      segments, sectionIndexOf: [0, 0], meta: {},
+      settings: { polishLevel: 'standard', llm: CUSTOM_LLM },
+      fallback: { ensure: async () => {
+        ensured++;
+        return { ...CUSTOM_LLM, baseUrl: 'http://127.0.0.1:8082/v1', model: 'FireRedPunc+Qwen3.5-2B' };
+      } },
+    });
+    assert.equal(result.failed, 0);
+    assert.equal(calls.length, 4);
+    assert.equal(ensured, 1);
+    assert.equal(calls[3].baseUrl, 'http://127.0.0.1:8082/v1');
+    assert.equal(calls[3].model, 'FireRedPunc+Qwen3.5-2B');
+    assert.equal(segments[1].text, '第二句。');
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
+});
+
+test('本机模型失败时只重试不回落', async () => {
+  globalThis.window = { addEventListener() {} };
+  const { polishSegments } = await import('../src/content/pipeline.js');
+  const originalChrome = globalThis.chrome;
+  const calls = [];
+  scriptedLlm([
+    { done: true, ok: false, error: 'FireRedPunc 不可用' },
+    { done: true, ok: false, error: 'FireRedPunc 不可用' },
+    { done: true, ok: false, error: 'FireRedPunc 不可用' },
+  ], calls);
+  try {
+    const segments = TWO_SEGMENTS();
+    const result = await polishSegments({
+      segments, sectionIndexOf: [0, 0], meta: {},
+      settings: { polishLevel: 'standard', llm: { ...CUSTOM_LLM, baseUrl: 'http://127.0.0.1:8082/v1', model: 'FireRedPunc+Qwen3.5-2B' } },
+    });
+    assert.equal(result.failed, 1);
+    assert.equal(calls.length, 3);
+    assert.equal(segments[0].text, '第一段');
+    assert.ok(result.firstError.includes('FireRedPunc 不可用'));
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
+});
