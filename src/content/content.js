@@ -36,6 +36,8 @@ class Controller {
     this.imageCache = new Map();
     this.imagesPending = false;
     this.autoTimer = null;
+    // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
+    this.autoRunArmed = false;
     this.urlKey = this.currentUrlKey();
 
     this.panel = new Panel({
@@ -44,10 +46,13 @@ class Controller {
       onCopy: () => this.copyMarkdown(),
       onCopyText: () => this.copyPlainText(),
       onDownload: () => this.download(),
-      onRerun: () => this.run(),
+      onRerun: () => {
+        this.autoRunArmed = true;
+        return this.run();
+      },
       onRepolish: () => this.repolish(),
       onOptions: (section) => this.openOptions(section),
-      onClose: () => this.panel.unmount(),
+      onClose: () => this.closePanel(),
       onSwitchToAsr: () => this.switchToAsr(),
     });
   }
@@ -114,7 +119,6 @@ class Controller {
       if (cached.imageLevel !== this.settings.imageLevel || this.imagesPending) this.refreshImages();
     }
     this.broadcast();
-    if (!cached) this.scheduleAutoRun();
   }
 
   currentUrlKey() {
@@ -174,6 +178,7 @@ class Controller {
     },
 
     'c2md.run': () => {
+      this.autoRunArmed = true;
       this.run().catch((error) => {
         this.status = 'error';
         this.error = toErrorState(error);
@@ -188,7 +193,7 @@ class Controller {
       return { shown: true };
     },
     'c2md.hidePanel': async () => {
-      this.panel.unmount();
+      this.closePanel();
       return { shown: false };
     },
     'c2md.seek': async ({ seconds }) => ({ sought: await this.seek(seconds) }),
@@ -444,6 +449,12 @@ class Controller {
     this.doc = null;
     this.broadcast();
     return { cancelled: true };
+  }
+
+  /** 关闭浮窗：自动生成随之失效，直到用户再次手动点生成。 */
+  closePanel() {
+    this.autoRunArmed = false;
+    this.panel.unmount();
   }
 
   async switchToAsr() {
