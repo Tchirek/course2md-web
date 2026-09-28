@@ -16,7 +16,7 @@
     autoRun: false,
     showPanel: true,
     subtitle: { preferLang: '', allowAuto: true },
-    asr: {      endpoint: 'http://127.0.0.1:8080/v1/audio/transcriptions',
+    asr: {      endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
       apiKey: '',
       model: 'whisper-1',
       language: '',

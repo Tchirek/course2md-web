@@ -10,13 +10,15 @@ import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio } from './bilibili-audio.mjs';
 
 const PORT = 8766;
+const ASR_PORT = 8081;
+const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
 const MAX_BODY = 128 * 1024;
 const jobs = new Map();
 const controllers = new Map();
 let asrProcess = null;
 let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
-fetch('http://127.0.0.1:8080/health', { signal: AbortSignal.timeout(1000) })
-  .then((reply) => { if (reply.ok) asrStatus = { state: 'ready', message: '本机转录服务已启动' }; })
+fetch(ASR_HEALTH, { signal: AbortSignal.timeout(1000) })
+  .then(async (reply) => { if (reply.ok) asrStatus = readyStatus(await reply.json()); })
   .catch(() => {});
 
 http.createServer(async (req, res) => {
@@ -78,15 +80,16 @@ http.createServer(async (req, res) => {
 async function startLocalAsr() {
   if (asrProcess && ['starting', 'downloading', 'loading', 'ready'].includes(asrStatus.state)) return;
   try {
-    const existing = await fetch('http://127.0.0.1:8080/health', { signal: AbortSignal.timeout(1000) });
+    const existing = await fetch(ASR_HEALTH, { signal: AbortSignal.timeout(1000) });
     if (existing.ok) {
-      asrStatus = { state: 'ready', message: '本机转录服务已启动' };
+      asrStatus = readyStatus(await existing.json());
       return;
     }
   } catch { /* 尚无本机模型服务，继续启动 */ }
   asrStatus = { state: 'starting', message: '正在检查本机模型' };
   const child = spawn(process.env.C2MD_PYTHON || 'python', ['-u', fileURLToPath(new URL('./local-asr.py', import.meta.url))], {
     windowsHide: true,
+    env: { ...process.env, C2MD_ASR_PORT: String(ASR_PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   asrProcess = child;
@@ -111,6 +114,10 @@ async function startLocalAsr() {
     if (asrStatus.state !== 'error') asrStatus = { state: 'error', message: errors || `转录服务退出：${code}` };
     asrProcess = null;
   });
+}
+
+function readyStatus(health) {
+  return { state: 'ready', message: `本机转录服务已启动（${health.device === 'cuda' ? '显卡' : 'CPU'}）` };
 }
 
 async function processJob(input, source, endpoint, job, signal) {

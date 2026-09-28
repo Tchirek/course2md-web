@@ -28,7 +28,7 @@ const FIELDS = [
 
 let settings = null;
 let asrPoll = null;
-const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8080/v1/audio/transcriptions';
+const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8081/v1/audio/transcriptions';
 
 init();
 
@@ -173,7 +173,7 @@ async function startLocalAsr() {
   button.disabled = true;
   flash('asr-result', '正在启动本机转录服务…', null);
   try {
-    const granted = await chrome.permissions.request({ origins: ['http://127.0.0.1:8080/*'] });
+    const granted = await chrome.permissions.request({ origins: ['http://127.0.0.1:8081/*'] });
     if (!granted) throw new Error('没有授予本机转录端点的访问权限。');
     const status = await send({ type: 'asr.local.start' });
     await commitPatch({ source: 'asr', asr: { endpoint: LOCAL_ASR_ENDPOINT, model: 'small', apiKey: '' } });

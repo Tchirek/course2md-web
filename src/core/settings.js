@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS = {
 
   asr: {
     /** 本机 ASR 服务的 OpenAI 兼容转写端点。 */
-    endpoint: 'http://127.0.0.1:8080/v1/audio/transcriptions',
+    endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
     apiKey: '',
     model: 'whisper-1',
     /** 语言提示（'' = 自动） */
@@ -62,7 +62,11 @@ export const DEFAULT_SETTINGS = {
 
 /** 深合并默认值，保证读到的设置永远字段齐全。 */
 export function withDefaults(stored) {
-  return deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {});
+  const settings = deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {});
+  if (settings.asr.endpoint === 'http://127.0.0.1:8080/v1/audio/transcriptions' && settings.asr.model === 'small') {
+    settings.asr.endpoint = DEFAULT_SETTINGS.asr.endpoint;
+  }
+  return settings;
 }
 
 function deepMerge(base, patch) {

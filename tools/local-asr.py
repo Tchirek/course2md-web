@@ -26,7 +26,17 @@ try:
         state("downloading", "本机没有 small 多语言模型，正在下载")
         model_path = download_model("small", cache_dir=str(cache))
     state("loading", "正在加载 small 多语言模型")
-    model = WhisperModel(model_path, device="cpu", compute_type="int8")
+    device = "cpu"
+    try:
+        if sys.platform == "win32":
+            try:
+                import torch  # 让 CUDA/cuDNN DLL 对 CTranslate2 可见
+            except ImportError:
+                pass
+        model = WhisperModel(model_path, device="cuda", compute_type="float16")
+        device = "cuda"
+    except Exception:
+        model = WhisperModel(model_path, device="cpu", compute_type="int8")
 except Exception as error:
     state("error", str(error))
     sys.exit(1)
@@ -43,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_json(200, {"ok": True, "model": "small"})
+            self.send_json(200, {"ok": True, "model": "small", "device": device})
         elif self.path == "/v1/models":
             self.send_json(200, {"data": [{"id": "small"}]})
         else:
@@ -77,8 +87,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 try:
-    server = HTTPServer(("127.0.0.1", 8080), Handler)
-    state("ready", "本机转录服务已启动")
+    server = HTTPServer(("127.0.0.1", int(os.environ.get("C2MD_ASR_PORT", "8080"))), Handler)
+    state("ready", f"本机转录服务已启动（{'显卡' if device == 'cuda' else 'CPU'}）")
     server.serve_forever()
 except Exception as error:
     state("error", str(error))
