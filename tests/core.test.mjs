@@ -9,7 +9,7 @@ import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJs
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, maskSecret, setPath, getPath } from '../src/core/settings.js';
 import { visualSections } from '../src/content/visual.js';
-import { wavSlice } from '../src/content/fast-audio.js';
+import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 
 test('面板画面分组不改动按章节导出的正文', () => {
   const segments = [0, 80, 100, 210].map((start) => ({ start, end: start + 2, text: String(start) }));
@@ -31,6 +31,13 @@ test('离线音频切片生成 16kHz 单声道 PCM WAV', () => {
   assert.equal(wav.getUint32(24, true), 16000);
   assert.equal(wav.getUint32(40, true), 32000);
   assert.equal(wav.getInt16(44 + 4000 * 2, true), 16384);
+});
+
+test('长视频跳过浏览器整文件解码', async () => {
+  await assert.rejects(
+    decodeMediaAudio({ currentSrc: 'https://example.com/video.mp4', duration: 181 }, {}),
+    FastAudioUnavailable,
+  );
 });
 
 // ---------- time ----------

@@ -12,9 +12,9 @@ body {
 .page {
   max-width: 640px;
   margin: 0 auto;
-  padding: var(--s-7) var(--s-5) var(--s-9, 7rem);
+  padding: var(--s-5) var(--s-5) var(--s-7);
   display: grid;
-  gap: var(--s-7);
+  gap: var(--s-5);
 }
 
 /* ---------- 页头 ---------- */
@@ -69,9 +69,9 @@ body {
 .row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 250px;
-  gap: var(--s-4);
+  gap: var(--s-3);
   align-items: start;
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-2) var(--s-3);
   border-bottom: var(--hair) solid var(--rule);
 }
 

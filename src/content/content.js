@@ -131,7 +131,14 @@ class Controller {
       return this.summaryState();
     },
 
-    'c2md.run': async () => this.run(),
+    'c2md.run': () => {
+      this.run().catch((error) => {
+        this.status = 'error';
+        this.error = toErrorState(error);
+        this.broadcast();
+      });
+      return { status: this.status };
+    },
     'c2md.cancel': async () => this.cancel(),
     'c2md.polish': async () => this.repolish(),
     'c2md.showPanel': async () => {
@@ -175,8 +182,8 @@ class Controller {
     return { ...this.summaryState(), sections: this.previewSections };
   }
 
-  broadcast() {
-    this.panel.setState(this.panelState());
+  broadcast(updatePanel = true) {
+    if (updatePanel) this.panel.setState(this.panelState());
     // 弹窗可能开着，也可能没开；没开时这个 sendMessage 会静默失败
     chrome.runtime.sendMessage({ type: 'c2md.state', payload: this.summaryState() }).catch(() => {});
   }
@@ -195,7 +202,7 @@ class Controller {
     if (info.message) this.stageLabel = info.message;
     this.status = 'running';
     this.panel.setState({ status: 'running', stageLabel: this.stageLabel });
-    this.broadcast();
+    this.broadcast(false);
   }
 
   async run() {
@@ -240,9 +247,13 @@ class Controller {
       this.built = built;
 
       this.previewSections = visualSections(this.built.sections, this.meta.duration);
-      this.onProgress('frames', { message: '正在整理讲义画面' });
-      await captureSectionImages(adapter.video(), this.previewSections, this.panel.host, runAbort.signal);
+      this.doc = finalize(this.built, this.meta, this.settings);
+      this.status = 'ready';
+      this.stageLabel = '';
+      this.broadcast(); // 文字先出现，截图随后补齐。
+      await captureSectionImages(adapter.video(), this.previewSections, this.panel.host, runAbort.signal).catch(() => {});
       if (runAbort.signal.aborted) throw new AbortError();
+      this.broadcast();
 
       // 勾了润色且配置齐全，就在同一次流程里顺带跑掉
       if (this.settings.polish) {
@@ -271,7 +282,6 @@ class Controller {
       this.stageLabel = '';
     }
 
-    this.panel.setState(this.panelState());
     if (this.settings.showPanel) this.panel.mount();
     this.broadcast();
     return { status: this.status, error: this.error };
@@ -291,7 +301,7 @@ class Controller {
       onProgress: (done, total) => {
         this.polishState = { ...this.polishState, running: true, done, total };
         this.panel.setState({ polish: this.polishState });
-        this.broadcast();
+        this.broadcast(false);
       },
     });
 
@@ -311,7 +321,6 @@ class Controller {
         body: '润色需要你自己填一个 OpenAI 兼容的地址与模型名。插件不内置任何模型，也不替你选服务商。',
         options: 'llm',
       };
-      this.panel.setState(this.panelState());
       this.broadcast();
       return { status: 'unconfigured' };
     }
@@ -323,7 +332,6 @@ class Controller {
     } catch (error) {
       this.error = toErrorState(error);
     }
-    this.panel.setState(this.panelState());
     this.broadcast();
     return { status: 'done' };
   }
@@ -335,7 +343,6 @@ class Controller {
     this.built = null;
     this.previewSections = [];
     this.doc = null;
-    this.panel.setState(this.panelState());
     this.broadcast();
     return { cancelled: true };
   }
@@ -415,7 +422,6 @@ class Controller {
     const reply = await send({ type: 'settings.save', payload: { patch } });
     if (reply?.settings) {
       this.settings = reply.settings;
-      this.panel.setState({ settings: this.settings });
       this.broadcast();
     }
     return reply;

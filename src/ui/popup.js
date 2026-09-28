@@ -10,7 +10,6 @@ const el = {
   title: document.getElementById('page-title'),
   pageMeta: document.getElementById('page-meta'),
   source: document.getElementById('source-control'),
-  sourceHint: document.getElementById('source-hint'),
   toggles: document.getElementById('toggles'),
   status: document.getElementById('status'),
   run: document.getElementById('run'),
@@ -65,9 +64,7 @@ function renderPage() {
   const url = tab?.url ?? '';
   const site = siteOf(url);
   el.title.textContent = tab?.title || '未命名标签页';
-  el.pageMeta.textContent = site
-    ? `${site} · 已支持，可直接生成`
-    : '这个页面不在内置站点里。若页面上有 <video> 也可以试，需要先授权访问该站点。';
+  el.pageMeta.textContent = site ? '' : '此页面需授权视频访问';
 }
 
 function renderSource() {
@@ -82,13 +79,6 @@ function renderSource() {
     }),
   );
 
-  if (settings.source === 'subtitle') {
-    el.sourceHint.textContent = '优先取人工字幕；没有则用自动生成字幕。';
-  } else if (!settings.asr.endpoint) {
-    el.sourceHint.textContent = '还没填本机 ASR 服务地址，去设置里填一个。';
-  } else {
-    el.sourceHint.textContent = `本机 ${settings.asr.endpoint}`;
-  }
 }
 
 function renderToggles() {
@@ -179,14 +169,12 @@ async function start() {
   try {
     const ready = await ensureController();
     if (!ready) return;
-    const reply = await ask({ type: 'c2md.run' }, 240_000);
-    state = reply ?? state;
-    renderStatus();
-    if (state?.status === 'ready') {
-      // 生成完了就打开面板，用户点一下就看到了
-      await ask({ type: 'c2md.showPanel' }).catch(() => null);
+    const reply = await ask({ type: 'c2md.run' });
+    if (reply?.status === 'running' || reply?.status === 'ready') {
+      // 页面面板已经接管进度；弹窗立即让出画面。
       window.close();
-    } else if (state?.error) {
+    } else {
+      state = reply ?? state;
       renderStatus();
     }
   } catch (error) {

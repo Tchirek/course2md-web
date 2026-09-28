@@ -21,7 +21,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-2) var(--s-3);
 }
 
 .popup-brand {
@@ -40,17 +40,15 @@ body {
   color: var(--ink);
 }
 
-.popup-note {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ---------- 当前页面 ---------- */
 .popup-page {
-  padding: 0 var(--s-4) var(--s-3);
+  padding: 0 var(--s-3) var(--s-2);
   display: grid;
   gap: 2px;
+}
+
+.popup-page .c2md-meta:empty {
+  display: none;
 }
 
 .popup-title {
@@ -65,7 +63,7 @@ body {
 
 /* ---------- 分组 ---------- */
 .popup-group {
-  padding: var(--s-3) var(--s-2);
+  padding: var(--s-2);
   display: grid;
   gap: var(--s-2);
 }
@@ -86,7 +84,7 @@ body {
 
 /* ---------- 底部 ---------- */
 .popup-foot {
-  padding: var(--s-3) var(--s-4) var(--s-4);
+  padding: var(--s-2) var(--s-3) var(--s-3);
   display: grid;
   gap: var(--s-3);
 }

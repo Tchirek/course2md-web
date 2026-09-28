@@ -224,7 +224,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
     ...built,
     stats: {
       source: 'asr',
-      trackLabel: `${asr.model || '本机模型'} · ${asr.endpoint}`,
+      trackLabel: asr.model || '本机模型',
       eventCount: events.length,
       capturedSeconds: result.seconds,
       chunkCount: result.chunks,

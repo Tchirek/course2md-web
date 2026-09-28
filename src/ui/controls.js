@@ -16,18 +16,15 @@ export const DISPLAY_TOGGLES = [
   {
     key: 'showTimestamps',
     label: '显示讲述时刻',
-    hint: '每段文字前标出它在视频里的位置',
   },
   {
     key: 'clickToSeek',
     label: '时刻可点击跳转',
-    hint: '点时间戳跳到视频对应位置',
     dependsOn: 'showTimestamps',
   },
   {
     key: 'polish',
     label: '润色文本',
-    hint: '用自己接入的 LLM 校对错别字与断句',
     // 未配置时换成一句能直接照做的事——面板只有 384px 宽，
     // 长句会折行并和「去设置」挤在一起
     unconfiguredHint: '还没接入 LLM',
@@ -234,7 +231,7 @@ export function displayToggleRows({ settings, onChange, onSetup }) {
           ? `需要先勾选「${labelOf(toggle.dependsOn)}」`
           : needsSetup && toggle.unconfiguredHint
             ? toggle.unconfiguredHint
-            : toggle.hint,
+            : '',
         checked: Boolean(settings[toggle.key]),
         disabled,
         needsSetup,

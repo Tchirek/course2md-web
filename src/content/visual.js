@@ -23,17 +23,18 @@ export function visualSections(sections, duration) {
 export async function captureSectionImages(video, sections, host, signal) {
   if (!video || !sections.length || !Number.isFinite(video.duration)) return;
   const original = { time: video.currentTime, paused: video.paused };
-  const wasHidden = host?.style.visibility;
+  const targets = sections.length > 12
+    ? Array.from({ length: 12 }, (_, i) => sections[Math.floor(i * sections.length / 12)])
+    : sections;
   try {
     video.pause();
-    if (host) host.style.visibility = 'hidden';
-    for (const section of sections) {
+    for (const section of targets) {
       if (signal?.aborted) break;
       const time = Math.min(video.duration - 0.2, Math.max(0, section.t + 0.5));
       if (!(time >= 0)) continue;
       try {
         await seekFrame(video, time);
-        section.image = await frameImage(video);
+        section.image = await frameImage(video, host);
       } catch {
         // 受 DRM、跨域或标签页切换限制的画面没有图；文字仍可用。
       }
@@ -41,7 +42,6 @@ export async function captureSectionImages(video, sections, host, signal) {
   } finally {
     try { video.currentTime = original.time; } catch {}
     if (!original.paused) video.play().catch(() => {});
-    if (host) host.style.visibility = wasHidden ?? '';
   }
 }
 
@@ -60,7 +60,7 @@ function seekFrame(video, time) {
   });
 }
 
-async function frameImage(video) {
+async function frameImage(video, host) {
   const width = 480;
   const height = Math.max(1, Math.round(width * video.videoHeight / video.videoWidth));
   if (!video.videoWidth || !video.videoHeight) throw new Error('无画面');
@@ -74,7 +74,15 @@ async function frameImage(video) {
   } catch {
     // 跨域视频会污染 canvas。扩展已有 activeTab 权限，可截当前可见标签页。
     await new Promise((resolve) => setTimeout(resolve, 550));
-    const reply = await chrome.runtime.sendMessage({ type: 'frame.visible' });
+    const wasHidden = host?.style.visibility;
+    if (host) host.style.visibility = 'hidden';
+    let reply;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      reply = await chrome.runtime.sendMessage({ type: 'frame.visible' });
+    } finally {
+      if (host) host.style.visibility = wasHidden ?? '';
+    }
     if (!reply?.ok || !reply.value) throw new Error('无法截取标签页');
     const image = new Image();
     image.src = reply.value;

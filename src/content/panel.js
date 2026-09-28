@@ -67,6 +67,10 @@ export class Panel {
 
   /** 合并状态并重绘。只有影响结构的字段才触发重建。 */
   setState(patch) {
+    const progressOnly = this.state.status === 'running' && patch.status === 'running' &&
+      Object.keys(patch).every((key) => key === 'status' || key === 'stageLabel');
+    const polishOnly = this.state.polish?.running && patch.polish?.running &&
+      Object.keys(patch).length === 1;
     const needsRebuild =
       'status' in patch ||
       'sections' in patch ||
@@ -79,6 +83,21 @@ export class Panel {
     Object.assign(this.state, patch);
 
     if (!this.scope) return;
+    const label = progressOnly && this.bodyEl?.querySelector('.c2md-progress-label');
+    if (label) {
+      label.textContent = this.state.stageLabel || '正在取文字';
+      return;
+    }
+    if (polishOnly) {
+      const caption = this.scope.querySelector('.c2md-panel-status .c2md-progress-label');
+      const bar = this.scope.querySelector('.c2md-panel-status .c2md-progress-bar');
+      if (caption && bar) {
+        const { done, total } = this.state.polish;
+        caption.textContent = `正在润色 ${done}/${total} 块`;
+        bar.style.width = total ? `${Math.round(done / total * 100)}%` : '';
+        return;
+      }
+    }
     if (needsRebuild) this.render();
     // 勾选的显隐永远只是切属性，不重建
     this.applyDisplayMode();
@@ -247,7 +266,9 @@ export class Panel {
       const key = String(text).slice(0, 40);
       if (this.warnedOnce.has(key)) continue;
       this.warnedOnce.add(key);
-      wrap.appendChild(note({ body: String(text), tone: 'warn' }));
+      const line = el('div', 'c2md-meta');
+      line.textContent = String(text);
+      wrap.appendChild(line);
     }
     return wrap;
   }
@@ -267,7 +288,7 @@ export class Panel {
     if (!sections?.length) {
       if (status !== 'error') {
         const empty = el('div', 'c2md-empty');
-        empty.textContent = '还没有内容。在弹窗里点「生成笔记」开始。';
+        empty.textContent = '暂无笔记';
         body.appendChild(empty);
       }
       return body;

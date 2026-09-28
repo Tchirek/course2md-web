@@ -1,12 +1,13 @@
 // 可直接读取的媒体先离线解码。解码和切片按计算速度走，不依赖播放器时钟。
 export class FastAudioUnavailable extends Error {}
+const MAX_MEDIA_BYTES = 24 * 1024 * 1024;
 
 export async function decodeMediaAudio(video, { chunkSeconds = 30, signal, onChunk, onProgress }) {
   const url = video.currentSrc || video.src;
   if (!url || !/^(https?:|blob:|file:)/.test(url)) {
     throw new FastAudioUnavailable('播放器没有可直接读取的媒体地址');
   }
-  if (Number(video.duration) > 1200) {
+  if (!(Number(video.duration) > 0 && Number(video.duration) <= 180)) {
     throw new FastAudioUnavailable('长媒体超过浏览器离线解码内存上限');
   }
   let response;
@@ -16,11 +17,31 @@ export async function decodeMediaAudio(video, { chunkSeconds = 30, signal, onChu
   } catch {
     throw new FastAudioUnavailable('浏览器无法直接读取媒体文件');
   }
-  const length = Number(response.headers.get('content-length')) || 0;
-  // ponytail: 整文件解码有内存上限；长媒体由本机流式服务处理更合适。
-  if (length > 128 * 1024 * 1024) throw new FastAudioUnavailable('媒体文件超过离线解码上限');
-  const blob = await response.blob();
-  if (blob.size > 128 * 1024 * 1024) throw new FastAudioUnavailable('媒体文件超过离线解码上限');
+  // ponytail: 整文件解码只用于短视频；长媒体交给本机流式服务。
+  if (Number(response.headers.get('content-length')) > MAX_MEDIA_BYTES) {
+    throw new FastAudioUnavailable('媒体文件超过离线解码上限');
+  }
+  if (!response.body) throw new FastAudioUnavailable('浏览器无法流式读取媒体');
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_MEDIA_BYTES) {
+        await reader.cancel();
+        throw new FastAudioUnavailable('媒体文件超过离线解码上限');
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (signal?.aborted || error instanceof FastAudioUnavailable) throw error;
+    throw new FastAudioUnavailable('媒体读取中断');
+  }
+  const blob = new Blob(chunks);
+  chunks.length = 0;
   const context = new AudioContext();
   let audio;
   try {
