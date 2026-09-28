@@ -61,6 +61,27 @@ test('录音器立即失败时退出，不在页面主线程空转', async () =>
   }
 });
 
+test('本机提取和浏览器读取都失败时显示原始错误，不启动录音', async () => {
+  const oldChrome = globalThis.chrome;
+  const oldWindow = globalThis.window;
+  globalThis.chrome = { runtime: { sendMessage: async () => ({ ok: false, error: 'CDN 下载失败' }) } };
+  globalThis.window = { addEventListener() {} };
+  try {
+    const { runAsrPipeline } = await import('../src/content/pipeline.js');
+    await assert.rejects(
+      runAsrPipeline({
+        adapter: { video: () => ({ currentSrc: 'blob:video', duration: 1118 }) },
+        meta: { url: 'https://www.bilibili.com/video/BV1Hmhq69EAy', duration: 1118 },
+        settings: { asr: { endpoint: 'http://127.0.0.1:8080/v1/audio/transcriptions' } },
+      }),
+      /本机音轨提取失败：CDN 下载失败.*浏览器也无法离线读取/s,
+    );
+  } finally {
+    globalThis.chrome = oldChrome;
+    globalThis.window = oldWindow;
+  }
+});
+
 test('只导出当前视频站点的 cookie，保留 HttpOnly 属性', () => {
   const cookies = [
     { domain: '.bilibili.com', hostOnly: false, path: '/', secure: true, httpOnly: true, name: 'SESSDATA', value: 'test', expirationDate: 2000000000 },

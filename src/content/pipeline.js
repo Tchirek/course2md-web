@@ -110,6 +110,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
   }
 
   const events = [];
+  let fastError = '';
   if (/^(https?:|file:)/.test(meta.url || '')) {
     onProgress?.('capture', { ratio: 0, message: '正在尝试本机快速提取音轨' });
     let fastJobId;
@@ -156,7 +157,8 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
         if (fastJobId) chrome.runtime.sendMessage({ type: 'asr.fast.cancel', payload: { id: fastJobId } }).catch(() => {});
         throw new AbortError();
       }
-      warnings.push(`本机快速提取失败：${String(error?.message ?? error)}`);
+      fastError = String(error?.message ?? error);
+      warnings.push(`本机快速提取失败：${fastError}`);
       // 没运行辅助服务时继续尝试浏览器可读媒体。
     }
   }
@@ -206,6 +208,9 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
     result = await decodeMediaAudio(el, options);
   } catch (error) {
     if (!(error instanceof FastAudioUnavailable)) throw error;
+    if (fastError) {
+      throw new MissingSourceError(`本机音轨提取失败：${fastError}\n浏览器也无法离线读取：${error.message}`);
+    }
     const totalSec = Number(meta.duration) || Number(el.duration) || 0;
     warnings.push(`无法离线读取媒体（${error.message}），改用播放器录音。${totalSec ? `约需 ${fmtTs(totalSec / Math.max(1, asr.playbackRate))}。` : ''}`);
     onProgress?.('capture', { ratio: 0, message: '媒体无法离线读取，正在录音' });

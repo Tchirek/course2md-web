@@ -27,7 +27,7 @@ const registration = spawnSync('reg.exe', [
 if (registration.status !== 0) throw new Error(registration.stderr || '无法注册开机启动');
 
 try {
-  await fetch('http://127.0.0.1:8765/health', { signal: AbortSignal.timeout(700) });
+  await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
 } catch {
   spawn(process.execPath, [helper], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
 }

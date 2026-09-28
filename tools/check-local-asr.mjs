@@ -1,6 +1,6 @@
 import { transcribe, silentWav } from '../src/background/asr.js';
 
-const status = await (await fetch('http://127.0.0.1:8765/asr/status')).json();
+const status = await (await fetch('http://127.0.0.1:8766/asr/status')).json();
 if (status.state !== 'ready') throw new Error(status.message);
 const probe = await transcribe({
   endpoint: 'http://127.0.0.1:8080/v1/audio/transcriptions',

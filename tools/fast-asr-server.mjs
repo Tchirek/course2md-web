@@ -7,13 +7,17 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { downloadBilibiliAudio } from './bilibili-audio.mjs';
 
-const PORT = 8765;
+const PORT = 8766;
 const MAX_BODY = 128 * 1024;
 const jobs = new Map();
 const controllers = new Map();
 let asrProcess = null;
 let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
+fetch('http://127.0.0.1:8080/health', { signal: AbortSignal.timeout(1000) })
+  .then((reply) => { if (reply.ok) asrStatus = { state: 'ready', message: '本机转录服务已启动' }; })
+  .catch(() => {});
 
 http.createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -25,7 +29,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') return res.end('{"ok":true}');
   if (req.method === 'GET' && req.url === '/asr/status') return res.end(JSON.stringify(asrStatus));
   if (req.method === 'POST' && req.url === '/asr/start') {
-    startLocalAsr();
+    await startLocalAsr();
     return res.end(JSON.stringify(asrStatus));
   }
   if (req.method === 'GET' && req.url?.startsWith('/jobs/')) {
@@ -71,8 +75,15 @@ http.createServer(async (req, res) => {
   process.stdout.write(`course2md 本机提取服务：http://127.0.0.1:${PORT}\n`);
 });
 
-function startLocalAsr() {
+async function startLocalAsr() {
   if (asrProcess && ['starting', 'downloading', 'loading', 'ready'].includes(asrStatus.state)) return;
+  try {
+    const existing = await fetch('http://127.0.0.1:8080/health', { signal: AbortSignal.timeout(1000) });
+    if (existing.ok) {
+      asrStatus = { state: 'ready', message: '本机转录服务已启动' };
+      return;
+    }
+  } catch { /* 尚无本机模型服务，继续启动 */ }
   asrStatus = { state: 'starting', message: '正在检查本机模型' };
   const child = spawn(process.env.C2MD_PYTHON || 'python', ['-u', fileURLToPath(new URL('./local-asr.py', import.meta.url))], {
     windowsHide: true,
@@ -115,15 +126,28 @@ async function processJob(input, source, endpoint, job, signal) {
       try {
         await run('yt-dlp', [...args, '--', source.href], signal);
       } catch (error) {
-        if (!input.cookieFile || !String(error.message).startsWith('yt-dlp 失败') || signal.aborted) throw error;
-        job.message = '正在使用浏览器登录态重试下载';
-        const cookiePath = path.join(dir, 'cookies.txt');
-        await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
-        await run('yt-dlp', [...args, '--cookies', cookiePath, '--', source.href], signal);
+        if (signal.aborted) throw error;
+        if (source.hostname === 'www.bilibili.com') {
+          try {
+            mediaPath = await downloadBilibiliAudio(source, dir, signal, (message) => { job.message = message; });
+          } catch (backupError) {
+            if (!input.cookieFile) throw new Error(`${error.message}; ${backupError.message}`);
+          }
+        }
+        if (!mediaPath && input.cookieFile) {
+          job.message = '正在使用浏览器登录态重试下载';
+          const cookiePath = path.join(dir, 'cookies.txt');
+          await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
+          await run('yt-dlp', [...args, '--cookies', cookiePath, '--', source.href], signal);
+        } else if (!mediaPath) {
+          throw error;
+        }
       }
-      const downloaded = (await readdir(dir)).find((name) => name.startsWith('input.') && !name.endsWith('.part'));
-      if (!downloaded) throw new Error('yt-dlp 未产出音轨');
-      mediaPath = path.join(dir, downloaded);
+      if (!mediaPath) {
+        const downloaded = (await readdir(dir)).find((name) => name.startsWith('input.') && !name.endsWith('.part'));
+        if (!downloaded) throw new Error('yt-dlp 未产出音轨');
+        mediaPath = path.join(dir, downloaded);
+      }
     }
     job.message = '正在切分音轨';
     await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', mediaPath, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'segment', '-segment_time', String(chunkSeconds), path.join(dir, 'part-%05d.wav')], signal);

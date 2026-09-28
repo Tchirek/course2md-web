@@ -47,7 +47,7 @@ const HANDLERS = {
   'asr.local.start': () => localAsr('start'),
   'asr.local.status': () => localAsr('status'),
   'asr.fast.start': async (payload) => {
-    const probe = await fetch('http://127.0.0.1:8765/health', { signal: AbortSignal.timeout(700) });
+    const probe = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
     if (!probe.ok) throw new Error('本机提取服务不可用');
     let cookieFile = '';
     try {
@@ -56,7 +56,7 @@ const HANDLERS = {
         cookieFile = cookieFileFor(url.href, await chrome.cookies.getAll({ url: url.href }));
       }
     } catch { /* 未登录或站点权限尚未生效，仍尝试公开媒体 */ }
-    const result = await fetch('http://127.0.0.1:8765/transcribe', {
+    const result = await fetch('http://127.0.0.1:8766/transcribe', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...payload, cookieFile }),
@@ -66,13 +66,13 @@ const HANDLERS = {
     return value;
   },
   'asr.fast.status': async ({ id }) => {
-    const result = await fetch(`http://127.0.0.1:8765/jobs/${encodeURIComponent(id)}`);
+    const result = await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`);
     const value = await result.json();
     if (!result.ok) throw new Error(value.error ?? '本机任务查询失败');
     return value;
   },
   'asr.fast.cancel': async ({ id }) => {
-    await fetch(`http://127.0.0.1:8765/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
     return { cancelled: true };
   },
 
@@ -95,7 +95,7 @@ const HANDLERS = {
 async function localAsr(action) {
   let response;
   try {
-    response = await fetch(`http://127.0.0.1:8765/asr/${action}`, {
+    response = await fetch(`http://127.0.0.1:8766/asr/${action}`, {
       method: action === 'start' ? 'POST' : 'GET',
       signal: AbortSignal.timeout(1200),
     });
