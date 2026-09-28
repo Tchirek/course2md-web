@@ -89,9 +89,8 @@ export async function captureAudio(el, opts) {
           aborted = true;
           break;
         }
-        // 录到空片说明流已经停了，跳出而不是死循环
-        if (el.ended || el.paused) break;
-        continue;
+        if (el.ended) break;
+        throw new Error('播放器录音器未产出音频，已停止以免页面卡死。请使用本机提取服务。');
       }
 
       const end = Math.min(el.currentTime, totalSec);

@@ -10,6 +10,8 @@ import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, maskSecret, setPath, getPath } from '../src/core/settings.js';
 import { visualSections } from '../src/content/visual.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
+import { captureAudio } from '../src/content/capture.js';
+import { cookieFileFor } from '../src/background/cookies.js';
 
 test('面板画面分组不改动按章节导出的正文', () => {
   const segments = [0, 80, 100, 210].map((start) => ({ start, end: start + 2, text: String(start) }));
@@ -38,6 +40,36 @@ test('长视频跳过浏览器整文件解码', async () => {
     decodeMediaAudio({ currentSrc: 'https://example.com/video.mp4', duration: 181 }, {}),
     FastAudioUnavailable,
   );
+});
+
+test('录音器立即失败时退出，不在页面主线程空转', async () => {
+  const oldRecorder = globalThis.MediaRecorder;
+  globalThis.MediaRecorder = class {
+    static isTypeSupported() { return true; }
+    constructor() { throw new Error('录音器不可用'); }
+  };
+  const video = {
+    currentTime: 0, duration: 60, paused: true, playbackRate: 1, volume: 1, muted: false, ended: false,
+    captureStream: () => ({ getAudioTracks: () => [{ stop() {} }] }),
+    play() { this.paused = false; return Promise.resolve(); },
+    pause() { this.paused = true; },
+  };
+  try {
+    await assert.rejects(captureAudio(video, { chunkSeconds: 5 }), /录音器未产出音频/);
+  } finally {
+    globalThis.MediaRecorder = oldRecorder;
+  }
+});
+
+test('只导出当前视频站点的 cookie，保留 HttpOnly 属性', () => {
+  const cookies = [
+    { domain: '.bilibili.com', hostOnly: false, path: '/', secure: true, httpOnly: true, name: 'SESSDATA', value: 'test', expirationDate: 2000000000 },
+    { domain: '.example.com', hostOnly: false, path: '/', secure: false, name: 'other', value: 'secret' },
+  ];
+  const file = cookieFileFor('https://www.bilibili.com/video/BV123', cookies);
+  assert.match(file, /# Netscape HTTP Cookie File\r\n#HttpOnly_\.bilibili\.com\tTRUE\t\/\tTRUE\t2000000000\tSESSDATA\ttest/);
+  assert.doesNotMatch(file, /example|secret/);
+  assert.equal(cookieFileFor('https://example.com/video', cookies), '');
 });
 
 // ---------- time ----------

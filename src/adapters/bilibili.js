@@ -40,7 +40,8 @@ export async function meta() {
   const state = await initialState();
   const data = state?.videoData;
   const bvid = bvidFrom(location);
-  const url = `https://www.bilibili.com/video/${bvid}`;
+  const part = new URLSearchParams(location.search).get('p');
+  const url = `https://www.bilibili.com/video/${bvid}${/^[1-9]\d*$/.test(part ?? '') ? `?p=${part}` : ''}`;
 
   if (data) {
     return {

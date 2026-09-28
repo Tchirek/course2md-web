@@ -3,13 +3,13 @@
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const PORT = 8765;
-const MAX_BODY = 16 * 1024;
+const MAX_BODY = 128 * 1024;
 const jobs = new Map();
 const controllers = new Map();
 let asrProcess = null;
@@ -111,7 +111,16 @@ async function processJob(input, source, endpoint, job, signal) {
     if (source.protocol === 'file:') {
       mediaPath = fileURLToPath(source);
     } else {
-      await run('yt-dlp', ['--js-runtimes', 'node', '--no-playlist', '-f', 'bestaudio/best', '-o', path.join(dir, 'input.%(ext)s'), '--', source.href], signal);
+      const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', 'bestaudio/best', '-o', path.join(dir, 'input.%(ext)s')];
+      try {
+        await run('yt-dlp', [...args, '--', source.href], signal);
+      } catch (error) {
+        if (!input.cookieFile || !String(error.message).startsWith('yt-dlp 失败') || signal.aborted) throw error;
+        job.message = '正在使用浏览器登录态重试下载';
+        const cookiePath = path.join(dir, 'cookies.txt');
+        await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
+        await run('yt-dlp', [...args, '--cookies', cookiePath, '--', source.href], signal);
+      }
       const downloaded = (await readdir(dir)).find((name) => name.startsWith('input.') && !name.endsWith('.part'));
       if (!downloaded) throw new Error('yt-dlp 未产出音轨');
       mediaPath = path.join(dir, downloaded);

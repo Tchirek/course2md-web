@@ -11,6 +11,7 @@ import { loadSettings, saveSettings, resetSettings } from './store.js';
 import { chat, testConnection as testLlm } from './llm.js';
 import { transcribe, testEndpoint as testAsr, parseAsrResponse } from './asr.js';
 import { supportedAudioExtensions } from '../core/audio-ext.js';
+import { cookieFileFor } from './cookies.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handler = HANDLERS[message?.type];
@@ -48,10 +49,17 @@ const HANDLERS = {
   'asr.fast.start': async (payload) => {
     const probe = await fetch('http://127.0.0.1:8765/health', { signal: AbortSignal.timeout(700) });
     if (!probe.ok) throw new Error('本机提取服务不可用');
+    let cookieFile = '';
+    try {
+      const url = new URL(payload.sourceUrl);
+      if (/^(?:www\.)?(?:youtube|bilibili)\.com$/.test(url.hostname)) {
+        cookieFile = cookieFileFor(url.href, await chrome.cookies.getAll({ url: url.href }));
+      }
+    } catch { /* 未登录或站点权限尚未生效，仍尝试公开媒体 */ }
     const result = await fetch('http://127.0.0.1:8765/transcribe', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, cookieFile }),
     });
     const value = await result.json();
     if (!result.ok) throw new Error(value.error ?? '本机提取失败');

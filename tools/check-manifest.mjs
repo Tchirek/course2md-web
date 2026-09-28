@@ -131,6 +131,7 @@ const uses = (needle, perm, why) => {
 uses('chrome.storage', 'storage', '设置与缓存');
 uses('chrome.scripting', 'scripting', '在其他页面按需注入内容脚本');
 uses('chrome.downloads', 'downloads', '保存 .md 文件');
+uses('chrome.cookies', 'cookies', '向本机提取服务提供当前站点登录态');
 
 // ---------- 6. MV3 不允许远程代码 ----------
 // 只要出现远程 URL 的 script 加载就是在违反 MV3。

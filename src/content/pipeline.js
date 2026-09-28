@@ -156,7 +156,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
         if (fastJobId) chrome.runtime.sendMessage({ type: 'asr.fast.cancel', payload: { id: fastJobId } }).catch(() => {});
         throw new AbortError();
       }
-      if (fastJobId) warnings.push(`本机快速提取失败：${String(error?.message ?? error)}`);
+      warnings.push(`本机快速提取失败：${String(error?.message ?? error)}`);
       // 没运行辅助服务时继续尝试浏览器可读媒体。
     }
   }
