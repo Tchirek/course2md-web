@@ -27,7 +27,12 @@ class Controller {
     this.error = null;
     this.stageLabel = '';
     this.abort = null;
-    this.polishState = { hasResult: false, running: false, done: 0, total: 0, summary: '' };
+    this.imageAbort = null;
+    this.imagePromise = Promise.resolve(0);
+    this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
+    this.imageCache = new Map();
+    this.imagesPending = false;
+    this.autoTimer = null;
     this.urlKey = this.currentUrlKey();
 
     this.panel = new Panel({
@@ -53,6 +58,7 @@ class Controller {
       const { DEFAULT_SETTINGS } = await import('../core/settings.js');
       this.settings = structuredClone(DEFAULT_SETTINGS);
     }
+    this.imageLevel = this.settings.imageLevel;
 
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
       const handler = this.MESSAGES[message?.type];
@@ -68,9 +74,13 @@ class Controller {
       if (area !== 'local' || !changes.settings) return;
       const next = changes.settings.newValue;
       if (!next) return;
+      const repolish = this.built && next.polish && !this.polishState.running &&
+        (!this.settings.polish || next.polishLevel !== this.settings.polishLevel);
       this.settings = next;
       this.panel.setState({ settings: this.settings });
+      if (this.built && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
       if (this.settings.showPanel && this.doc) this.panel.mount();
+      if (repolish) this.repolish();
     });
 
     // SPA 换视频：YouTube 与 B 站都是不刷新页面换内容的
@@ -79,15 +89,27 @@ class Controller {
     // 有缓存内容就恢复出来（后退/前进回来时不用重新抓一遍）
     const cached = await this.loadCache();
     if (cached) {
-      this.built = cached.built;
-      this.previewSections = cached.previewSections ?? visualSections(cached.sections, cached.meta.duration);
+      this.built = {
+        sections: cached.sections,
+        segments: cached.sections.flatMap((section) => section.segments),
+        sectionIndexOf: cached.sections.flatMap((section, i) => section.segments.map(() => i)),
+        stats: cached.stats,
+        warnings: cached.warnings ?? [],
+      };
+      this.built.segments.forEach((seg, id) => { seg.id = id; });
+      this.previewSections = cached.imageLevel === this.settings.imageLevel
+        ? cached.previewSections ?? [] : visualSections(cached.sections, cached.meta.duration, this.settings.imageLevel);
       this.meta = cached.meta;
       this.doc = buildDoc({ ...this.meta, source: cached.stats.source }, cached.sections);
       this.status = 'ready';
       this.polishState.hasResult = Boolean(cached.polished);
+      for (const section of cached.previewSections ?? []) if (section.image) this.imageCache.set(section.t, section.image);
+      this.imagesPending = this.settings.imageLevel !== 'none' && cached.imageComplete !== true;
       if (this.settings.showPanel) this.panel.mount();
+      if (cached.imageLevel !== this.settings.imageLevel || this.imagesPending) this.refreshImages();
     }
     this.broadcast();
+    if (!cached && this.settings.autoRun) this.scheduleAutoRun();
   }
 
   currentUrlKey() {
@@ -99,17 +121,32 @@ class Controller {
     const key = this.currentUrlKey();
     if (key === this.urlKey) return;
     this.abort?.abort();
+    this.imageAbort?.abort();
+    clearTimeout(this.autoTimer);
     this.urlKey = key;
     // 换视频了：清干净，避免把上一个视频的笔记留在屏幕上
     this.adapter = pickAdapter();
     this.built = null;
     this.previewSections = [];
+    this.imageCache.clear();
+    this.imagesPending = false;
     this.doc = null;
     this.meta = null;
     this.status = 'idle';
     this.error = null;
-    this.polishState = { hasResult: false, running: false, done: 0, total: 0, summary: '' };
+    this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.panel.setState(this.panelState());
+    if (this.settings.autoRun) this.scheduleAutoRun();
+  }
+
+  scheduleAutoRun() {
+    const key = this.urlKey;
+    clearTimeout(this.autoTimer);
+    this.autoTimer = setTimeout(() => {
+      if (this.urlKey !== key || !this.settings.autoRun) return;
+      if (!this.adapter.video()) return this.scheduleAutoRun();
+      this.run();
+    }, 1000);
   }
 
   // ---------- 消息 ----------
@@ -175,6 +212,7 @@ class Controller {
       error: this.error,
       warnings: this.built?.warnings ?? [],
       stageLabel: this.stageLabel,
+      imagesPending: this.imagesPending,
     };
   }
 
@@ -207,8 +245,10 @@ class Controller {
 
   async run() {
     if (this.status === 'running') return { status: 'running' };
+    clearTimeout(this.autoTimer);
 
     this.abort?.abort();
+    this.imageAbort?.abort();
     this.abort = new AbortController();
     const runAbort = this.abort;
     const adapter = this.adapter;
@@ -217,7 +257,7 @@ class Controller {
     this.built = null;
     this.previewSections = [];
     this.doc = null;
-    this.polishState = { hasResult: false, running: false, done: 0, total: 0, summary: '' };
+    this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.stageLabel = '正在读取页面信息';
     this.panel.mount();
     this.broadcast();
@@ -240,7 +280,7 @@ class Controller {
           if (this.abort !== runAbort || runAbort.signal.aborted) return;
           const partial = organize([...events].sort((a, b) => a.start - b.start), meta);
           this.meta = meta;
-          this.previewSections = visualSections(partial.sections, meta.duration);
+          this.previewSections = visualSections(partial.sections, meta.duration, this.settings.imageLevel);
           this.broadcast();
         },
       };
@@ -253,18 +293,21 @@ class Controller {
       this.meta = meta;
       this.built = built;
 
-      this.previewSections = visualSections(this.built.sections, this.meta.duration);
       this.doc = finalize(this.built, this.meta, this.settings);
       this.status = 'ready';
       this.stageLabel = '';
-      this.broadcast(); // 文字先出现，截图随后补齐。
-      await captureSectionImages(adapter.video(), this.previewSections, this.panel.host, runAbort.signal).catch(() => {});
+      this.refreshImages(); // 文字先出现，截图随后补齐。
       if (runAbort.signal.aborted) throw new AbortError();
-      this.broadcast();
 
       // 勾了润色且配置齐全，就在同一次流程里顺带跑掉
       if (this.settings.polish) {
-        await this.runPolish(runAbort.signal);
+        try {
+          await this.runPolish(runAbort.signal);
+        } catch (error) {
+          if (runAbort.signal.aborted) throw error;
+          this.polishState.running = false;
+          this.error = toErrorState(error);
+        }
       }
       if (runAbort.signal.aborted) throw new AbortError();
 
@@ -296,47 +339,62 @@ class Controller {
 
   async runPolish(signal = this.abort?.signal) {
     if (!this.built?.segments?.length) return;
-    this.polishState = { hasResult: this.polishState.hasResult, running: true, done: 0, total: 0, summary: '' };
-    this.panel.setState(this.panelState());
-
+    this.polishState = { hasResult: this.polishState.hasResult, running: true, done: 0, total: 0 };
+    this.panel.setState({ polish: this.polishState });
+    let polishSettings = this.settings;
+    if (!this.settings.llm.baseUrl || !this.settings.llm.model) {
+      const started = await send({ type: 'polish.local.start' });
+      if (started.state === 'error') throw new Error(started.message);
+      let state = started;
+      while (state.state !== 'ready') {
+        if (signal?.aborted) throw new AbortError();
+        this.stageLabel = state.message;
+        this.broadcast();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        state = await send({ type: 'polish.local.status' });
+        if (state.state === 'error') throw new Error(state.message);
+      }
+      polishSettings = { ...this.settings, llm: {
+        ...this.settings.llm, baseUrl: 'http://127.0.0.1:8082/v1',
+        model: 'FireRedPunc+Qwen3.5-2B', concurrency: 1,
+      } };
+      this.stageLabel = '';
+    }
     const result = await polishSegments({
       segments: this.built.segments,
       sectionIndexOf: this.built.sectionIndexOf,
       meta: this.meta,
-      settings: this.settings,
+      settings: polishSettings,
       signal,
       onProgress: (done, total) => {
         this.polishState = { ...this.polishState, running: true, done, total };
         this.panel.setState({ polish: this.polishState });
         this.broadcast(false);
       },
+      onSegment: (id) => {
+        this.polishState.hasResult = true;
+        this.panel.updateSegment(this.built.segments[id]);
+      },
+      onReset: () => this.panel.setState({ sections: this.previewSections }),
     });
 
     if (signal?.aborted) throw new AbortError();
 
-    const summary = summarizePolish(result);
-    this.polishState = { hasResult: true, running: false, done: result.chunks, total: result.chunks, summary };
+    if (result.failed) this.built.warnings.push(`${result.failed} 块润色失败，已保留原文。`);
+    this.polishState = { hasResult: true, running: false, done: result.chunks, total: result.chunks };
     this.doc = finalize(this.built, this.meta, this.settings);
     await this.saveCache();
   }
 
   async repolish() {
     if (!this.built) return { status: 'none' };
-    if (!this.settings.llm.baseUrl || !this.settings.llm.model) {
-      this.error = {
-        title: '还没接入 LLM',
-        body: '润色需要你自己填一个 OpenAI 兼容的地址与模型名。插件不内置任何模型，也不替你选服务商。',
-        options: 'llm',
-      };
-      this.broadcast();
-      return { status: 'unconfigured' };
-    }
     this.polishState = { ...this.polishState, running: true };
     this.panel.setState(this.panelState());
     try {
       await this.runPolish();
       this.error = null;
     } catch (error) {
+      this.polishState.running = false;
       this.error = toErrorState(error);
     }
     this.broadcast();
@@ -345,6 +403,7 @@ class Controller {
 
   cancel() {
     this.abort?.abort();
+    this.imageAbort?.abort();
     this.status = 'idle';
     this.stageLabel = '';
     this.built = null;
@@ -384,16 +443,22 @@ class Controller {
     if (!this.doc) return '';
     return toMarkdown(this.doc, {
       timestamps: this.settings.showTimestamps,
-      links: this.settings.clickToSeek,
     });
   }
 
   plainText() {
-    if (!this.doc) return '';
-    return toPlainText(this.doc, { timestamps: this.settings.showTimestamps });
+    if (!this.built) return '';
+    const original = !this.settings.polish;
+    const sections = this.built.sections.map((section) => ({
+      ...section,
+      segments: section.segments.map((seg) => ({ ...seg, text: original ? (seg.raw ?? seg.text) : seg.text,
+        state: original ? 'kept' : seg.state })),
+    }));
+    return toPlainText({ meta: this.meta, sections }, { timestamps: this.settings.showTimestamps });
   }
 
   async copyMarkdown() {
+    if (this.imagesPending && this.settings.imageLevel !== 'none') return false;
     return copyText(this.markdown());
   }
 
@@ -403,7 +468,29 @@ class Controller {
 
   async download() {
     if (!this.doc) return { saved: false };
+    if (this.imagesPending && this.settings.imageLevel !== 'none') return { saved: false, pending: true };
     try {
+      const visibleSections = this.previewSections.filter((section) => section.segments.some((seg) => seg.state !== 'skipped'));
+      const pictures = this.settings.imageLevel === 'none'
+        ? [] : visibleSections.filter((section) => section.image);
+      if (this.settings.imageLevel !== 'none' && !pictures.length) {
+        throw new Error('未能取得离线视频画面，请检查本机助手与媒体下载。');
+      }
+      if (pictures.length) {
+        let number = 0;
+        const sections = visibleSections.map((section) => ({
+          ...section,
+          image: section.image ? `frames/slide_${String(++number).padStart(4, '0')}.jpg` : '',
+        }));
+        return await send({
+          type: 'file.saveBundle',
+          payload: {
+            folder: this.doc.meta.title,
+            markdown: toMarkdown({ ...this.doc, sections }, { timestamps: this.settings.showTimestamps, images: true }),
+            images: pictures.map((section) => section.image),
+          },
+        });
+      }
       return await send({
         type: 'file.save',
         payload: {
@@ -423,12 +510,56 @@ class Controller {
   }
 
   async patchSettings(patch) {
+    const previousLevel = this.settings.imageLevel;
     const reply = await send({ type: 'settings.save', payload: { patch } });
     if (reply?.settings) {
       this.settings = reply.settings;
+      if (this.built && previousLevel !== this.settings.imageLevel && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
       this.broadcast();
     }
     return reply;
+  }
+
+  refreshImages() {
+    const previous = this.imagePromise;
+    if (!this.imageAbort || this.imageAbort.signal.aborted) this.imageAbort = new AbortController();
+    this.imageLevel = this.settings.imageLevel;
+    const level = this.imageLevel;
+    this.previewSections = visualSections(this.built.sections, this.meta.duration, this.imageLevel);
+    for (const section of this.previewSections) section.image = this.imageCache.get(section.t) ?? '';
+    this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((section) => !this.imageCache.has(section.t));
+    this.broadcast();
+    if (this.imageLevel === 'none') {
+      this.imageAbort.abort();
+      return this.imagePromise = Promise.resolve(0);
+    }
+    const current = this.imageAbort;
+    this.imagePromise = Promise.resolve(previous).then(() => current.signal.aborted ? 0 :
+      captureSectionImages(this.meta.url, visualSections(this.built.sections, this.meta.duration, level).map((section) => ({
+        ...section, image: this.imageCache.get(section.t) ?? '', captured: this.imageCache.has(section.t),
+      })), current.signal,
+        (section) => { if (!current.signal.aborted) {
+          this.imageCache.set(section.t, section.image);
+          const visible = this.previewSections.find((item) => item.t === section.t);
+          if (visible) visible.image = section.image;
+          this.broadcast();
+        } }))
+      .then(async (count) => {
+        if (!current.signal.aborted) {
+          for (const section of this.previewSections) section.image = this.imageCache.get(section.t) ?? '';
+          this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((section) => !this.imageCache.has(section.t));
+          this.broadcast();
+          await this.saveCache();
+        }
+        return count;
+      }).catch((error) => {
+        if (!current.signal.aborted) {
+          this.error = toErrorState(error);
+          this.broadcast();
+        }
+        return 0;
+      });
+    return this.imagePromise;
   }
 
   // ---------- 缓存 ----------
@@ -445,7 +576,10 @@ class Controller {
           meta: this.meta,
           sections: this.built.sections,
           previewSections: this.previewSections,
+          imageLevel: this.settings.imageLevel,
+          imageComplete: !this.imagesPending,
           stats: this.built.stats,
+          warnings: this.built.warnings,
           polished: this.polishState.hasResult,
           savedAt: Date.now(),
         },
@@ -504,18 +638,6 @@ async function copyText(text) {
   } catch {
     return false;
   }
-}
-
-function summarizePolish(result) {
-  if (!result.chunks) return '没有需要润色的段落。';
-  const parts = [`润色 ${result.chunks} 块`];
-  if (result.removed) parts.push(`删除语气词 ${result.removed} 处`);
-  if (result.failed) {
-    parts.push(`${result.failed} 块保留原文`);
-    const first = result.errors[0];
-    if (first) parts.push(`第一个失败：${first}`);
-  }
-  return `${parts.join(' · ')}。`;
 }
 
 export async function start() {

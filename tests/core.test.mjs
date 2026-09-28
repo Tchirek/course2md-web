@@ -8,7 +8,7 @@ import { planChunks, tailOf, mapPool } from '../src/core/chunk.js';
 import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJson } from '../src/core/prompt.js';
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, maskSecret, setPath, getPath } from '../src/core/settings.js';
-import { visualSections } from '../src/content/visual.js';
+import { visualSections, similarity } from '../src/content/visual.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 import { captureAudio } from '../src/content/capture.js';
 import { cookieFileFor } from '../src/background/cookies.js';
@@ -17,7 +17,7 @@ test('面板画面分组不改动按章节导出的正文', () => {
   const segments = [0, 80, 100, 210].map((start) => ({ start, end: start + 2, text: String(start) }));
   const chapters = [{ t: 0, title: '第一章', segments }];
   const view = visualSections(chapters, 240);
-  assert.deepEqual(view.map((section) => section.segments.map((s) => s.start)), [[0, 80], [100], [210]]);
+  assert.deepEqual(view.map((section) => section.segments.map((s) => s.start)), [[0], [80, 100], [210]]);
   assert.equal(view[0].title, '第一章');
   assert.equal(view[1].title, '');
   assert.equal(chapters[0].segments.length, 4);
@@ -25,6 +25,35 @@ test('面板画面分组不改动按章节导出的正文', () => {
   const markdown = toMarkdown(buildDoc({ title: '课' }, chapters), { timestamps: false });
   assert.equal(markdown.match(/## 第一章/g).length, 1);
   assert.doesNotMatch(markdown, /data:image|!\[/);
+});
+
+test('图片密度分四档；多档至多每十秒取一张候选帧', () => {
+  const sections = [{ t: 0, title: '第一章', segments: Array.from({ length: 181 }, (_, start) => ({ start, end: start + 1, text: '讲述' })) }];
+  assert.equal(visualSections(sections, 181, 'none').length, 1);
+  assert.equal(visualSections(sections, 181, 'few').length, 2);
+  assert.equal(visualSections(sections, 181, 'default').length, 4);
+  assert.equal(visualSections(sections, 181, 'many').length, 19);
+  const still = new Float32Array(64 * 40).fill(120);
+  const changed = new Float32Array(64 * 40).fill(230);
+  assert.ok(similarity(still, still) >= 0.85);
+  assert.ok(similarity(still, changed) < 0.85);
+});
+
+test('下载版 Markdown 在相应讲述段前引用帧，普通复制版不带图', () => {
+  const section = { t: 10, title: '片段', image: 'frames/slide_0001.jpg', segments: [{ start: 10, end: 12, text: '讲述。' }] };
+  const doc = { meta: { title: '课程', source: 'subtitle', url: 'https://example.com/watch' }, sections: [section] };
+  assert.match(toMarkdown(doc, { images: true }), /!\[视频 00:10 的截图\]\(frames\/slide_0001\.jpg\)/);
+  assert.doesNotMatch(toMarkdown(doc), /!\[/);
+});
+
+test('原版转录段落在润色前已有句末标点', async () => {
+  const oldWindow = globalThis.window;
+  globalThis.window = { addEventListener() {} };
+  try {
+    const { organize } = await import('../src/content/pipeline.js');
+    const result = organize([{ start: 0, end: 1, text: '我们开始讲课' }], { duration: 2 });
+    assert.equal(result.segments[0].text, '我们开始讲课。');
+  } finally { globalThis.window = oldWindow; }
 });
 
 test('离线音频切片生成 16kHz 单声道 PCM WAV', () => {
@@ -500,10 +529,10 @@ test('withDefaults 补齐缺失字段而不覆盖已存的', () => {
   assert.equal(s.source, 'subtitle');
 });
 
-test('normalizeSettings 在未显示时刻时关掉点击跳转', () => {
-  const { settings, notes } = normalizeSettings({ showTimestamps: false, clickToSeek: true });
-  assert.equal(settings.clickToSeek, false);
-  assert.equal(notes.length, 1);
+test('旧跳转开关被移除，图片密度回退到默认', () => {
+  const { settings } = normalizeSettings({ showTimestamps: false, clickToSeek: false, imageLevel: 'invalid' });
+  assert.equal('clickToSeek' in settings, false);
+  assert.equal(settings.imageLevel, 'default');
 });
 
 test('normalizeSettings 夹取并发并清理 URL 尾巴', () => {
@@ -514,10 +543,10 @@ test('normalizeSettings 夹取并发并清理 URL 尾巴', () => {
   assert.equal(settings.llm.concurrency, 16);
 });
 
-test('normalizeSettings 对缺配置的润色给出可读提示但不报错', () => {
+test('未配置远端 LLM 时允许本机润色且不显示误导性警告', () => {
   const { settings, notes } = normalizeSettings({ polish: true, llm: { baseUrl: '', model: '' } });
   assert.equal(settings.polish, true);
-  assert.ok(notes.some((n) => n.includes('LLM 地址')));
+  assert.equal(notes.length, 0);
   assert.equal(canPolish(settings), false);
 });
 

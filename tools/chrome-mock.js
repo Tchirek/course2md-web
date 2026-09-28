@@ -11,7 +11,7 @@
   const DEFAULTS = {
     source: 'subtitle',
     showTimestamps: true,
-    clickToSeek: true,
+    imageLevel: 'default',
     polish: false,
     autoRun: false,
     showPanel: true,
@@ -41,7 +41,6 @@
   if (params.get('polish') === 'on') store.settings.polish = true;
   if (params.get('ts') === 'off') {
     store.settings.showTimestamps = false;
-    store.settings.clickToSeek = false;
   }
   if (params.get('theme')) store.settings.theme = params.get('theme');
   if (params.get('nollm') === 'on') {

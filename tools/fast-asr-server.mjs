@@ -9,17 +9,23 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio } from './bilibili-audio.mjs';
 
-const PORT = 8766;
+const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
 const ASR_PORT = 8081;
 const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
 const BUILTIN_ASR = new Set([`http://127.0.0.1:${ASR_PORT}`, `http://localhost:${ASR_PORT}`]);
 const MAX_BODY = 128 * 1024;
 const jobs = new Map();
 const controllers = new Map();
+const videoCache = new Map();
 let asrProcess = null;
 let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
+let polishProcess = null;
+let polishStatus = { state: 'idle', message: '本机润色尚未启动' };
 fetch(ASR_HEALTH, { signal: AbortSignal.timeout(1000) })
   .then(async (reply) => { if (reply.ok) asrStatus = readyStatus(await reply.json()); })
+  .catch(() => {});
+fetch('http://127.0.0.1:8082/health', { signal: AbortSignal.timeout(1000) })
+  .then((reply) => { if (reply.ok) polishStatus = { state: 'ready', message: '本机润色已就绪' }; })
   .catch(() => {});
 
 http.createServer(async (req, res) => {
@@ -31,6 +37,11 @@ http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/health') return res.end('{"ok":true}');
   if (req.method === 'GET' && req.url === '/asr/status') return res.end(JSON.stringify(asrStatus));
+  if (req.method === 'GET' && req.url === '/polish/status') return res.end(JSON.stringify(polishStatus));
+  if (req.method === 'POST' && req.url === '/polish/start') {
+    await startLocalPolish();
+    return res.end(JSON.stringify(polishStatus));
+  }
   if (req.method === 'POST' && req.url === '/asr/start') {
     await startLocalAsr();
     return res.end(JSON.stringify(asrStatus));
@@ -40,31 +51,33 @@ http.createServer(async (req, res) => {
     const job = jobs.get(url.pathname.slice(6));
     if (!job) res.writeHead(404);
     const after = Math.max(0, Number(url.searchParams.get('after')) || 0);
-    return res.end(JSON.stringify(job ? { ...job, events: job.events.slice(after) } : { error: '任务不存在' }));
+    const imageAfter = Math.max(0, Number(url.searchParams.get('imageAfter')) || 0);
+    return res.end(JSON.stringify(job ? { ...job, events: job.events.slice(after), images: job.images.slice(imageAfter) } : { error: '任务不存在' }));
   }
   if (req.method === 'DELETE' && req.url?.startsWith('/jobs/')) {
     const controller = controllers.get(req.url.slice(6));
     controller?.abort();
     return res.end(JSON.stringify({ cancelled: Boolean(controller) }));
   }
-  if (req.method !== 'POST' || req.url !== '/transcribe') {
+  if (req.method !== 'POST' || !['/transcribe', '/frames'].includes(req.url)) {
     res.writeHead(404);
     return res.end('{"error":"not found"}');
   }
   try {
     const input = JSON.parse(await readBody(req));
     const source = new URL(input.sourceUrl);
-    const endpoint = new URL(input.endpoint);
     if (!['http:', 'https:', 'file:'].includes(source.protocol)) throw new Error('不支持此视频地址');
-    if (!['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)) {
+    const frames = req.url === '/frames';
+    const endpoint = frames ? null : new URL(input.endpoint);
+    if (endpoint && !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)) {
       throw new Error('ASR 服务必须在本机');
     }
     const id = randomUUID();
-    const job = { state: 'running', message: source.protocol === 'file:' ? '正在读取本地视频' : '正在下载音轨', done: 0, total: 0, events: [] };
+    const job = { state: 'running', message: source.protocol === 'file:' ? '正在读取本地视频' : '正在下载媒体', done: 0, total: 0, events: [], images: [] };
     const controller = new AbortController();
     jobs.set(id, job);
     controllers.set(id, controller);
-    processJob(input, source, endpoint, job, controller.signal).then(
+    (frames ? processFrames(input, source, job, controller.signal) : processJob(input, source, endpoint, job, controller.signal)).then(
       (value) => Object.assign(job, { state: 'done', ...value }),
       (error) => Object.assign(job, { state: 'error', error: String(error?.message ?? error) }),
     ).finally(() => {
@@ -79,6 +92,60 @@ http.createServer(async (req, res) => {
 }).listen(PORT, '127.0.0.1', () => {
   process.stdout.write(`course2md 本机提取服务：http://127.0.0.1:${PORT}\n`);
 });
+
+async function processFrames(input, source, job, signal) {
+  let mediaPath = source.protocol === 'file:' ? fileURLToPath(source) : videoCache.get(source.href)?.file;
+  if (!mediaPath) {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-video-'));
+    try {
+      const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', 'bestvideo[height<=720]/best[height<=720]', '-o', path.join(dir, 'input.%(ext)s')];
+      if (input.cookieFile) {
+        const cookiePath = path.join(dir, 'cookies.txt');
+        await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
+        args.push('--cookies', cookiePath);
+      }
+      await run('yt-dlp', [...args, '--', source.href], signal);
+      const name = (await readdir(dir)).find((entry) => entry.startsWith('input.') && !entry.endsWith('.part'));
+      if (!name) throw new Error('yt-dlp 未取得视频画面');
+      mediaPath = path.join(dir, name);
+      videoCache.set(source.href, { file: mediaPath, dir });
+      setTimeout(async () => {
+        if (videoCache.get(source.href)?.dir === dir) videoCache.delete(source.href);
+        await rm(dir, { recursive: true, force: true }).catch(() => {});
+      }, 3600_000);
+    } catch (error) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
+  }
+  const times = [...new Set((input.times ?? []).map(Number).filter((t) => Number.isFinite(t) && t >= 0))];
+  job.total = times.length;
+  for (const time of times) {
+    if (signal.aborted) throw new Error('已取消');
+    const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(time), '-i', mediaPath, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '5', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'];
+    const bytes = await runOutput('ffmpeg', args, signal);
+    job.images.push({ time, data: `data:image/jpeg;base64,${bytes.toString('base64')}` });
+    job.done++;
+  }
+  return { images: job.images };
+}
+
+function runOutput(command, args, signal) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const chunks = [];
+    let stderr = '';
+    const abort = () => child.kill();
+    signal.addEventListener('abort', abort, { once: true });
+    child.stdout.on('data', (chunk) => chunks.push(chunk));
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-500); });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      signal.removeEventListener('abort', abort);
+      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(stderr || `${command} 退出码 ${code}`));
+    });
+  });
+}
 
 async function startLocalAsr() {
   if (asrProcess && ['starting', 'downloading', 'loading', 'ready'].includes(asrStatus.state)) return;
@@ -116,6 +183,39 @@ async function startLocalAsr() {
   child.on('exit', (code) => {
     if (asrStatus.state !== 'error') asrStatus = { state: 'error', message: errors || `转录服务退出：${code}` };
     asrProcess = null;
+  });
+}
+
+async function startLocalPolish() {
+  if (polishProcess && ['starting', 'installing', 'downloading', 'loading', 'ready'].includes(polishStatus.state)) return;
+  try {
+    const reply = await fetch('http://127.0.0.1:8082/health', { signal: AbortSignal.timeout(700) });
+    if (reply.ok) {
+      polishStatus = { state: 'ready', message: '本机润色已就绪' };
+      return;
+    }
+  } catch { /* 尚未运行 */ }
+  polishStatus = { state: 'starting', message: '正在准备本机润色' };
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./launch-local-polish.mjs', import.meta.url))], {
+    windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  polishProcess = child;
+  let output = '';
+  let errors = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    output += chunk;
+    for (let newline = output.indexOf('\n'); newline >= 0; newline = output.indexOf('\n')) {
+      const line = output.slice(0, newline);
+      output = output.slice(newline + 1);
+      try { polishStatus = JSON.parse(line); } catch { /* 安装程序输出 */ }
+    }
+  });
+  child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-1000); });
+  child.on('error', (error) => { polishStatus = { state: 'error', message: error.message }; polishProcess = null; });
+  child.on('exit', (code) => {
+    if (polishStatus.state !== 'error') polishStatus = { state: 'error', message: errors || `本机润色服务退出：${code}` };
+    polishProcess = null;
   });
 }
 

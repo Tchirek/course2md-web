@@ -23,6 +23,7 @@ export class Panel {
     this.scope = null;
     this.bodyEl = null;
     this.warnedOnce = new Set();
+    this.layout = null;
   }
 
   /** 挂到页面上。已挂则复用。 */
@@ -31,6 +32,14 @@ export class Panel {
     const host = document.createElement('div');
     host.id = 'c2md-panel-host';
     this.host = host;
+    if (this.layout?.docked) host.dataset.docked = 'true';
+    else if (this.layout) {
+      host.style.left = `${this.layout.left}px`;
+      host.style.top = `${this.layout.top}px`;
+      host.style.right = 'auto';
+      host.style.width = `${this.layout.width}px`;
+      host.style.height = `${this.layout.height}px`;
+    }
     // 立刻挂载，避免页面 SPA 路由把我们的节点清掉后找不到
     document.documentElement.appendChild(host);
 
@@ -44,10 +53,58 @@ export class Panel {
   }
 
   unmount() {
+    if (this.host?.isConnected) this.rememberLayout();
     this.host?.remove();
     this.host = null;
     this.scope = null;
     this.bodyEl = null;
+  }
+
+  rememberLayout() {
+    const rect = this.host.getBoundingClientRect();
+    this.layout = this.host.dataset.docked === 'true'
+      ? { ...this.layout, docked: true }
+      : { docked: false, left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  }
+
+  startDrag(event) {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    const host = this.host;
+    const rect = host.getBoundingClientRect();
+    const origin = { x: event.clientX, y: event.clientY };
+    const docked = host.dataset.docked === 'true';
+    let moved = false;
+    const move = (e) => {
+      if (!moved && Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 4) return;
+      if (!moved && docked) {
+        host.dataset.docked = 'false';
+        host.style.width = `${this.layout?.width || 420}px`;
+        host.style.height = `${this.layout?.height || Math.min(innerHeight * 0.76, 780)}px`;
+      }
+      moved = true;
+      const width = host.getBoundingClientRect().width;
+      const height = host.getBoundingClientRect().height;
+      const left = docked
+        ? e.clientX - Math.min(event.clientX - rect.left, width - 24)
+        : rect.left + e.clientX - origin.x;
+      host.style.left = `${Math.max(0, Math.min(innerWidth - width, left))}px`;
+      host.style.top = `${Math.max(0, Math.min(innerHeight - height, rect.top + e.clientY - origin.y))}px`;
+      host.style.right = 'auto';
+      host.style.bottom = 'auto';
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      if (!moved) return;
+      this.rememberLayout();
+      if (host.getBoundingClientRect().right >= innerWidth - 24) {
+        host.dataset.docked = 'true';
+        host.style.cssText = '';
+        this.layout.docked = true;
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end, { once: true });
   }
 
   get isMounted() {
@@ -69,8 +126,7 @@ export class Panel {
   setState(patch) {
     const progressOnly = this.state.status === 'running' && patch.status === 'running' &&
       Object.keys(patch).every((key) => key === 'status' || key === 'stageLabel');
-    const polishOnly = this.state.polish?.running && patch.polish?.running &&
-      Object.keys(patch).length === 1;
+    const polishOnly = this.state.polish?.running && patch.polish?.running && Object.keys(patch).length === 1;
     const needsRebuild =
       'status' in patch ||
       'sections' in patch ||
@@ -78,7 +134,9 @@ export class Panel {
       'stats' in patch ||
       'error' in patch ||
       'polish' in patch ||
+      'imagesPending' in patch ||
       'warnings' in patch;
+    const displayChanged = 'settings' in patch && patch.settings?.imageLevel !== this.state.settings?.imageLevel;
 
     Object.assign(this.state, patch);
 
@@ -88,17 +146,12 @@ export class Panel {
       label.textContent = this.state.stageLabel || '正在取文字';
       return;
     }
-    if (polishOnly) {
-      const caption = this.scope.querySelector('.c2md-panel-status .c2md-progress-label');
-      const bar = this.scope.querySelector('.c2md-panel-status .c2md-progress-bar');
-      if (caption && bar) {
-        const { done, total } = this.state.polish;
-        caption.textContent = `正在润色 ${done}/${total} 块`;
-        bar.style.width = total ? `${Math.round(done / total * 100)}%` : '';
-        return;
-      }
+    if (progressOnly) {
+      const ring = this.scope.querySelector('.c2md-panel-status .c2md-ring');
+      if (ring) { ring.title = this.state.stageLabel || '正在转写'; return; }
     }
-    if (needsRebuild) this.render();
+    if (polishOnly) return;
+    if (needsRebuild || displayChanged) this.render();
     // 勾选的显隐永远只是切属性，不重建
     this.applyDisplayMode();
   }
@@ -114,7 +167,14 @@ export class Panel {
     const polished = Boolean(settings.polish && this.state.polish?.hasResult);
     for (const el of this.scope.querySelectorAll('.c2md-say')) {
       const next = polished && el.dataset.polished ? el.dataset.polished : el.dataset.raw;
-      if (el.textContent !== next) el.textContent = next;
+      if (el.textContent !== next) {
+        el.textContent = next;
+        if (polished && el.dataset.polished) {
+          el.classList.remove('c2md-say--fresh');
+          void el.offsetWidth;
+          el.classList.add('c2md-say--fresh');
+        }
+      }
     }
     for (const section of this.scope.querySelectorAll('.c2md-section')) {
       let visible = false;
@@ -124,36 +184,27 @@ export class Panel {
       }
       section.style.display = visible ? '' : 'none';
     }
-    for (const ts of this.scope.querySelectorAll('.c2md-ts')) {
-      const sec = Number(ts.dataset.start);
-      if (!Number.isFinite(sec)) continue;
-      const clickable = Boolean(settings.clickToSeek && settings.showTimestamps);
-      // 可点击时是真按钮，不可点击时是纯文本——不要给不可用的东西按钮语义
-      if (clickable && ts.tagName !== 'BUTTON') {
-        this.replaceWithButton(ts, sec);
-      } else if (!clickable && ts.tagName === 'BUTTON') {
-        this.replaceWithSpan(ts, sec);
+  }
+
+  updateSegment(seg) {
+    const p = this.scope?.querySelector(`.c2md-para[data-id="${seg.id}"]`);
+    if (!p) return;
+    const say = p.querySelector('.c2md-say');
+    say.dataset.raw = seg.raw ?? seg.text;
+    if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
+    else delete say.dataset.polished;
+    p.dataset.state = seg.state ?? 'kept';
+    const polished = this.state.settings?.polish;
+    p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
+    const next = polished && say.dataset.polished ? say.dataset.polished : say.dataset.raw;
+    if (say.textContent !== next) {
+      say.textContent = next;
+      if (polished) {
+        say.classList.remove('c2md-say--fresh');
+        void say.offsetWidth;
+        say.classList.add('c2md-say--fresh');
       }
     }
-  }
-
-  replaceWithButton(el, sec) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'c2md-ts c2md-num';
-    button.dataset.start = String(sec);
-    button.textContent = el.textContent;
-    button.title = `跳转到 ${fmtTs(sec)}`;
-    button.addEventListener('click', () => this.handlers.onSeek?.(sec));
-    el.replaceWith(button);
-  }
-
-  replaceWithSpan(el, sec) {
-    const span = document.createElement('span');
-    span.className = 'c2md-ts c2md-num';
-    span.dataset.start = String(sec);
-    span.textContent = el.textContent;
-    el.replaceWith(span);
   }
 
   render() {
@@ -177,6 +228,7 @@ export class Panel {
   renderHead() {
     const { meta, stats, status } = this.state;
     const head = el('div', 'c2md-panel-head');
+    head.addEventListener('pointerdown', (event) => this.startDrag(event));
 
     const top = el('div', 'c2md-head-top');
     const title = el('div', 'c2md-title');
@@ -231,7 +283,6 @@ export class Panel {
         settings,
         onChange: (patch) => this.handlers.onSettings?.(patch),
         onSetup: () => this.handlers.onOptions?.('llm'),
-        polishHint: this.state.polish?.hasResult ? '取消勾选查看原版转录' : '',
       }),
     );
     return wrap;
@@ -257,19 +308,13 @@ export class Panel {
     }
 
     if (polish?.running) {
-      wrap.appendChild(
-        progress({
-          ratio: polish.total ? polish.done / polish.total : null,
-          label: `正在润色 ${polish.done}/${polish.total} 块`,
-        }),
-      );
+      const ring = el('span', 'c2md-ring');
+      ring.title = '正在润色';
+      wrap.appendChild(ring);
     } else if (status === 'running' && this.state.sections?.length) {
-      wrap.appendChild(progress({ label: this.state.stageLabel || '正在转写' }));
-    } else if (polish?.summary) {
-      // 一行结果说明就是一行文字。给它套个带边框的卡片，等于给状态加装饰。
-      const line = el('div', 'c2md-meta');
-      line.textContent = polish.summary;
-      wrap.appendChild(line);
+      const ring = el('span', 'c2md-ring');
+      ring.title = this.state.stageLabel || '正在转写';
+      wrap.appendChild(ring);
     }
 
     const pending = (warnings ?? []).filter(Boolean);
@@ -334,15 +379,19 @@ export class Panel {
         if (!shown && !raw) continue;
 
         const p = el('p', 'c2md-para');
+        p.dataset.id = String(seg.id);
         p.dataset.state = seg.state ?? 'kept';
         p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
         p.dataset.start = String(seg.start);
 
         const sec0 = Number(seg.start);
-        const stamp = document.createElement('span');
+        const stamp = document.createElement('button');
+        stamp.type = 'button';
         stamp.className = 'c2md-ts c2md-num';
         stamp.dataset.start = String(sec0);
         stamp.textContent = fmtTs(sec0);
+        stamp.title = `跳转到 ${fmtTs(sec0)}`;
+        stamp.addEventListener('click', () => this.handlers.onSeek?.(sec0));
         p.appendChild(stamp);
 
         const say = el('span', 'c2md-say');
@@ -363,11 +412,12 @@ export class Panel {
     const foot = el('div', 'c2md-panel-foot');
     const { status, settings, polish } = this.state;
     const ready = status === 'ready';
+    const exportReady = ready && (!this.state.imagesPending || settings?.imageLevel === 'none');
 
     const copy = button('复制 Markdown', () => this.handlers.onCopy?.(), 'primary');
-    copy.disabled = !ready;
-    const save = button('保存文字 .md', () => this.handlers.onDownload?.());
-    save.disabled = !ready;
+    copy.disabled = !exportReady;
+    const save = button(settings?.imageLevel === 'none' ? '保存文字 .md' : '下载图文 .md', () => this.handlers.onDownload?.());
+    save.disabled = !exportReady;
 
     foot.append(copy, save);
 

@@ -24,20 +24,20 @@ const REQUEST_TIMEOUT_MS = 120_000;
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<{ok:true, content:string, usage?:object}|{ok:false, error:string, retryable:boolean}>}
  */
-export async function chat({ baseUrl, apiKey, model, messages, signal }) {
+export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta }) {
   const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
   const body = {
     model,
     messages,
     temperature: TEMPERATURE,
-    stream: false,
+    stream: Boolean(onDelta),
   };
 
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   let lastError = '未知错误';
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= (onDelta ? 1 : MAX_ATTEMPTS); attempt++) {
     try {
       const res = await withTimeout(
         fetch(endpoint, {
@@ -58,12 +58,19 @@ export async function chat({ baseUrl, apiKey, model, messages, signal }) {
         continue;
       }
 
-      const json = await res.json();
-      const content = json?.choices?.[0]?.message?.content;
+      let content;
+      let usage;
+      if (onDelta) {
+        content = await readStream(res, onDelta);
+      } else {
+        const json = await res.json();
+        content = json?.choices?.[0]?.message?.content;
+        usage = json?.usage;
+      }
       if (typeof content !== 'string') {
         return { ok: false, error: '回复里没有 choices[0].message.content', retryable: false };
       }
-      return { ok: true, content, usage: json?.usage };
+      return { ok: true, content, usage };
     } catch (err) {
       if (err?.name === 'AbortError') return { ok: false, error: '已取消', retryable: false };
       lastError = describeFetchError(err, endpoint);
@@ -71,6 +78,37 @@ export async function chat({ baseUrl, apiKey, model, messages, signal }) {
     }
   }
   return { ok: false, error: lastError, retryable: true };
+}
+
+async function readStream(res, onDelta) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+  let content = '';
+  while (true) {
+    const { value, done } = await withTimeout(reader.read(), REQUEST_TIMEOUT_MS);
+    pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    pending = pending.replace(/\r\n/g, '\n');
+    let cut;
+    while ((cut = pending.indexOf('\n\n')) >= 0) {
+      const event = pending.slice(0, cut);
+      pending = pending.slice(cut + 2);
+      for (const line of event.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') continue;
+        const event = JSON.parse(data);
+        if (event.error) throw new Error(event.error.message ?? String(event.error));
+        const delta = event?.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta) {
+          content += delta;
+          onDelta(delta);
+        }
+      }
+    }
+    if (done) break;
+  }
+  return content;
 }
 
 /** 把 fetch 的失败翻译成用户能照着修的提示。 */

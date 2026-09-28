@@ -27,6 +27,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'llm.stream') return;
+  const abort = new AbortController();
+  port.onDisconnect.addListener(() => abort.abort());
+  const post = (message) => { try { port.postMessage(message); } catch { /* 页面已离开 */ } };
+  port.onMessage.addListener(async (payload) => {
+    try {
+      const reply = await chat({ ...payload, signal: abort.signal, onDelta: (delta) => post({ delta }) });
+      post({ done: true, ...reply });
+    } catch (error) {
+      post({ done: true, ok: false, error: describeError(error) });
+    }
+  });
+});
+
 const HANDLERS = {
   'settings.load': () => loadSettings(),
   'settings.save': (payload) => saveSettings(payload.patch ?? {}),
@@ -46,6 +61,8 @@ const HANDLERS = {
   'asr.test': (payload) => testAsr(payload),
   'asr.local.start': () => localAsr('start'),
   'asr.local.status': () => localAsr('status'),
+  'polish.local.start': () => localPolish('start'),
+  'polish.local.status': () => localPolish('status'),
   'asr.fast.start': async (payload) => {
     const probe = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
     if (!probe.ok) throw new Error('本机提取服务不可用');
@@ -75,13 +92,35 @@ const HANDLERS = {
     await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
     return { cancelled: true };
   },
-
-  'file.save': (payload) => saveFile(payload),
-  'frame.visible': async (_payload, _message, sender) => {
-    if (!sender.tab?.active) throw new Error('视频标签页已切到后台');
-    return chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'jpeg', quality: 75 });
+  'frame.start': async (payload) => {
+    let cookieFile = '';
+    try {
+      const url = new URL(payload.sourceUrl);
+      if (/^(?:www\.)?(?:youtube|bilibili)\.com$/.test(url.hostname)) {
+        cookieFile = cookieFileFor(url.href, await chrome.cookies.getAll({ url: url.href }));
+      }
+    } catch { /* 公开视频可直接尝试 */ }
+    const response = await fetch('http://127.0.0.1:8766/frames', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...payload, cookieFile }),
+    });
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error ?? '取帧失败');
+    return value;
+  },
+  'frame.status': async ({ id, after = 0 }) => {
+    const response = await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}?imageAfter=${Math.max(0, Number(after) || 0)}`);
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error ?? '取帧任务失败');
+    return value;
+  },
+  'frame.cancel': async ({ id }) => {
+    await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return { cancelled: true };
   },
 
+  'file.save': (payload) => saveFile(payload),
+  'file.saveBundle': (payload) => saveBundle(payload),
   /** 打开设置页（弹窗里的链接用，避免弹窗内嵌 options）。 */
   'ui.openOptions': async (payload) => {
     if (payload.section) {
@@ -109,6 +148,19 @@ async function localAsr(action) {
   return response.json();
 }
 
+async function localPolish(action) {
+  let response;
+  try {
+    response = await fetch(`http://127.0.0.1:8766/polish/${action}`, {
+      method: action === 'start' ? 'POST' : 'GET', signal: AbortSignal.timeout(1500),
+    });
+  } catch {
+    throw new Error('本机助手未运行。先在项目目录运行 npm run local:install。');
+  }
+  if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
+  return response.json();
+}
+
 /**
  * 保存文本文件。
  *
@@ -127,6 +179,28 @@ async function saveFile({ filename, text, mime = 'text/markdown' }) {
     conflictAction: 'uniquify',
   });
   return { downloadId: id, filename: safeName };
+}
+
+export async function saveBundle({ folder, markdown, images }) {
+  if (!Array.isArray(images) || !images.length || images.length > 5000) throw new Error('截图数量不正确');
+  const name = `${sanitizeFilename(folder || 'course').replace(/\.md$/i, '')}-${Date.now().toString(36)}`;
+  for (const [index, url] of images.entries()) {
+    if (typeof url !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(url)) {
+      throw new Error(`第 ${index + 1} 张截图格式错误`);
+    }
+    await chrome.downloads.download({
+      url,
+      filename: `${name}/frames/slide_${String(index + 1).padStart(4, '0')}.jpg`,
+      saveAs: false,
+      conflictAction: 'uniquify',
+    });
+  }
+  const bytes = new TextEncoder().encode(String(markdown ?? ''));
+  await chrome.downloads.download({
+    url: `data:text/markdown;charset=utf-8;base64,${bytesToBase64(bytes)}`,
+    filename: `${name}/course.md`, saveAs: false, conflictAction: 'uniquify',
+  });
+  return { saved: true, folder: name, images: images.length };
 }
 
 export function sanitizeFilename(name) {

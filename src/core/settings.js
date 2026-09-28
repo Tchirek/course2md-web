@@ -8,13 +8,14 @@ export const DEFAULT_SETTINGS = {
   /** 文字来源：'subtitle' 平台字幕 | 'asr' 本地模型转录 */
   source: 'subtitle',
 
-  // —— 用户勾选的三项 ——
+  // —— 显示与处理 ——
   /** 显示每句被讲述的时刻 */
   showTimestamps: true,
-  /** 时刻可点击，跳转到视频对应位置（依赖 showTimestamps） */
-  clickToSeek: true,
+  /** 图片密度：none | few | default | many */
+  imageLevel: 'default',
   /** 润色文本（需用户自行接入 LLM） */
   polish: false,
+  polishLevel: 'standard',
 
   /** 打开页面时自动抓取并生成（默认关闭，避免误发请求） */
   autoRun: false,
@@ -63,6 +64,7 @@ export const DEFAULT_SETTINGS = {
 /** 深合并默认值，保证读到的设置永远字段齐全。 */
 export function withDefaults(stored) {
   const settings = deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {});
+  delete settings.clickToSeek; // 旧版开关由 showTimestamps 取代
   if (settings.asr.endpoint === 'http://127.0.0.1:8080/v1/audio/transcriptions' && settings.asr.model === 'small') {
     settings.asr.endpoint = DEFAULT_SETTINGS.asr.endpoint;
   }
@@ -100,11 +102,8 @@ export function normalizeSettings(raw) {
 
   s.source = s.source === 'asr' ? 'asr' : 'subtitle';
   s.theme = ['light', 'dark', 'auto'].includes(s.theme) ? s.theme : 'auto';
-  if (s.clickToSeek && !s.showTimestamps) {
-    // 不显示时刻就无处可点，静默纠正而不是报错
-    s.clickToSeek = false;
-    notes.push('未显示时刻时无法点击跳转，已关闭该选项。');
-  }
+  s.imageLevel = ['none', 'few', 'default', 'many'].includes(s.imageLevel) ? s.imageLevel : 'default';
+  s.polishLevel = ['light', 'standard', 'deep'].includes(s.polishLevel) ? s.polishLevel : 'standard';
 
   s.llm.baseUrl = String(s.llm.baseUrl ?? '').trim().replace(/\/+$/, '');
   s.llm.apiKey = String(s.llm.apiKey ?? '').trim();
@@ -120,12 +119,6 @@ export function normalizeSettings(raw) {
 
   if (s.source === 'asr' && !isHttpUrl(s.asr.endpoint)) {
     notes.push('本地模型转录需要填写本机 ASR 服务的地址，否则转录会失败。');
-  }
-  if (s.polish && !isHttpUrl(s.llm.baseUrl)) {
-    notes.push('已勾选润色，但还没填写 LLM 地址，润色将被跳过。');
-  }
-  if (s.polish && !s.llm.model) {
-    notes.push('已勾选润色，但还没填写模型名。');
   }
 
   return { settings: s, notes };

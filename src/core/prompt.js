@@ -16,6 +16,14 @@ export const DEFAULT_INSTRUCTION = `你是视频逐字稿校对器。输入的�
 保持原语言。若某条内容仅由语气词、口头禅或无实义片段构成（如单独的"啊"、"对吧"），
 该条的 text 返回空字符串 ""（插件会删除该条）；有实质内容的条目不得删除。`;
 
+export const LIGHT_INSTRUCTION = `只修正标点、断句、空格、明显重复和繁简及格式错误。尽量保留原词原句；不重写句子，不删减观点，不新增事实。每条都保留实质内容。`;
+export const DEEP_INSTRUCTION = `${DEFAULT_INSTRUCTION}\n在每条文本内部主动拆分长句、合并重复表述、调整语序并补充必要衔接，必要时用换行按主题分段，使口语更接近文章。保留每条的讲述时刻与全部观点；不得擅自总结、删减观点或新增事实。`;
+
+export function instructionFor(level, custom = '') {
+  if (custom?.trim()) return custom;
+  return level === 'light' ? LIGHT_INSTRUCTION : level === 'deep' ? DEEP_INSTRUCTION : DEFAULT_INSTRUCTION;
+}
+
 /**
  * 输出契约。拼在用户指令之后，且明确「不可被前面的指令覆盖」。
  * @param {number[]} ids

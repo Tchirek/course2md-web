@@ -17,7 +17,7 @@ if (params.get('theme')) document.documentElement.dataset.theme = params.get('th
 
 const settings = withDefaults({
   showTimestamps: params.get('ts') !== 'off',
-  clickToSeek: params.get('seek') !== 'off',
+  imageLevel: 'default',
   polish: scenario === 'polished',
   theme: params.get('theme') ?? 'auto',
   // 已润色却不接 LLM 是自相矛盾的状态，截图里会同时出现「已润色」和「去设置」。
@@ -105,7 +105,7 @@ if (scenario === 'running') {
     status: 'ready',
     polish:
       scenario === 'polished'
-        ? { hasResult: true, running: false, done: 11, total: 11, summary: '润色 11 块 · 删除语气词 2 处。' }
+        ? { hasResult: true, running: false, done: 11, total: 11 }
         : null,
   });
 }

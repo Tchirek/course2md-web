@@ -1,6 +1,7 @@
-// 面板按可读的画面段落展示；原始章节留给 Markdown 导出。
-export function visualSections(sections, duration) {
-  const step = Math.max(90, Math.ceil((Number(duration) || 0) / 24 / 30) * 30);
+// 图片只取有讲述的时间窗；最多每 10 秒一张，与原版的最短保存间隔一致。
+export function visualSections(sections, _duration, level = 'default') {
+  if (level === 'none') return sections.map((section) => ({ ...section, image: '' }));
+  const step = { few: 180, default: 60, many: 10 }[level] ?? 60;
   const out = [];
   for (const section of sections) {
     let group = null;
@@ -20,84 +21,77 @@ export function visualSections(sections, duration) {
   return out;
 }
 
-export async function captureSectionImages(video, sections, host, signal) {
-  if (!video || !sections.length || !Number.isFinite(video.duration)) return;
-  const original = { time: video.currentTime, paused: video.paused };
-  const targets = sections.length > 12
-    ? Array.from({ length: 12 }, (_, i) => sections[Math.floor(i * sections.length / 12)])
-    : sections;
+export async function captureSectionImages(sourceUrl, sections, signal, onImage) {
+  const times = sections.filter((section) => !section.captured).map((section) => section.t);
+  if (!times.length) return 0;
+  const started = await chrome.runtime.sendMessage({ type: 'frame.start', payload: { sourceUrl, times } });
+  if (!started?.ok || !started.value?.id) throw new Error(started?.error ?? '本机取帧服务不可用');
+  const id = started.value.id;
+  let seen = 0;
+  let kept = 0;
+  let previous = null;
+  const known = sections.filter((section) => section.image).sort((a, b) => a.t - b.t);
+  let knownIndex = 0;
   try {
-    video.pause();
-    for (const section of targets) {
-      if (signal?.aborted) break;
-      const time = Math.min(video.duration - 0.2, Math.max(0, section.t + 0.5));
-      if (!(time >= 0)) continue;
-      try {
-        await seekFrame(video, time);
-        section.image = await frameImage(video, host);
-      } catch {
-        // 受 DRM、跨域或标签页切换限制的画面没有图；文字仍可用。
+    while (!signal?.aborted) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const reply = await chrome.runtime.sendMessage({ type: 'frame.status', payload: { id, after: seen } });
+      if (!reply?.ok) throw new Error(reply?.error ?? '本机取帧失败');
+      const job = reply.value;
+      for (const frame of job.images ?? []) {
+        while (knownIndex < known.length && known[knownIndex].t < frame.time) {
+          previous = await thumbnail(known[knownIndex++].image);
+        }
+        const section = sections.find((item) => item.t === frame.time);
+        if (section) {
+          const current = await thumbnail(frame.data);
+          section.image = previous && similarity(previous, current) >= 0.85 ? '' : frame.data;
+          if (section.image) { previous = current; kept++; }
+          onImage?.(section);
+        }
       }
+      seen += job.images?.length ?? 0;
+      if (job.state === 'done') return kept;
+      if (job.state === 'error') throw new Error(job.error);
     }
+    return kept;
   } finally {
-    try { video.currentTime = original.time; } catch {}
-    if (!original.paused) video.play().catch(() => {});
+    if (signal?.aborted) chrome.runtime.sendMessage({ type: 'frame.cancel', payload: { id } }).catch(() => {});
   }
 }
 
-function seekFrame(video, time) {
-  return new Promise((resolve, reject) => {
-    if (Math.abs(video.currentTime - time) < 0.05 && video.readyState >= 2) return resolve();
-    const timer = setTimeout(() => done(false), 2500);
-    const done = (ok) => {
-      clearTimeout(timer);
-      video.removeEventListener('seeked', onSeeked);
-      ok ? resolve() : reject(new Error('画面定位超时'));
-    };
-    const onSeeked = () => done(true);
-    video.addEventListener('seeked', onSeeked, { once: true });
-    try { video.currentTime = time; } catch { done(false); }
-  });
-}
-
-async function frameImage(video, host) {
-  const width = 480;
-  const height = Math.max(1, Math.round(width * video.videoHeight / video.videoWidth));
-  if (!video.videoWidth || !video.videoHeight) throw new Error('无画面');
+async function thumbnail(url) {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
-  try {
-    context.drawImage(video, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', 0.72);
-  } catch {
-    // 跨域视频会污染 canvas。扩展已有 activeTab 权限，可截当前可见标签页。
-    await new Promise((resolve) => setTimeout(resolve, 550));
-    const wasHidden = host?.style.visibility;
-    if (host) host.style.visibility = 'hidden';
-    let reply;
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      reply = await chrome.runtime.sendMessage({ type: 'frame.visible' });
-    } finally {
-      if (host) host.style.visibility = wasHidden ?? '';
+  canvas.width = 64;
+  canvas.height = 40;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0, 64, 40);
+  const rgba = ctx.getImageData(0, 0, 64, 40).data;
+  const gray = new Float32Array(64 * 40);
+  for (let i = 0; i < gray.length; i++) gray[i] = rgba[i * 4] * 0.299 + rgba[i * 4 + 1] * 0.587 + rgba[i * 4 + 2] * 0.114;
+  return gray;
+}
+export function similarity(a, b) {
+  if (a.length !== b.length || a.length !== 64 * 40) return 0;
+  let total = 0;
+  for (let y = 0; y < 40; y += 8) for (let x = 0; x < 64; x += 8) {
+    let ma = 0, mb = 0, va = 0, vb = 0, cov = 0;
+    for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) {
+      const n = (y + j) * 64 + x + i;
+      ma += a[n]; mb += b[n];
     }
-    if (!reply?.ok || !reply.value) throw new Error('无法截取标签页');
-    const image = new Image();
-    image.src = reply.value;
-    await image.decode();
-    const rect = video.getBoundingClientRect();
-    const scale = image.naturalWidth / innerWidth;
-    const left = Math.max(0, rect.left);
-    const top = Math.max(0, rect.top);
-    const sx = left * scale;
-    const sy = top * scale;
-    const sw = (Math.min(innerWidth, rect.right) - left) * scale;
-    const sh = (Math.min(innerHeight, rect.bottom) - top) * scale;
-    if (sw <= 0 || sh <= 0) throw new Error('画面不在视口内');
-    canvas.width = width;
-    context.drawImage(image, sx, sy, sw, sh, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', 0.72);
+    ma /= 64; mb /= 64;
+    for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) {
+      const n = (y + j) * 64 + x + i;
+      const da = a[n] - ma, db = b[n] - mb;
+      va += da * da; vb += db * db; cov += da * db;
+    }
+    const c1 = 6.5025, c2 = 58.5225;
+    total += ((2 * ma * mb + c1) * (2 * cov / 64 + c2)) /
+      ((ma * ma + mb * mb + c1) * ((va + vb) / 64 + c2));
   }
+  return total / 40;
 }

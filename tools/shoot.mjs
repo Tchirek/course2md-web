@@ -134,11 +134,6 @@ await shoot('panel-no-timestamps', '/tools/selftest-panel.html?state=ready&ts=of
   height: 760,
   wait: 'window.__selftestReady === true',
 });
-await shoot('panel-no-click', '/tools/selftest-panel.html?state=ready&seek=off', {
-  width: 1280,
-  height: 760,
-  wait: 'window.__selftestReady === true',
-});
 await shoot('panel-polished-dark', '/tools/selftest-panel.html?state=polished&theme=dark', {
   width: 1280,
   height: 760,

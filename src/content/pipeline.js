@@ -7,7 +7,7 @@
 
 import { coalesce, partitionByBoundaries } from '../core/paragraphs.js';
 import { planChunks, mapPool } from '../core/chunk.js';
-import { buildMessages, parsePolishResponse, applyPolish, resetPolish } from '../core/prompt.js';
+import { buildMessages, parsePolishResponse, applyPolish, resetPolish, instructionFor } from '../core/prompt.js';
 import { buildDoc } from '../core/format.js';
 import { fmtTs } from '../core/time.js';
 import { normalizeChapters } from '../core/subtitles.js';
@@ -25,11 +25,21 @@ import { decodeMediaAudio, FastAudioUnavailable } from './fast-audio.js';
  */
 
 /** 通过后台发一次 LLM 对话请求。 */
-async function llmChat(payload) {
-  const reply = await chrome.runtime.sendMessage({ type: 'llm.chat', payload });
-  if (!reply) throw new Error('后台没有响应（扩展可能刚被重新加载，刷新页面即可）');
-  if (!reply.ok) throw new Error(reply.error ?? '请求失败');
-  return reply.value;
+async function llmChat(payload, onDelta, signal) {
+  return new Promise((resolve, reject) => {
+    const port = chrome.runtime.connect({ name: 'llm.stream' });
+    const abort = () => { port.disconnect(); reject(new AbortError()); };
+    signal?.addEventListener('abort', abort, { once: true });
+    port.onDisconnect.addListener(() => reject(new Error('润色连接中断')));
+    port.onMessage.addListener((message) => {
+      if (message.delta) onDelta(message.delta);
+      if (!message.done) return;
+      signal?.removeEventListener('abort', abort);
+      port.disconnect();
+      message.ok ? resolve(message) : reject(new Error(message.error ?? '润色失败'));
+    });
+    port.postMessage(payload);
+  });
 }
 
 /**
@@ -70,6 +80,7 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
   }
   if (signal?.aborted) throw new AbortError();
 
+  await simplifyBilibili(events, adapter.id);
   const built = organize(events, meta, {});
   return {
     ...built,
@@ -144,6 +155,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         if (!reply?.ok) throw new Error(reply?.error ?? '本机任务查询失败');
         job = reply.value;
         if (job.events?.length) {
+          await simplifyBilibili(job.events, adapter.id);
           events.push(...job.events);
           seen += job.events.length;
           onPartial?.(events);
@@ -152,6 +164,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
       } while (job.state === 'running');
       if (job.state === 'error') throw new Error(job.error);
       if (events.length) {
+        await simplifyBilibili(events, adapter.id);
         const built = organize(events, meta, {});
         return {
           ...built,
@@ -199,7 +212,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
           mimeType: chunk.blob.type,
           fileName: `chunk-${String(index).padStart(4, '0')}.${chunk.extension}`,
         },
-      }).then((reply) => {
+      }).then(async (reply) => {
         if (!reply?.ok || !reply.value?.ok) {
           const detail = reply?.error ?? reply?.value?.error ?? '未知错误';
           throw new Error(`第 ${index} 片转写失败：${detail}`);
@@ -212,6 +225,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         } else if (value.text) {
           events.push({ start: chunk.start, end: chunk.end, text: value.text });
         }
+        await simplifyBilibili(events, adapter.id);
         onPartial?.(events);
       }).catch((error) => { failure ??= error; }).finally(() => pending.delete(task));
       pending.add(task);
@@ -242,6 +256,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
     throw new MissingSourceError('转录没有产出任何文字。确认视频有声音，且本机 ASR 服务工作正常。');
   }
 
+  await simplifyBilibili(events, adapter.id);
   const built = organize(events, meta, {});
   return {
     ...built,
@@ -263,6 +278,14 @@ function bytesToBase64(bytes) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   }
   return btoa(binary);
+}
+
+let biliConverter;
+async function simplifyBilibili(events, site) {
+  if (site !== 'bilibili') return;
+  biliConverter ??= import('../vendor/opencc-t2cn.js').then(({ Converter }) => Converter({ from: 't', to: 'cn' }));
+  const convert = await biliConverter;
+  for (const event of events) event.text = convert(event.text);
 }
 
 /**
@@ -294,12 +317,22 @@ export function organize(events, meta, opts = {}) {
   const sectionIndexOf = [];
   sections.forEach((section, i) => {
     for (const seg of section.segments) {
+      seg.text = punctuate(seg.text);
+      if (seg.raw) seg.raw = punctuate(seg.raw);
       segments.push(seg);
+      seg.id = segments.length - 1;
       sectionIndexOf.push(i);
     }
   });
 
   return { sections, segments, sectionIndexOf, chapters };
+}
+
+function punctuate(text) {
+  const value = String(text ?? '').trim();
+  if (!value || /[。！？.!?；;][”’"')）】]*$/u.test(value)) return value;
+  const mark = /[A-Za-z0-9]$/u.test(value) ? '.' : '。';
+  return value.replace(/[，,、：:]$/u, '') + mark;
 }
 
 /**
@@ -314,8 +347,9 @@ export function organize(events, meta, opts = {}) {
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<{chunks:number, polished:number, failed:number, removed:number, errors:string[]}>}
  */
-export async function polishSegments({ segments, sectionIndexOf, meta, settings, onProgress, signal }) {
+export async function polishSegments({ segments, sectionIndexOf, meta, settings, onProgress, onSegment, onReset, signal }) {
   resetPolish(segments);
+  onReset?.();
 
   const llm = settings.llm;
   const chunks = planChunks(segments, {
@@ -339,19 +373,57 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
         segments,
         chunk,
         meta,
-        instruction: llm.instruction,
+        instruction: instructionFor(settings.polishLevel, llm.instruction),
         glossary: llm.glossary,
         langHint: meta.language,
       });
-      const reply = await llmChat({
+      let streamed = '';
+      let consumed = 0;
+      const seen = new Set();
+      let reply;
+      try { reply = await llmChat({
         baseUrl: llm.baseUrl,
         apiKey: llm.apiKey,
         model: llm.model,
         messages,
-      });
+      }, (delta) => {
+        streamed += delta;
+        let lastEnd = 0;
+        for (const match of streamed.slice(consumed).matchAll(/\{"id":\s*(\d+),\s*"text":\s*"(?:\\.|[^"\\])*"\}/g)) {
+          lastEnd = match.index + match[0].length;
+          let item;
+          try { item = JSON.parse(match[0]); } catch { continue; }
+          if (seen.has(item.id) || !chunk.ids.includes(item.id)) continue;
+          seen.add(item.id);
+          if (item.text.trim()) {
+            const seg = segments[item.id];
+            seg.raw ??= seg.text;
+            seg.text = item.text.trim();
+            seg.state = 'polished';
+            onSegment?.(item.id);
+          }
+        }
+        consumed += lastEnd;
+      }, signal); } catch (error) {
+        for (const id of seen) {
+          const seg = segments[id];
+          if (seg.raw) seg.text = seg.raw;
+          delete seg.raw;
+          seg.state = 'kept';
+          onSegment?.(id);
+        }
+        throw error;
+      }
       const parsed = parsePolishResponse(reply.content);
       const outcome = applyPolish(segments, chunk.ids, parsed);
       if (!outcome.applied) {
+        for (const id of seen) {
+          const seg = segments[id];
+          if (seg.raw) seg.text = seg.raw;
+          delete seg.raw;
+          seg.state = 'kept';
+          onSegment?.(id);
+        }
         throw new Error(
           parsed
             ? '模型返回的条目与请求对不上，这一块保留原文'
@@ -381,7 +453,7 @@ export function finalize(built, meta, settings) {
   const source = built?.stats?.source ?? settings?.source ?? 'subtitle';
   const doc = buildDoc({ ...meta, source }, built?.sections ?? []);
   doc.meta.showTimestamps = settings.showTimestamps;
-  doc.meta.clickToSeek = settings.clickToSeek;
+  doc.meta.imageLevel = settings.imageLevel;
   doc.meta.polished = Boolean(settings.polish);
   return doc;
 }

@@ -1,4 +1,4 @@
-//! 弹窗：三处勾选 + 文字来源 + 生成。
+//! 弹窗：显示选项 + 文字来源 + 生成。
 //!
 //! 弹窗只做两件事——把设置写下去、把「开始」发出去。真正的进度与正文都在
 //! 页面内面板里，所以关掉弹窗不会打断任何工作。
@@ -85,6 +85,7 @@ function renderToggles() {
   el.toggles.replaceChildren(
     displayToggleRows({
       settings,
+      showPolishLevel: true,
       onChange: (patchObject) => patch(patchObject),
       onSetup: () => chrome.runtime.openOptionsPage(),
     }),
@@ -108,15 +109,11 @@ function renderStatus() {
   el.secondary.textContent = '在页面打开';
 
   const lines = [];
-  if (state.meta?.title && state.meta.title !== el.title.textContent) {
-    lines.push(state.meta.title);
-  }
   if (running && state.stageLabel) lines.push(state.stageLabel);
   if (hasContent && state.stats) {
     const bits = [state.siteLabel];
     bits.push(state.stats.trackLabel || '');
     bits.push(`${state.segmented} 段`);
-    if (state.polish?.summary) bits.push(state.polish.summary);
     lines.push(bits.filter(Boolean).join(' · '));
   }
   if (state.error) lines.push(state.error.title ?? '出错了');

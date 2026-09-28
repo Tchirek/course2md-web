@@ -10,9 +10,6 @@
     <div class="page">
       <header class="page-head">
         <h1>course2md 设置</h1>
-        <p class="c2md-meta">
-          模型由你选择；密钥只保存在本机浏览器。
-        </p>
       </header>
 
       <!-- 文字来源与显示：与弹窗里那几处勾选是同一份设置 -->
@@ -103,9 +100,7 @@
 
       <section class="block" id="block-llm">
         <h2>润色</h2>
-        <p class="c2md-meta">
-          填写 OpenAI 兼容端点；润色失败时保留原文。
-        </p>
+        <div class="block-actions"><button type="button" class="c2md-button" id="llm-local-start">启用本机润色</button><span class="c2md-meta" id="llm-local-result"></span></div>
 
         <div class="rows">
           <div class="row">

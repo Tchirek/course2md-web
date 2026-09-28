@@ -8,7 +8,6 @@ import { icon, checkGlyph } from './icons.js';
 /**
  * 用户要的那几个勾选，集中声明一次。
  *
- * `dependsOn` 表示硬依赖：不显示时刻就没有地方可点，该项必须禁用。
  * `needsSetup` 指向设置页的哪一段——没配好时把下一步直接告诉用户，
  * 而不是让他自己找。
  */
@@ -18,17 +17,11 @@ export const DISPLAY_TOGGLES = [
     label: '显示讲述时刻',
   },
   {
-    key: 'clickToSeek',
-    label: '时刻可点击跳转',
-    dependsOn: 'showTimestamps',
-  },
-  {
     key: 'polish',
     label: '润色文本',
-    // 未配置时换成一句能直接照做的事——面板只有 384px 宽，
+    // 未配置时换成一句能直接照做的事——面板比较窄，
     // 长句会折行并和「去设置」挤在一起
-    unconfiguredHint: '还没接入 LLM',
-    needsSetup: 'llm',
+    unconfiguredHint: '将启用本机润色',
   },
 ];
 
@@ -218,7 +211,7 @@ export function applyTheme(settings, root = document.body) {
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
  * @returns {DocumentFragment}
  */
-export function displayToggleRows({ settings, onChange, onSetup, polishHint = '' }) {
+export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false }) {
   const frag = document.createDocumentFragment();
 
   for (const toggle of DISPLAY_TOGGLES) {
@@ -231,7 +224,7 @@ export function displayToggleRows({ settings, onChange, onSetup, polishHint = ''
           ? `需要先勾选「${labelOf(toggle.dependsOn)}」`
           : needsSetup && toggle.unconfiguredHint
             ? toggle.unconfiguredHint
-            : toggle.key === 'polish' ? polishHint : '',
+            : '',
         checked: Boolean(settings[toggle.key]),
         disabled,
         needsSetup,
@@ -239,7 +232,38 @@ export function displayToggleRows({ settings, onChange, onSetup, polishHint = ''
         onChange: (checked) => onChange?.({ [toggle.key]: checked }),
       }),
     );
+    if (toggle.key === 'showTimestamps') {
+      const row = document.createElement('div');
+      row.className = 'c2md-image-choice';
+      const label = document.createElement('span');
+      label.textContent = '显示图片';
+      row.append(label, segmented({
+        options: [
+          { value: 'none', label: '无' }, { value: 'few', label: '少' },
+          { value: 'default', label: '默认' }, { value: 'many', label: '多' },
+        ],
+        value: settings.imageLevel,
+        onChange: (imageLevel) => onChange?.({ imageLevel }),
+      }));
+      frag.appendChild(row);
+    }
+    if (toggle.key === 'polish' && showPolishLevel) {
+      const row = document.createElement('div');
+      row.className = 'c2md-image-choice';
+      const label = document.createElement('span');
+      label.textContent = '润色强度';
+      row.append(label, segmented({
+        options: [{ value: 'light', label: '轻度' }, { value: 'standard', label: '标准' }, { value: 'deep', label: '深度' }],
+        value: settings.polishLevel,
+        onChange: (polishLevel) => onChange?.({ polishLevel }),
+      }));
+      frag.appendChild(row);
+    }
   }
+  if (showPolishLevel) frag.appendChild(checkboxRow({
+    label: '切换视频自动生成', checked: settings.autoRun,
+    onChange: (autoRun) => onChange?.({ autoRun }),
+  }));
   return frag;
 }
 

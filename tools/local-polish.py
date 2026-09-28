@@ -1,0 +1,217 @@
+"""Local punctuation first, Qwen3.5-2B for hard sentences, OpenAI-style stream."""
+import json
+import os
+import re
+import sys
+import tarfile
+import threading
+import time
+import urllib.request
+import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from subprocess import Popen
+from huggingface_hub import hf_hub_download
+
+ROOT = Path(os.environ['C2MD_POLISH_HOME'])
+ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def state(name, message):
+    print(json.dumps({'state': name, 'message': message}), flush=True)
+
+
+def prepare_punc():
+    package = ROOT / 'fireredasr2s' / 'fireredpunc'
+    if not (package / 'punc.py').exists():
+        state('downloading', '正在取得 FireRedPunc 程序')
+        archive = ROOT / 'firered.tar.gz'
+        urllib.request.urlretrieve('https://github.com/FireRedTeam/FireRedASR2S/archive/refs/heads/main.tar.gz', archive)
+        with tarfile.open(archive) as source:
+            for member in source:
+                marker = '/fireredasr2s/fireredpunc/'
+                if marker not in member.name or not member.isfile():
+                    continue
+                relative = member.name.split(marker, 1)[1]
+                target = package / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.extractfile(member).read())
+        archive.unlink()
+        (ROOT / 'fireredasr2s' / '__init__.py').write_text('')
+    sys.path.insert(0, str(ROOT))
+    from huggingface_hub import snapshot_download
+    from fireredasr2s.fireredpunc.punc import FireRedPunc, FireRedPuncConfig
+    model_dir = ROOT / 'FireRedPunc'
+    if not (model_dir / 'model.pth.tar').exists():
+        state('downloading', '正在下载 FireRedPunc 模型')
+        snapshot_download('FireRedTeam/FireRedPunc', local_dir=str(model_dir))
+    state('loading', '正在加载 FireRedPunc')
+    return FireRedPunc.from_pretrained(str(model_dir), FireRedPuncConfig(use_gpu=False))
+
+
+def start_qwen():
+    state('downloading', '正在下载 Qwen3.5-2B')
+    model = hf_hub_download('SoAIHQ/Qwen3.5-2B-GGUF', 'Qwen3.5-2B-Q4_K_M.gguf', local_dir=str(ROOT / 'qwen'))
+    binary = next((ROOT / 'llama').rglob('llama-server.exe'), None)
+    if binary is None:
+        state('downloading', '正在准备 Qwen3.5-2B 运行库')
+        request = urllib.request.Request('https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10',
+                                         headers={'User-Agent': 'course2md'})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            releases = json.load(response)
+        assets = []
+        for release in releases:
+            assets = [asset for asset in release['assets'] if asset['name'].endswith('win-cuda-12.4-x64.zip')]
+            if len(assets) == 2:
+                break
+        if len(assets) != 2:
+            raise RuntimeError('未找到 Windows CUDA 12.4 运行库')
+        target = ROOT / 'llama'
+        target.mkdir(exist_ok=True)
+        for asset in assets:
+            archive = ROOT / asset['name']
+            urllib.request.urlretrieve(asset['browser_download_url'], archive)
+            with zipfile.ZipFile(archive) as source:
+                for member in source.infolist():
+                    if member.filename.startswith('/') or '..' in Path(member.filename).parts:
+                        raise RuntimeError('运行库压缩包路径异常')
+                source.extractall(target)
+            archive.unlink()
+        binary = next(target.rglob('llama-server.exe'), None)
+        if binary is None:
+            raise RuntimeError('运行库缺少 llama-server.exe')
+    state('loading', '正在加载 Qwen3.5-2B')
+    process = Popen([str(binary), '-m', str(model), '--alias', 'Qwen/Qwen3.5-2B',
+                     '--host', '127.0.0.1', '--port', '8083', '-ngl', '99', '-c', '4096', '--parallel', '1'])
+    for _ in range(120):
+        if process.poll() is not None:
+            raise RuntimeError('Qwen3.5-2B 服务启动失败')
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:8083/health', timeout=1) as response:
+                if response.status == 200:
+                    return process
+        except Exception:
+            time.sleep(1)
+    raise RuntimeError('Qwen3.5-2B 加载超时')
+
+
+def qwen_polish(original, punctuated, instruction):
+    body = json.dumps({
+        'model': 'Qwen/Qwen3.5-2B', 'temperature': 0,
+        'chat_template_kwargs': {'enable_thinking': False},
+        'messages': [
+            {'role': 'system', 'content': instruction + '\n只输出一段校对后的文字；不得增删观点或事实。'},
+            {'role': 'user', 'content': f'原文：{original}\n标点参考：{punctuated}'},
+        ], 'max_tokens': 512,
+    }, ensure_ascii=False).encode()
+    request = urllib.request.Request('http://127.0.0.1:8083/v1/chat/completions', body,
+                                     {'content-type': 'application/json'})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        choice = json.load(response)['choices'][0]
+        return choice['message']['content'].strip() if choice['finish_reason'] != 'length' else ''
+
+
+def payload_from(messages):
+    user = next((message['content'] for message in reversed(messages) if message['role'] == 'user'), '')
+    start = user.rfind('{"segments":')
+    if start < 0:
+        raise ValueError('未收到逐段文本')
+    return json.JSONDecoder().raw_decode(user[start:])[0]['segments']
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = json.dumps({'ok': True, 'model': 'FireRedPunc + Qwen3.5-2B'}).encode()
+        self.send_response(200 if self.path == '/health' else 404)
+        self.send_header('content-type', 'application/json')
+        self.send_header('content-length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        if self.path != '/v1/chat/completions':
+            self.send_error(404)
+            return
+        if self.headers.get('Origin', '').startswith('http'):
+            self.send_error(403)
+            return
+        length = int(self.headers.get('Content-Length', '0'))
+        if length <= 0 or length > 1024 * 1024:
+            self.send_error(413)
+            return
+        streaming = False
+        try:
+            request = json.loads(self.rfile.read(length))
+            items = payload_from(request['messages'])
+            if not items:
+                raise ValueError('文本为空')
+            instruction = request['messages'][0]['content']
+            light = '只修正标点' in instruction
+            deep = '主动拆分长句' in instruction
+            with PUNC_LOCK:
+                punctuated = PUNC.process([item['text'] for item in items])
+            output = []
+            if request.get('stream'):
+                self.send_response(200)
+                self.send_header('content-type', 'text/event-stream; charset=utf-8')
+                self.end_headers()
+                streaming = True
+            for item, punc in zip(items, punctuated):
+                original = item['text']
+                text = punc['punc_text']
+                if not light and (deep or len(original) > 80 or re.search(r'(.)\1{3,}', original)):
+                    try:
+                        candidate = qwen_polish(original, text, instruction)
+                    except Exception:
+                        candidate = ''
+                    if candidate and len(candidate) >= len(original) / 2:
+                        text = candidate
+                output.append({'id': item['id'], 'text': text})
+                if request.get('stream'):
+                    prefix = '{"segments":[' if len(output) == 1 else ','
+                    delta = prefix + json.dumps(output[-1], ensure_ascii=False, separators=(',', ':'))
+                    event = {'choices': [{'delta': {'content': delta}}]}
+                    self.wfile.write(f'data: {json.dumps(event, ensure_ascii=False)}\n\n'.encode())
+                    self.wfile.flush()
+            content = '{"segments":[' + ','.join(json.dumps(item, ensure_ascii=False, separators=(',', ':')) for item in output) + ']}'
+            if request.get('stream'):
+                event = {'choices': [{'delta': {'content': ']}'}}]}
+                self.wfile.write(f'data: {json.dumps(event, ensure_ascii=False)}\n\n'.encode())
+                self.wfile.write(b'data: [DONE]\n\n')
+            else:
+                data = json.dumps({'choices': [{'message': {'content': content}}]}, ensure_ascii=False).encode()
+                self.send_response(200)
+                self.send_header('content-type', 'application/json')
+                self.send_header('content-length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+        except Exception as error:
+            if not self.wfile.closed:
+                try:
+                    data = json.dumps({'error': {'message': str(error)}}, ensure_ascii=False).encode()
+                    if streaming:
+                        self.wfile.write(b'data: ' + data + b'\n\n')
+                    else:
+                        self.send_response(500)
+                        self.send_header('content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(data)
+                except Exception:
+                    pass
+
+    def log_message(self, *_args):
+        pass
+
+
+try:
+    PUNC = prepare_punc()
+    PUNC_LOCK = threading.Lock()
+    QWEN = start_qwen()
+    state('ready', '本机润色已就绪')
+    ThreadingHTTPServer(('127.0.0.1', 8082), Handler).serve_forever()
+except Exception as error:
+    state('error', str(error))
+    sys.exit(1)
+finally:
+    if 'QWEN' in globals():
+        QWEN.terminate()

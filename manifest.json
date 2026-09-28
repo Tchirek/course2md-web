@@ -11,7 +11,7 @@
     "128": "src/ui/icons/icon-128.png"
   },
   "permissions": ["storage", "activeTab", "scripting", "downloads", "cookies"],
-  "host_permissions": ["http://127.0.0.1:8766/*", "http://127.0.0.1:8081/*", "https://*.youtube.com/*", "https://*.bilibili.com/*"],
+  "host_permissions": ["http://127.0.0.1:8766/*", "http://127.0.0.1:8081/*", "http://127.0.0.1:8082/*", "https://*.youtube.com/*", "https://*.bilibili.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "src/background/sw.js",
@@ -56,7 +56,8 @@
         "src/content/*.js",
         "src/ui/*.css",
         "src/ui/controls.js",
-        "src/ui/icons.js"
+        "src/ui/icons.js",
+        "src/vendor/opencc-t2cn.js"
       ],
       "matches": ["<all_urls>"]
     }

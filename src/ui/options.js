@@ -28,6 +28,7 @@ const FIELDS = [
 
 let settings = null;
 let asrPoll = null;
+let polishPoll = null;
 const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8081/v1/audio/transcriptions';
 
 init();
@@ -40,6 +41,7 @@ async function init() {
   renderTheme();
   bindActions();
   send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch(() => {});
+  send({ type: 'polish.local.status' }).then(showLocalPolishStatus).catch(() => {});
 
   // 用户在弹窗里改了勾选，设置页开着的话要跟着变
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -92,6 +94,7 @@ function renderDisplay() {
   rows.appendChild(
     displayToggleRows({
       settings,
+      showPolishLevel: true,
       onChange: (patch) => commitPatch(patch),
       onSetup: () => {},
     }),
@@ -154,6 +157,7 @@ function bindActions() {
   document.getElementById('llm-test').addEventListener('click', () => test('llm'));
   document.getElementById('asr-test').addEventListener('click', () => test('asr'));
   document.getElementById('asr-start').addEventListener('click', startLocalAsr);
+  document.getElementById('llm-local-start').addEventListener('click', startLocalPolish);
 
   document.getElementById('reset').addEventListener('click', async () => {
     const reply = await send({ type: 'settings.reset' }).catch(() => null);
@@ -183,6 +187,34 @@ async function startLocalAsr() {
     button.disabled = false;
     flash('asr-result', String(error?.message ?? error), false);
   }
+}
+
+async function startLocalPolish() {
+  const button = document.getElementById('llm-local-start');
+  button.disabled = true;
+  try {
+    showLocalPolishStatus(await send({ type: 'polish.local.start' }));
+  } catch (error) {
+    button.disabled = false;
+    flash('llm-local-result', String(error?.message ?? error), false);
+  }
+}
+
+function showLocalPolishStatus(status) {
+  const running = ['starting', 'installing', 'downloading', 'loading'].includes(status.state);
+  const button = document.getElementById('llm-local-start');
+  button.disabled = running;
+  button.textContent = status.state === 'ready' ? '本机润色已就绪' : '启用本机润色';
+  if (status.state !== 'idle') flash('llm-local-result', status.message, status.state === 'ready' ? true : status.state === 'error' ? false : null);
+  if (polishPoll) clearInterval(polishPoll);
+  if (running) polishPoll = setInterval(() => {
+    send({ type: 'polish.local.status' }).then(showLocalPolishStatus).catch((error) => {
+      clearInterval(polishPoll);
+      polishPoll = null;
+      button.disabled = false;
+      flash('llm-local-result', String(error?.message ?? error), false);
+    });
+  }, 1000);
 }
 
 function showLocalAsrStatus(status) {

@@ -121,6 +121,10 @@ export function toMarkdown(doc, opts = {}) {
       out.push(`## ${stamp(section.t, url, links)}`, '');
     }
 
+    if (opts.images && section.image) {
+      out.push(`![视频 ${fmtTs(section.t)} 的截图](${section.image})`, '');
+    }
+
     for (const seg of segments) {
       const body = inline(seg.text);
       out.push(timestamps ? `${stamp(seg.start, url, links)} ${body}` : body, '');

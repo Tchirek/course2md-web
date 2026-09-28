@@ -99,10 +99,10 @@ try {
       continue;
     }
 
-    // 面板宽度：1280 的视口下必须是 384，不该铺满
-    if (Math.abs(m.scope.w - 384) > 1) {
-      fail(`panel/${state}`, `面板宽度是 ${m.scope.w}px，应为 384px`);
-    } else pass(`panel/${state} 宽度 384px`);
+    // 默认是可调整的浮窗；只有拖到最右侧才展开成全高侧栏。
+    if (m.scope.w < 320 || m.scope.w > 900 || m.scope.top <= 0 || m.scope.right >= m.viewport.w) {
+      fail(`panel/${state}`, `默认浮窗位置或宽度错误：${JSON.stringify(m.scope)}`);
+    } else pass(`panel/${state} 默认以浮窗显示`);
 
     // 行数与**参与栅格的**子元素个数必须一致，否则伸缩行会错位
     const rowCount = m.rows.split(' ').length;
@@ -144,6 +144,50 @@ try {
       const count = await page.evaluate(() => document.getElementById('c2md-panel-host')?.shadowRoot.querySelectorAll('.c2md-para').length ?? 0);
       count > 0 ? pass('panel/running 已完成的文本可见') : fail('panel/running', '运行中仍隐藏已完成的文本');
     }
+    if (state === 'ready') {
+      const gate = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        panel.setState({ imagesPending: true });
+        const foot = panel.scope.querySelector('.c2md-panel-foot');
+        const buttons = [...foot.querySelectorAll('button')];
+        const copy = buttons.find((button) => button.textContent === '复制 Markdown');
+        const save = buttons.find((button) => button.textContent.includes('下载图文'));
+        const plain = buttons.find((button) => button.getAttribute('aria-label') === '复制纯文本');
+        const pending = [copy?.disabled, save?.disabled, plain?.disabled];
+        panel.setState({ imagesPending: false });
+        return { pending };
+      });
+      gate.pending[0] && gate.pending[1] && gate.pending[2] === false
+        ? pass('panel/ready 取帧中仅允许复制纯文本')
+        : fail('panel/ready', `取帧导出限制错误：${JSON.stringify(gate)}`);
+      const corner = await page.evaluate(() => {
+        const rect = document.getElementById('c2md-panel-host').getBoundingClientRect();
+        return { x: rect.right - 4, y: rect.bottom - 4, width: rect.width, height: rect.height };
+      });
+      await page.mouse.move(corner.x, corner.y);
+      await page.mouse.down();
+      await page.mouse.move(corner.x - 70, corner.y - 70, { steps: 8 });
+      await page.mouse.up();
+      const resized = await page.evaluate(() => {
+        const rect = document.getElementById('c2md-panel-host').getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      });
+      resized.width < corner.width - 20 && resized.height < corner.height - 20
+        ? pass('panel/ready 可拖拽右下角调整宽高')
+        : fail('panel/ready', `浮窗尺寸调整失败：${JSON.stringify({ corner, resized })}`);
+      await page.mouse.move(940, 86);
+      await page.mouse.down();
+      await page.mouse.move(1120, 86, { steps: 8 });
+      await page.mouse.up();
+      const dock = await page.evaluate(() => {
+        const host = document.getElementById('c2md-panel-host');
+        const rect = host.getBoundingClientRect();
+        return { docked: host.dataset.docked, top: rect.top, bottom: rect.bottom, right: rect.right };
+      });
+      dock.docked === 'true' && dock.top === 0 && dock.bottom === 760 && dock.right === 1280
+        ? pass('panel/ready 拖到右侧后吸附并展开')
+        : fail('panel/ready', `拖动吸附失败：${JSON.stringify(dock)}`);
+    }
     if (state === 'polished') {
       const counts = await page.evaluate(() => {
         const panel = window.__selftestPanel;
@@ -161,11 +205,10 @@ try {
   }
 
   // ---- 弹窗与设置页：不能横向溢出 ----
-  // 两边各有一个分段选择：弹窗是「文字来源」，设置页是「主题」。
-  // 没有第二个分段选择是刻意的——本地转录只有「本机服务」一条路，见 DESIGN.md。
+  // 两边各有三个分段选择：图片密度、润色强度，以及文字来源或主题。
   for (const [name, path, size, expectedSegments] of [
-    ['popup', '/src/ui/popup.html', { width: 360, height: 620 }, 1],
-    ['options', '/src/ui/options.html', { width: 860, height: 900 }, 1],
+    ['popup', '/src/ui/popup.html', { width: 360, height: 620 }, 3],
+    ['options', '/src/ui/options.html', { width: 860, height: 900 }, 3],
   ]) {
     const page = await browser.newPage();
     await page.setViewport({ ...size });
@@ -183,7 +226,7 @@ try {
     if (m.docOverflow > 1) fail(name, `横向溢出 ${m.docOverflow}px`);
     else pass(`${name} 无横向溢出`);
     if (m.checkboxCount !== 3) fail(name, `勾选行有 ${m.checkboxCount} 个，应为 3 个`);
-    else pass(`${name} 三处勾选就位`);
+    else pass(`${name} 两处勾选就位`);
     if (m.segmentedSelected !== expectedSegments) {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);
     } else pass(`${name} 分段选择选中项数正确（${expectedSegments}）`);
