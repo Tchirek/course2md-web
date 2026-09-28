@@ -7,7 +7,7 @@ import { coalesce, isStandaloneFiller, appendText, dedupeRepeats, partitionByBou
 import { planChunks, tailOf, mapPool } from '../src/core/chunk.js';
 import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJson } from '../src/core/prompt.js';
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
-import { withDefaults, normalizeSettings, canPolish, canTranscribe, maskSecret, setPath, getPath } from '../src/core/settings.js';
+import { withDefaults, normalizeSettings, canPolish, canTranscribe, useLocalPolish, maskSecret, setPath, getPath } from '../src/core/settings.js';
 import { visualSections, similarity } from '../src/content/visual.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 import { captureAudio } from '../src/content/capture.js';
@@ -548,6 +548,15 @@ test('未配置远端 LLM 时允许本机润色且不显示误导性警告', () 
   assert.equal(settings.polish, true);
   assert.equal(notes.length, 0);
   assert.equal(canPolish(settings), false);
+});
+
+test('本机与自定义润色模型可明确切换，旧设置沿用原选择', () => {
+  const llm = { baseUrl: 'https://example.test/v1', model: 'custom' };
+  assert.equal(useLocalPolish(withDefaults({ llm })), false);
+  assert.equal(useLocalPolish(withDefaults({ polishEngine: 'local', llm })), true);
+  assert.equal(useLocalPolish(withDefaults({ polishEngine: 'custom', llm })), false);
+  assert.equal(useLocalPolish(withDefaults({ polishEngine: 'custom' })), false);
+  assert.equal(useLocalPolish(withDefaults({})), true);
 });
 
 test('canPolish / canTranscribe 判定可运行条件', () => {

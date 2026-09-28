@@ -304,10 +304,10 @@ button.c2md-ts:hover {
   margin-top: var(--s-3);
   flex-wrap: wrap;
 }
-.c2md-ring { display:inline-block; width:13px; height:13px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:c2md-spin .8s linear infinite; opacity:.55; }
-@keyframes c2md-spin { to { transform:rotate(360deg); } }
+.c2md-ring { display:inline-block; width:14px; height:14px; flex:none; border-radius:50%; background:conic-gradient(var(--mark) var(--progress, 0%), var(--rule-strong) 0); mask:radial-gradient(farthest-side, transparent 58%, #000 62%); transition:background .2s ease; }
+.c2md-check .c2md-ring { margin-left:auto; align-self:center; }
 .c2md-para[data-state="polished"] { background:rgba(85, 160, 130, .055); }
 .c2md-say { white-space:pre-line; }
 .c2md-say--fresh { animation:c2md-fresh .38s ease-out; }
 @keyframes c2md-fresh { from { background:rgba(85, 160, 130, .28); } to { background:transparent; } }
-@media (prefers-reduced-motion:reduce) { .c2md-ring, .c2md-say--fresh { animation:none; } }
+@media (prefers-reduced-motion:reduce) { .c2md-say--fresh { animation:none; } }

@@ -6,7 +6,7 @@
 
 import { fmtTs } from '../core/time.js';
 import { icon } from '../ui/icons.js';
-import { displayToggleRows, iconButton, note, progress } from '../ui/controls.js';
+import { displayToggleRows, iconButton, note, progress, progressRing } from '../ui/controls.js';
 import { sourceLabel } from '../core/format.js';
 
 export class Panel {
@@ -125,7 +125,7 @@ export class Panel {
   /** 合并状态并重绘。只有影响结构的字段才触发重建。 */
   setState(patch) {
     const progressOnly = this.state.status === 'running' && patch.status === 'running' &&
-      Object.keys(patch).every((key) => key === 'status' || key === 'stageLabel');
+      Object.keys(patch).every((key) => key === 'status' || key === 'stageLabel' || key === 'stageRatio');
     const polishOnly = this.state.polish?.running && patch.polish?.running && Object.keys(patch).length === 1;
     const needsRebuild =
       'status' in patch ||
@@ -147,10 +147,32 @@ export class Panel {
       return;
     }
     if (progressOnly) {
-      const ring = this.scope.querySelector('.c2md-panel-status .c2md-ring');
-      if (ring) { ring.title = this.state.stageLabel || '正在转写'; return; }
+      const ring = this.scope.querySelector('.c2md-source .c2md-ring');
+      if (Boolean(ring) !== Number.isFinite(this.state.stageRatio)) {
+        this.render();
+        return;
+      }
+      if (ring && Number.isFinite(this.state.stageRatio)) {
+        const now = Math.round(this.state.stageRatio * 100);
+        ring.style.setProperty('--progress', `${now}%`);
+        ring.title = `转写 ${now}%`;
+        ring.setAttribute('aria-valuenow', String(now));
+      }
+      return;
     }
-    if (polishOnly) return;
+    if (polishOnly) {
+      const ring = this.scope.querySelector('.c2md-panel-toggles .c2md-ring');
+      if (ring) {
+        const { done, total } = this.state.polish;
+        ring.style.setProperty('--progress', `${total > 0 ? Math.min(100, 100 * done / total) : 0}%`);
+        ring.title = total > 0 ? `润色 ${done}/${total}` : '正在准备润色';
+        if (total > 0) {
+          ring.setAttribute('aria-valuemax', String(total));
+          ring.setAttribute('aria-valuenow', String(done));
+        }
+      }
+      return;
+    }
     if (needsRebuild || displayChanged) this.render();
     // 勾选的显隐永远只是切属性，不重建
     this.applyDisplayMode();
@@ -253,6 +275,9 @@ export class Panel {
         line.appendChild(chip('', `${this.countedSegments()} 段`));
       }
       if (meta?.duration) line.appendChild(plain(fmtTs(meta.duration)));
+      if (status === 'running' && Number.isFinite(this.state.stageRatio)) {
+        line.appendChild(progressRing(Math.round(this.state.stageRatio * 100), 100, '转写'));
+      }
     }
     head.appendChild(line);
     return head;
@@ -283,6 +308,7 @@ export class Panel {
         settings,
         onChange: (patch) => this.handlers.onSettings?.(patch),
         onSetup: () => this.handlers.onOptions?.('llm'),
+        polishProgress: this.state.polish,
       }),
     );
     return wrap;
@@ -305,16 +331,6 @@ export class Panel {
       wrap.appendChild(
         note({ title: error.title, body: error.body, tone: 'error', actions }),
       );
-    }
-
-    if (polish?.running) {
-      const ring = el('span', 'c2md-ring');
-      ring.title = '正在润色';
-      wrap.appendChild(ring);
-    } else if (status === 'running' && this.state.sections?.length) {
-      const ring = el('span', 'c2md-ring');
-      ring.title = this.state.stageLabel || '正在转写';
-      wrap.appendChild(ring);
     }
 
     const pending = (warnings ?? []).filter(Boolean);

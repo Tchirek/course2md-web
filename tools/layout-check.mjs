@@ -188,6 +188,28 @@ try {
         ? pass('panel/ready 拖到右侧后吸附并展开')
         : fail('panel/ready', `拖动吸附失败：${JSON.stringify(dock)}`);
     }
+    if (state === 'running') {
+      const ring = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const row = [...panel.scope.querySelectorAll('.c2md-check')].find((node) => node.textContent.includes('润色文本'));
+        const indicator = row?.querySelector('.c2md-ring');
+        const status = panel.scope.querySelector('.c2md-panel-status');
+        panel.setState({ polish: { running: true, done: 4, total: 11 } });
+        return { inRow: Boolean(indicator), title: indicator?.title, updated: indicator?.getAttribute('aria-valuenow'), statusRing: Boolean(status?.querySelector('.c2md-ring')) };
+      });
+      ring.inRow && ring.title === '润色 4/11' && ring.updated === '4' && !ring.statusRing
+        ? pass('panel/running 真实进度位于润色选项右侧')
+        : fail('panel/running', `进度环位置或数值错误：${JSON.stringify(ring)}`);
+      const asrRing = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        panel.setState({ status: 'running', stageLabel: '正在转写', stageRatio: .25 });
+        const indicator = panel.scope.querySelector('.c2md-source .c2md-ring');
+        return { title: indicator?.title, value: indicator?.getAttribute('aria-valuenow') };
+      });
+      asrRing.title === '转写 25/100' && asrRing.value === '25'
+        ? pass('panel/running 转写进度使用实际比例')
+        : fail('panel/running', `转写进度错误：${JSON.stringify(asrRing)}`);
+    }
     if (state === 'polished') {
       const counts = await page.evaluate(() => {
         const panel = window.__selftestPanel;
@@ -205,10 +227,10 @@ try {
   }
 
   // ---- 弹窗与设置页：不能横向溢出 ----
-  // 两边各有三个分段选择：图片密度、润色强度，以及文字来源或主题。
+  // 设置页另有本机／自定义润色模型选择。
   for (const [name, path, size, expectedSegments] of [
     ['popup', '/src/ui/popup.html', { width: 360, height: 620 }, 3],
-    ['options', '/src/ui/options.html', { width: 860, height: 900 }, 3],
+    ['options', '/src/ui/options.html', { width: 860, height: 900 }, 4],
   ]) {
     const page = await browser.newPage();
     await page.setViewport({ ...size });

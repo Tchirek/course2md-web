@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS = {
   /** 润色文本（需用户自行接入 LLM） */
   polish: false,
   polishLevel: 'standard',
+  /** auto 保留旧设置的行为；也可明确选择本机或自定义模型。 */
+  polishEngine: 'auto',
 
   /** 打开页面时自动抓取并生成（默认关闭，避免误发请求） */
   autoRun: false,
@@ -104,6 +106,7 @@ export function normalizeSettings(raw) {
   s.theme = ['light', 'dark', 'auto'].includes(s.theme) ? s.theme : 'auto';
   s.imageLevel = ['none', 'few', 'default', 'many'].includes(s.imageLevel) ? s.imageLevel : 'default';
   s.polishLevel = ['light', 'standard', 'deep'].includes(s.polishLevel) ? s.polishLevel : 'standard';
+  s.polishEngine = ['auto', 'local', 'custom'].includes(s.polishEngine) ? s.polishEngine : 'auto';
 
   s.llm.baseUrl = String(s.llm.baseUrl ?? '').trim().replace(/\/+$/, '');
   s.llm.apiKey = String(s.llm.apiKey ?? '').trim();
@@ -127,6 +130,11 @@ export function normalizeSettings(raw) {
 /** 润色是否具备可运行的条件。 */
 export function canPolish(s) {
   return Boolean(s.polish && isHttpUrl(s.llm.baseUrl) && s.llm.model);
+}
+
+export function useLocalPolish(s) {
+  return s.polishEngine === 'local' ||
+    (s.polishEngine !== 'custom' && (!s.llm.baseUrl || !s.llm.model));
 }
 
 /** ASR 是否具备可运行的条件。 */

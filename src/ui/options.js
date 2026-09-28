@@ -38,6 +38,7 @@ async function init() {
   applyTheme(settings);
   fillFields();
   renderDisplay();
+  renderPolishEngine();
   renderTheme();
   bindActions();
   send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch(() => {});
@@ -50,6 +51,7 @@ async function init() {
     applyTheme(settings);
     fillFields();
     renderDisplay();
+    renderPolishEngine();
     renderTheme();
   });
 }
@@ -65,12 +67,25 @@ async function load() {
 async function commit(path, value) {
   const patch = {};
   setByPath(patch, path, value);
+  if (path === 'llm.baseUrl' || path === 'llm.model') patch.polishEngine = 'custom';
   const reply = await send({ type: 'settings.save', payload: { patch } }).catch(() => null);
   if (reply?.settings) settings = reply.settings;
+  if (path === 'llm.baseUrl' || path === 'llm.model') renderPolishEngine();
   if (reply?.notes?.length) {
     for (const text of reply.notes) flash('llm-result', text, null);
   }
   return reply;
+}
+
+function renderPolishEngine() {
+  const host = document.getElementById('llm-engine');
+  host.replaceChildren(segmented({
+    options: [{ value: 'local', label: '本机' }, { value: 'custom', label: '自定义' }],
+    value: settings.polishEngine === 'auto'
+      ? settings.llm.baseUrl && settings.llm.model ? 'custom' : 'local'
+      : settings.polishEngine,
+    onChange: (value) => commit('polishEngine', value),
+  }));
 }
 
 function fillFields() {
@@ -166,6 +181,7 @@ function bindActions() {
       applyTheme(settings);
       fillFields();
       renderDisplay();
+      renderPolishEngine();
       renderTheme();
       flash('reset-result', '已恢复默认。', true);
     }
@@ -193,6 +209,8 @@ async function startLocalPolish() {
   const button = document.getElementById('llm-local-start');
   button.disabled = true;
   try {
+    await commit('polishEngine', 'local');
+    renderPolishEngine();
     showLocalPolishStatus(await send({ type: 'polish.local.start' }));
   } catch (error) {
     button.disabled = false;

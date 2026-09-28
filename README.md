@@ -84,7 +84,7 @@ YouTube 的 JavaScript 挑战由现有 Node.js 运行时处理，需 Node.js 22 
 
 ## 润色怎么配
 
-未填远端 LLM 时，勾选「润色文本」会启动本机 [FireRedPunc](https://huggingface.co/FireRedTeam/FireRedPunc) 与 [Qwen3.5-2B 的 Q4 量化版](https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF)；首次使用会下载模型。设置页也有「启用本机润色」按钮。8 GB 显存机器使用单块并发，避免与转录模型抢显存。
+设置页可在「本机／自定义」间切换润色模型。旧设置仍自动沿用已填写的远端模型；未填远端时，勾选「润色文本」会启动本机 [FireRedPunc](https://huggingface.co/FireRedTeam/FireRedPunc) 与 [Qwen3.5-2B 的 Q4 量化版](https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF)；首次使用会下载模型。8 GB 显存机器使用单块并发，避免与转录模型抢显存。
 
 也可填写任意 OpenAI 兼容的 `/chat/completions` 端点。
 

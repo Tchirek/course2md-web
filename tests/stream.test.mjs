@@ -7,17 +7,22 @@ import { Converter } from '../src/vendor/opencc-t2cn.js';
 test('流式润色按 SSE 增量交付，CRLF 和拆包不丢字', async () => {
   const originalFetch = globalThis.fetch;
   const bytes = new TextEncoder().encode('data: {"choices":[{"delta":{"content":"第一段"}}]}\r\n\r\ndata: {"choices":[{"delta":{"content":"第二段"}}]}\r\n\r\ndata: [DONE]\r\n\r\n');
-  globalThis.fetch = async () => new Response(new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes.slice(0, 41));
-      controller.enqueue(bytes.slice(41, 83));
-      controller.enqueue(bytes.slice(83));
-      controller.close();
-    },
-  }));
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'http://localhost/v1/chat/completions');
+    assert.equal(options.headers.Authorization, 'Bearer custom-key');
+    assert.equal(JSON.parse(options.body).model, 'custom-model');
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, 41));
+        controller.enqueue(bytes.slice(41, 83));
+        controller.enqueue(bytes.slice(83));
+        controller.close();
+      },
+    }));
+  };
   try {
     const deltas = [];
-    const result = await chat({ baseUrl: 'http://localhost/v1', model: 'm', messages: [], onDelta: (x) => deltas.push(x) });
+    const result = await chat({ baseUrl: 'http://localhost/v1', apiKey: 'custom-key', model: 'custom-model', messages: [], onDelta: (x) => deltas.push(x) });
     assert.equal(result.content, '第一段第二段');
     assert.deepEqual(deltas, ['第一段', '第二段']);
   } finally {
@@ -49,14 +54,17 @@ test('一块内逐段覆盖原文，完成前即可显示，原版仍可恢复',
     { text: '第二段', start: 1, end: 2 },
   ];
   const updated = [];
+  const progress = [];
   try {
     const result = await polishSegments({
       segments, sectionIndexOf: [0, 0], meta: {},
       settings: { polishLevel: 'standard', llm: { baseUrl: 'http://localhost/v1', model: 'm', concurrency: 1, contextChars: 0 } },
       onSegment: (id) => updated.push([id, segments[id].text]),
+      onProgress: (done, total) => progress.push([done, total]),
     });
     assert.equal(result.failed, 0);
     assert.deepEqual(updated, [[0, '第一段。'], [1, '第二段。']]);
+    assert.deepEqual(progress, [[0, 1], [1, 1]]);
     assert.equal(segments[0].raw, '第一段');
   } finally {
     globalThis.chrome = originalChrome;

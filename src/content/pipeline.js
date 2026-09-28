@@ -359,6 +359,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
   if (!chunks.length) {
     return { chunks: 0, polished: 0, failed: 0, removed: 0, errors: [] };
   }
+  onProgress?.(0, chunks.length);
 
   const errors = [];
   let polished = 0;

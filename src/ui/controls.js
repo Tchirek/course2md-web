@@ -46,6 +46,7 @@ export function checkboxRow({
   needsSetup = false,
   onSetup,
   onChange,
+  trailing,
 }) {
   const row = document.createElement('label');
   row.className = 'c2md-check';
@@ -74,6 +75,7 @@ export function checkboxRow({
   }
 
   row.append(input, box, text);
+  if (trailing) row.appendChild(trailing);
 
   if (needsSetup && onSetup) {
     const setup = document.createElement('button');
@@ -211,7 +213,7 @@ export function applyTheme(settings, root = document.body) {
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
  * @returns {DocumentFragment}
  */
-export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false }) {
+export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, polishProgress = null }) {
   const frag = document.createDocumentFragment();
 
   for (const toggle of DISPLAY_TOGGLES) {
@@ -230,6 +232,8 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
         needsSetup,
         onSetup,
         onChange: (checked) => onChange?.({ [toggle.key]: checked }),
+        trailing: toggle.key === 'polish' && polishProgress?.running
+          ? progressRing(polishProgress.done, polishProgress.total, '润色') : null,
       }),
     );
     if (toggle.key === 'showTimestamps') {
@@ -265,6 +269,23 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
     onChange: (autoRun) => onChange?.({ autoRun }),
   }));
   return frag;
+}
+
+/** 有已知总量时才画圆环；每完成一块推进一次。 */
+export function progressRing(done, total, label) {
+  const ring = document.createElement('span');
+  ring.className = 'c2md-ring';
+  const ratio = total > 0 ? Math.min(1, Math.max(0, done / total)) : 0;
+  ring.style.setProperty('--progress', `${ratio * 100}%`);
+  ring.title = total > 0 ? `${label} ${done}/${total}` : `正在准备${label}`;
+  ring.setAttribute('role', 'progressbar');
+  ring.setAttribute('aria-label', label);
+  ring.setAttribute('aria-valuemin', '0');
+  if (total > 0) {
+    ring.setAttribute('aria-valuemax', String(total));
+    ring.setAttribute('aria-valuenow', String(done));
+  }
+  return ring;
 }
 
 function labelOf(key) {

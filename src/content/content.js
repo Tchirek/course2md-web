@@ -8,6 +8,7 @@ import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
 import { visualSections, captureSectionImages } from './visual.js';
 import { buildDoc, toMarkdown, toPlainText, fileNameFor } from '../core/format.js';
+import { useLocalPolish } from '../core/settings.js';
 import {
   runSubtitlePipeline, runAsrPipeline, polishSegments, finalize, organize,
   MissingSourceError, AbortError,
@@ -26,6 +27,7 @@ class Controller {
     this.status = 'idle';
     this.error = null;
     this.stageLabel = '';
+    this.stageRatio = null;
     this.abort = null;
     this.imageAbort = null;
     this.imagePromise = Promise.resolve(0);
@@ -75,7 +77,9 @@ class Controller {
       const next = changes.settings.newValue;
       if (!next) return;
       const repolish = this.built && next.polish && !this.polishState.running &&
-        (!this.settings.polish || next.polishLevel !== this.settings.polishLevel);
+        (!this.settings.polish || next.polishLevel !== this.settings.polishLevel ||
+          next.polishEngine !== this.settings.polishEngine ||
+          next.llm?.baseUrl !== this.settings.llm?.baseUrl || next.llm?.model !== this.settings.llm?.model);
       this.settings = next;
       this.panel.setState({ settings: this.settings });
       if (this.built && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
@@ -212,6 +216,7 @@ class Controller {
       error: this.error,
       warnings: this.built?.warnings ?? [],
       stageLabel: this.stageLabel,
+      stageRatio: this.stageRatio,
       imagesPending: this.imagesPending,
     };
   }
@@ -238,8 +243,9 @@ class Controller {
 
   onProgress(stage, info = {}) {
     if (info.message) this.stageLabel = info.message;
+    this.stageRatio = Number.isFinite(info.ratio) ? Math.min(1, Math.max(0, info.ratio)) : null;
     this.status = 'running';
-    this.panel.setState({ status: 'running', stageLabel: this.stageLabel });
+    this.panel.setState({ status: 'running', stageLabel: this.stageLabel, stageRatio: this.stageRatio });
     this.broadcast(false);
   }
 
@@ -253,6 +259,7 @@ class Controller {
     const runAbort = this.abort;
     const adapter = this.adapter;
     this.status = 'running';
+    this.stageRatio = null;
     this.error = null;
     this.built = null;
     this.previewSections = [];
@@ -342,7 +349,11 @@ class Controller {
     this.polishState = { hasResult: this.polishState.hasResult, running: true, done: 0, total: 0 };
     this.panel.setState({ polish: this.polishState });
     let polishSettings = this.settings;
-    if (!this.settings.llm.baseUrl || !this.settings.llm.model) {
+    const useLocal = useLocalPolish(this.settings);
+    if (this.settings.polishEngine === 'custom' && (!this.settings.llm.baseUrl || !this.settings.llm.model)) {
+      throw new Error('请先填写自定义模型的服务地址和模型名');
+    }
+    if (useLocal) {
       const started = await send({ type: 'polish.local.start' });
       if (started.state === 'error') throw new Error(started.message);
       let state = started;
