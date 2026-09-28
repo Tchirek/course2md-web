@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>course2md</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body class="c2md-scope">
+    <main class="popup">
+      <header class="popup-head">
+        <div class="popup-brand">
+          <span class="popup-wordmark">course2md</span>
+          <span class="popup-note c2md-meta">视频转讲义笔记</span>
+        </div>
+        <button
+          type="button"
+          id="open-options"
+          class="c2md-icon-button"
+          title="设置"
+          aria-label="设置"
+        ></button>
+      </header>
+
+      <div class="popup-page">
+        <p class="popup-title" id="page-title">正在读取当前页面</p>
+        <p class="c2md-meta" id="page-meta"></p>
+      </div>
+
+      <hr class="c2md-rule" />
+
+      <section class="popup-group">
+        <h2 class="c2md-group-title">文字来源</h2>
+        <div id="source-control"></div>
+        <p class="c2md-meta" id="source-hint"></p>
+      </section>
+
+      <hr class="c2md-rule" />
+
+      <section class="popup-group popup-toggles" id="toggles"></section>
+
+      <hr class="c2md-rule" />
+
+      <footer class="popup-foot">
+        <div id="status" class="popup-status"></div>
+        <div class="popup-actions">
+          <button type="button" id="secondary" class="c2md-button" hidden></button>
+          <button type="button" id="run" class="c2md-button c2md-button--primary">生成笔记</button>
+        </div>
+      </footer>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

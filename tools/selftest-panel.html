@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>course2md 面板自测</title>
+    <style>
+      /* 模拟一个被面板遮住右半边的一般网页 */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: #fff;
+        font-family: system-ui, sans-serif;
+        color: #333;
+      }
+      .fake-page {
+        padding: 32px 48px;
+        max-width: 900px;
+      }
+      .fake-page h1 {
+        font-size: 22px;
+        margin: 0 0 12px;
+      }
+      .fake-page p {
+        line-height: 1.7;
+        color: #666;
+        margin: 0 0 12px;
+      }
+      video {
+        width: 100%;
+        max-width: 640px;
+        aspect-ratio: 16 / 9;
+        background: #111;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="fake-page">
+      <h1>注意力机制与 Transformer 入门 · 第一讲</h1>
+      <video controls></video>
+      <p>
+        这是一个用于目视校验的假页面。右侧的 course2md 面板是真的——同一份
+        panel.js、同一份 tokens.css，数据来自 tools/fixtures.js。
+      </p>
+      <p>
+        面板里的时间戳、勾选、进度条、错误态都是真实组件渲染出来的，不是截图拼的。
+      </p>
+    </div>
+    <script type="module" src="selftest-panel.js"></script>
+  </body>
+</html>

@@ -1,0 +1,188 @@
+/*
+  设置页。一个居中的阅读栏，区块之间靠留白与细线分组——
+  没有卡片套卡片，没有图标砖，没有彩色左边框。
+*/
+
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--s-7) var(--s-5) var(--s-9, 7rem);
+  display: grid;
+  gap: var(--s-7);
+}
+
+/* ---------- 页头 ---------- */
+.page-head {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.page-head h1 {
+  font-size: var(--t-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.page-head p {
+  max-width: 62ch;
+}
+
+/* ---------- 区块 ---------- */
+.block {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.block h2 {
+  font-size: var(--t-head);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.block > p {
+  max-width: 62ch;
+  margin-top: calc(var(--s-1) * -1);
+}
+
+.block--quiet h2 {
+  color: var(--ink-2);
+  font-size: var(--t-body-lg);
+}
+
+/* 行的容器：一条外框，内部靠细线分隔。一个区域只有一层表面。 */
+.rows {
+  border: var(--hair) solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: var(--s-4);
+  align-items: start;
+  padding: var(--s-3) var(--s-4);
+  border-bottom: var(--hair) solid var(--rule);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+/* [hidden] 的默认 display:none 会被 `.row { display: grid }` 覆盖掉——
+   同权重下后声明的 display 生效，所以「按转录方式隐藏不相关字段」会静默失效。
+   这里补一条更高权重的规则把它压回来。 */
+.row[hidden] {
+  display: none;
+}
+
+.row > label,
+.row-label {
+  display: grid;
+  gap: 2px;
+  font-size: var(--t-body);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.row > label .c2md-meta,
+.row-label .c2md-meta {
+  max-width: 46ch;
+}
+
+/* 勾选类行：控件靠左，说明跟着
+   窄屏时整行竖排，输入框不挤成一条线 */
+@media (max-width: 620px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-3);
+  }
+}
+
+/* ---------- 表单控件 ---------- */
+.row input[type='text'],
+.row input[type='password'],
+.row input[type='number'],
+.row textarea {
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--t-body);
+  color: var(--ink);
+  background: var(--paper);
+  border: var(--hair) solid var(--rule-strong);
+  border-radius: var(--radius-sm); /* 内层控件 = 外层 8 - 内边距，取 5 */
+  transition: border-color 150ms var(--ease), background-color 150ms var(--ease);
+}
+
+.row input:hover,
+.row textarea:hover {
+  border-color: var(--ink-3);
+}
+
+.row input:focus,
+.row textarea:focus {
+  outline: none;
+  background: var(--card);
+  border-color: var(--mark);
+  box-shadow: 0 0 0 2px var(--mark-soft);
+}
+
+.row input::placeholder,
+.row textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.row textarea {
+  resize: vertical;
+  min-height: 76px;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+.row input[type='checkbox'] {
+  justify-self: start;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--mark);
+  margin-top: 3px;
+}
+
+/* ---------- 区块动作 ---------- */
+.block-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.block-actions .c2md-meta {
+  flex: 1;
+  min-width: 12rem;
+}
+
+/* 测试结果：成功与失败都只用文字说清楚，不用彩色圆点 */
+#asr-result[data-ok='true'],
+#llm-result[data-ok='true'] {
+  color: var(--mark);
+}
+
+#asr-result[data-ok='false'],
+#llm-result[data-ok='false'] {
+  color: var(--ink);
+}
+
+/* 分段选择在设置页里占满整格 */
+#asr-backend,
+#theme-control {
+  width: 100%;
+}

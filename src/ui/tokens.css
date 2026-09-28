@@ -1,0 +1,520 @@
+/*
+  course2md-web — 设计令牌
+  ==========================================================================
+  取自 yetone/kill-ai-slop 的 website/src/styles/tokens.css（Apache-2.0），
+  数值原样保留，只把作用域从 :root 改为 .c2md-scope —— 这个样式表会被注入
+  到用户自己的页面里（含 Shadow DOM），不能动页面的 :root。
+
+  这个项目遵守的几条（与 kill-ai-slop 的 SKILL.md 一致）：
+  - 纸张与墨。唯一的颜色是「标记」用的深松绿（--mark），只用于**状态与判定**
+    （勾选已开、当前项、主操作），绝不做装饰、不做渐变、不做氛围。
+  - 层级来自字号、字重、留白，不靠给词上色或换字体。
+  - 细线代替投影；投影只留给真正浮起的层，且是紧贴的接触阴影。
+  - 圆角只有 5 / 8 / 12 三档；嵌套时内层 = 外层 - 内边距。
+  - 悬停是表面与描边的位移，150ms 只过渡颜色；不缩放、不位移、不弹。
+  - 等宽字体只给真正的代码。时间戳改用 sans + tabular-nums ——
+    要的是数字对齐，不是「终端感」。
+  - 没有 emoji、没有药丸徽章、没有发光圆点、没有毛玻璃。
+*/
+
+.c2md-scope {
+  /* 纸与墨 */
+  --paper: #f6f7fb;
+  --paper-2: #ebedf3;
+  --card: #ffffff;
+  --ink: #14151a;
+  --ink-2: #53555d;
+  --ink-3: #797c86;
+  --rule: #e6e8ef;
+  --rule-strong: #cccfd9;
+
+  /* 唯一的颜色：标记与判定 */
+  --mark: #246a50;
+  --mark-soft: #dde7e0;
+  /* 落在 --mark 上的文字/勾号颜色。深色模式下 --mark 会变亮，
+     白字就压不住对比度了，所以这个值必须跟着主题走。 */
+  --on-mark: #ffffff;
+  /* 出错才用的珊瑚色，只出现在错误文案上 */
+  --slop: #ff5c5c;
+  --slop-soft: #fdeaea;
+
+  /* 字体：不需要异体字，需要意图 */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas,
+    monospace;
+
+  /* 正文与界面的字号梯级。面板宽度固定，用固定值而不是 clamp。 */
+  --t-meta: 11.5px;
+  --t-body: 13px;
+  --t-body-lg: 13.5px;
+  --t-title: 14.5px;
+  --t-head: 16px;
+  --t-display: 20px;
+
+  /* 间距按关系给：4 贴紧 / 8 同组 / 16 分组 / 24 段落 / 32 区块 */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+
+  /* 结构 */
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --hair: 1px;
+  --shadow-e1: 0 1px 2px rgba(20, 21, 26, 0.05);
+  --shadow-e2: 0 1px 1px rgba(20, 21, 26, 0.07), 0 4px 10px -3px rgba(20, 21, 26, 0.07);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  color-scheme: light dark;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--t-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (min-resolution: 1.5dppx) {
+  .c2md-scope {
+    --hair: 0.5px;
+  }
+}
+
+/* 深色：纸墨关系不变，只是反过来。不加深夜霓虹。 */
+@media (prefers-color-scheme: dark) {
+  .c2md-scope:not([data-theme='light']) {
+    --paper: #131316;
+    --paper-2: #1b1c20;
+    --card: #202127;
+    --ink: #ecebe6;
+    --ink-2: #a9a8a2;
+    --ink-3: #7f7d78;
+    --rule: #2c2d33;
+    --rule-strong: #3d3e45;
+    --mark: #6faa8e;
+    --mark-soft: #1e2f28;
+    --on-mark: #131316;
+    --slop: #ff8080;
+    --slop-soft: #3a2626;
+    --shadow-e1: 0 1px 1px rgba(0, 0, 0, 0.4);
+    --shadow-e2: 0 1px 1px rgba(0, 0, 0, 0.5), 0 4px 4px -1px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.c2md-scope[data-theme='dark'] {
+  --paper: #131316;
+  --paper-2: #1b1c20;
+  --card: #202127;
+  --ink: #ecebe6;
+  --ink-2: #a9a8a2;
+  --ink-3: #7f7d78;
+  --rule: #2c2d33;
+  --rule-strong: #3d3e45;
+  --mark: #6faa8e;
+  --mark-soft: #1e2f28;
+  --on-mark: #131316;
+  --slop: #ff8080;
+  --slop-soft: #3a2626;
+  --shadow-e1: 0 1px 1px rgba(0, 0, 0, 0.4);
+  --shadow-e2: 0 1px 1px rgba(0, 0, 0, 0.5), 0 4px 4px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- 基础复位 ----------
+   全部包在 :where() 里，让选择器的权重归零。否则 `.c2md-scope button`
+   （0,1,1）会压过 `.c2md-button--primary`（0,1,0）——按钮的填充色会静默消失，
+   而这类问题在代码里看不出来，只有在截图里才暴露。
+   用 :where() 而不是 !important：复位是低优先级的，零件才是高优先级的。 */
+:where(.c2md-scope) *,
+:where(.c2md-scope) *::before,
+:where(.c2md-scope) *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:where(.c2md-scope) ul,
+:where(.c2md-scope) ol {
+  list-style: none;
+}
+
+:where(.c2md-scope) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+:where(.c2md-scope) input,
+:where(.c2md-scope) textarea,
+:where(.c2md-scope) select {
+  font: inherit;
+  color: inherit;
+}
+
+:where(.c2md-scope) a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:where(.c2md-scope) h1,
+:where(.c2md-scope) h2,
+:where(.c2md-scope) h3,
+:where(.c2md-scope) p {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* 键盘可达性：细描边，不做发光圈 */
+.c2md-scope :focus-visible {
+  outline: 2px solid var(--mark);
+  outline-offset: 2px;
+}
+
+/* ---------- 共用零件 ---------- */
+
+/* 数值对齐用 tabular-nums，不用等宽字体 */
+.c2md-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* 元信息：小、次级、不抢正文 */
+.c2md-meta {
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+/* 分组标题：靠字号与留白立层级，不加眉标、不编号 */
+.c2md-group-title {
+  font-size: var(--t-meta);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
+}
+
+/* 细线分隔，边缘到边缘 */
+.c2md-rule {
+  height: var(--hair);
+  background: var(--rule);
+  border: 0;
+}
+
+/* 勾选行：整行可点，命中区够大，视觉上只有一枚方框 */
+.c2md-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 150ms var(--ease), border-color 150ms var(--ease);
+  border: var(--hair) solid transparent;
+}
+
+.c2md-check:hover {
+  background: var(--paper-2);
+}
+
+.c2md-check:has(input:disabled) {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.c2md-check:has(input:disabled):hover {
+  background: none;
+}
+
+.c2md-check input {
+  /* 原生控件换成自绘的方框，但保留键盘与读屏语义 */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.c2md-check-box {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: var(--hair) solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  display: grid;
+  place-items: center;
+  transition: background-color 150ms var(--ease), border-color 150ms var(--ease);
+}
+
+.c2md-check:hover .c2md-check-box {
+  border-color: var(--ink-3);
+}
+
+.c2md-check input:checked + .c2md-check-box {
+  background: var(--mark);
+  border-color: var(--mark);
+  color: var(--on-mark);
+}
+
+/* 勾号用 SVG 描边画，不摆字形、不摆 emoji */
+.c2md-check-box svg {
+  width: 11px;
+  height: 11px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+
+.c2md-check input:checked + .c2md-check-box svg {
+  opacity: 1;
+}
+
+.c2md-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.c2md-check-label {
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.c2md-check-hint {
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+}
+
+/* 分段选择：两选一，8px 圆角，选中态用标记色的浅底 */
+.c2md-segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  background: var(--paper-2);
+  border-radius: var(--radius);
+}
+
+.c2md-segmented button {
+  padding: var(--s-2) var(--s-2);
+  border-radius: var(--radius-sm); /* 内层 = 外层 8 - 内边距 2 ≈ 5 */
+  font-size: var(--t-body);
+  color: var(--ink-2);
+  text-align: center;
+  /* 三选一（如主题）在窄列里会折行，宁可挤一点也不要断词 */
+  white-space: nowrap;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease);
+}
+
+.c2md-segmented button:hover {
+  color: var(--ink);
+}
+
+.c2md-segmented button[aria-pressed='true'] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-e1);
+}
+
+/* 主操作：唯一的实心按钮 */
+.c2md-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--rule-strong);
+  background: var(--card);
+  font-size: var(--t-body);
+  color: var(--ink);
+  transition: background-color 150ms var(--ease), border-color 150ms var(--ease),
+    color 150ms var(--ease);
+  white-space: nowrap;
+}
+
+.c2md-button:hover {
+  border-color: var(--ink-3);
+  background: var(--paper-2);
+}
+
+.c2md-button[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.c2md-button[disabled]:hover {
+  border-color: var(--rule-strong);
+  background: var(--card);
+}
+
+.c2md-button--primary {
+  background: var(--mark);
+  border-color: var(--mark);
+  color: var(--on-mark);
+}
+
+.c2md-button--primary:hover {
+  background: var(--mark);
+  border-color: var(--mark);
+  filter: brightness(1.08);
+}
+
+.c2md-scope .c2md-button--primary[disabled] {
+  background: var(--rule-strong);
+  border-color: var(--rule-strong);
+  color: var(--card);
+}
+
+/* 次级动作：只有文字，悬停给一条下划线 */
+.c2md-button--quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-2);
+  padding: var(--s-1) var(--s-2);
+}
+
+.c2md-button--quiet:hover {
+  background: var(--paper-2);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+/* 图标按钮：只用描边图标，不给它套同色底 */
+.c2md-icon-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-3);
+  transition: background-color 150ms var(--ease), color 150ms var(--ease);
+}
+
+.c2md-icon-button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.c2md-icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 提示条：左边框不做彩色装饰，用一条细线加浅底 */
+.c2md-note {
+  padding: var(--s-3);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--rule);
+  background: var(--card);
+  font-size: var(--t-body);
+  color: var(--ink-2);
+}
+
+.c2md-note--warn {
+  border-color: var(--rule-strong);
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.c2md-note--error {
+  border-color: var(--slop);
+  background: var(--slop-soft);
+  color: var(--ink);
+}
+
+.c2md-note-title {
+  font-size: var(--t-body);
+  color: var(--ink);
+  margin-bottom: var(--s-1);
+}
+
+/* 进度：一条细线，不转圈的地方不放转圈 */
+.c2md-progress {
+  height: 2px;
+  background: var(--rule);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.c2md-progress-bar {
+  height: 100%;
+  background: var(--mark);
+  transition: width 240ms var(--ease);
+}
+
+/* 不确定进度：来回滑动，不旋转 */
+.c2md-progress--indeterminate .c2md-progress-bar {
+  width: 35%;
+  animation: c2md-slide 1.4s var(--ease) infinite;
+}
+
+@keyframes c2md-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+/* 打字指示：三个点，节奏规整 */
+.c2md-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.c2md-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  animation: c2md-pulse 1.2s var(--ease) infinite;
+}
+
+.c2md-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.c2md-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes c2md-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* 开关状态不做发光圆点——需要时用一句文字说清楚 */
+.c2md-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c2md-scope *,
+  .c2md-scope *::before,
+  .c2md-scope *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,281 @@
+/*
+  页面内面板。挂在 Shadow DOM 里，页面样式进不来，这里的样式也漏不出去。
+  :host 上先 all: initial，把继承来的字体/行高/颜色全部切断，
+  再逐项声明——否则页面一个 body { font-size } 就能把面板毁掉。
+*/
+
+:host {
+  all: initial;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 384px;
+  max-width: 100vw;
+  z-index: 2147483000;
+  display: block;
+  contain: layout style;
+  font-family: var(--font-sans);
+}
+
+@media (max-width: 900px) {
+  :host {
+    width: 100vw;
+  }
+}
+
+.c2md-scope {
+  height: 100%;
+  /* 五行五块：头 / 勾选区 / 状态 / 正文 / 底部。
+     正文那一格是 minmax(0, 1fr) —— 只有它能伸缩，也正因为 0 才能被压缩到
+     出现滚动条。行数与子元素个数必须一致，否则正文会拿到 auto 而把底部挤出去。 */
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  display: grid;
+  background: var(--paper);
+  border-left: var(--hair) solid var(--rule-strong);
+  box-shadow: var(--shadow-e2);
+  overflow: hidden;
+}
+
+/* 面板顶部那条与页面之间的分界，用一条细线而不是阴影 */
+.c2md-scope[data-flush='true'] {
+  box-shadow: none;
+}
+
+/* ---------- 头部 ---------- */
+.c2md-panel-head {
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  display: grid;
+  gap: var(--s-2);
+}
+
+.c2md-head-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.c2md-title {
+  font-size: var(--t-title);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  /* 标题最多两行，超出省略——面板宽度有限，不该被长标题撑开 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.c2md-head-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  margin: -3px -3px 0 0;
+}
+
+.c2md-source {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+}
+
+.c2md-source span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.c2md-source svg {
+  width: 12px;
+  height: 12px;
+  color: var(--ink-3);
+}
+
+/* 分隔点：一个细小的居中圆点，不是药丸标签 */
+.c2md-dot-sep::before {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--rule-strong);
+}
+
+/* ---------- 勾选区 ---------- */
+.c2md-panel-toggles {
+  padding: var(--s-1) var(--s-2);
+  display: grid;
+  gap: 0;
+  border-top: var(--hair) solid var(--rule);
+  border-bottom: var(--hair) solid var(--rule);
+}
+
+.c2md-check-setup {
+  margin-left: auto;
+  flex: none;
+  align-self: center;
+}
+
+/* ---------- 动作条 ---------- */
+.c2md-panel-actions {
+  padding: var(--s-3) var(--s-4);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  border-bottom: var(--hair) solid var(--rule);
+}
+
+.c2md-panel-actions .c2md-button {
+  padding: 5px var(--s-3);
+  font-size: var(--t-body);
+}
+
+.c2md-actions-spacer {
+  flex: 1;
+}
+
+/* ---------- 进度 / 状态 ---------- */
+.c2md-panel-status {
+  padding: var(--s-3) var(--s-4);
+  display: grid;
+  gap: var(--s-2);
+  border-bottom: var(--hair) solid var(--rule);
+}
+
+/* 空状态**必须留在栅格流里**，不能 display: none。
+   用 display: none 会把它移出栅格，后面四块整体上移一行：正文落到 auto 行
+   （被内容撑高、不再滚动），底部动作条落到 minmax(0,1fr) 行拿到 0 高度而被
+   挤出视口。这里改成把空块收成 0 高度，占位仍然存在。 */
+.c2md-panel-status:empty {
+  padding: 0;
+  border-bottom: 0;
+  gap: 0;
+}
+
+.c2md-progress-label {
+  margin-bottom: var(--s-1);
+}
+
+/* ---------- 正文 ---------- */
+.c2md-panel-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4) var(--s-4) var(--s-6);
+  scrollbar-width: thin;
+}
+
+.c2md-section + .c2md-section {
+  margin-top: var(--s-6);
+}
+
+.c2md-frame {
+  margin: 0 0 var(--s-3);
+}
+
+.c2md-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: var(--hair) solid var(--rule);
+}
+
+.c2md-section-title {
+  font-size: var(--t-head);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  margin-bottom: var(--s-3);
+  padding-bottom: var(--s-2);
+  border-bottom: var(--hair) solid var(--rule);
+}
+
+.c2md-para {
+  margin-bottom: var(--s-4);
+  font-size: var(--t-body-lg);
+  line-height: 1.75;
+  color: var(--ink);
+  /* 中文长句在窄栏里需要更舍得断词 */
+  overflow-wrap: anywhere;
+}
+
+.c2md-para:last-child {
+  margin-bottom: 0;
+}
+
+/* 时间戳：sans + tabular-nums。不是等宽字体——要的是数字对齐，不是终端感。 */
+.c2md-ts {
+  display: inline;
+  margin-right: var(--s-2);
+  font-size: var(--t-meta);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--ink-3);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+button.c2md-ts {
+  border-bottom: var(--hair) solid transparent;
+  transition: color 150ms var(--ease), border-color 150ms var(--ease);
+  padding: 0;
+}
+
+button.c2md-ts:hover {
+  color: var(--mark);
+  border-bottom-color: var(--mark);
+}
+
+/* 隐藏时刻时连它的占位一起去掉，正文左边缘对齐 */
+.c2md-scope[data-timestamps='off'] .c2md-ts {
+  display: none;
+}
+
+/* 被标记为纯语气词而删除的段落本就不渲染，这里只处理「未润色」的淡显 */
+.c2md-para[data-state='kept'] .c2md-ts {
+  color: var(--ink-3);
+}
+
+/* 正在跳过的段落：短暂高亮，让用户知道点到了哪一段 */
+.c2md-para[data-active='true'] {
+  background: var(--mark-soft);
+  border-radius: var(--radius-sm);
+  margin-left: calc(var(--s-2) * -1);
+  margin-right: calc(var(--s-2) * -1);
+  padding: var(--s-2);
+}
+
+/* ---------- 底部 ---------- */
+.c2md-panel-foot {
+  padding: var(--s-3) var(--s-4);
+  border-top: var(--hair) solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  /* 必须有底色：正文滚动到这一行下面时不能透出来 */
+  background: var(--paper);
+}
+
+/* ---------- 空态与错误 ---------- */
+.c2md-empty {
+  padding: var(--s-6) var(--s-4);
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--t-body);
+}
+
+.c2md-stack {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.c2md-note-actions {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+  flex-wrap: wrap;
+}

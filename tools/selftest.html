@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>course2md 自测台</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f6f7fb;
+        font-family: system-ui, sans-serif;
+      }
+      .bar {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        padding: 10px 16px;
+        border-bottom: 1px solid #e6e8ef;
+        background: #fff;
+        font-size: 13px;
+      }
+      .bar a {
+        color: #14151a;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 380px minmax(0, 1fr);
+        gap: 16px;
+        padding: 16px;
+        height: calc(100% - 41px);
+        box-sizing: border-box;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 1px solid #e6e8ef;
+        border-radius: 8px;
+        background: #fff;
+      }
+      iframe.panel {
+        border: 0;
+        border-radius: 0;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <strong>course2md 自测台</strong>
+      <span>面板状态：</span>
+      <a href="?panel=ready">ready</a>
+      <a href="?panel=running">running</a>
+      <a href="?panel=error">error</a>
+      <a href="?panel=empty">empty</a>
+      <a href="?panel=polished">polished</a>
+      <span>·</span>
+      <a href="?panel=ready&theme=dark">深色</a>
+      <a href="?panel=ready&ts=off">隐藏时刻</a>
+    </div>
+    <div class="grid">
+      <iframe id="popup" src="../src/ui/popup.html" title="弹窗"></iframe>
+      <iframe id="options" src="../src/ui/options.html" title="设置页"></iframe>
+      <iframe
+        id="panel"
+        class="panel"
+        style="grid-column: 1 / -1; height: 520px"
+        title="面板"
+      ></iframe>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const panelQuery = params.toString();
+      document.getElementById('panel').src =
+        `selftest-panel.html${panelQuery ? `?${panelQuery}` : ''}`;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>course2md 设置</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body class="c2md-scope">
+    <div class="page">
+      <header class="page-head">
+        <h1>course2md 设置</h1>
+        <p class="c2md-meta">
+          插件不内置任何模型，也不会替你选服务商。下面两处地址都指向你自己跑的服务，
+          密钥只存在本机浏览器的 local storage 里，不参与同步。
+        </p>
+      </header>
+
+      <!-- 文字来源与显示：与弹窗里那几处勾选是同一份设置 -->
+      <section class="block" id="block-display">
+        <h2>显示</h2>
+        <p class="c2md-meta">这几项在弹窗里也能改，改的是同一份设置。</p>
+        <div class="rows" id="display-rows"></div>
+      </section>
+
+      <section class="block" id="block-subtitle">
+        <h2>平台字幕</h2>
+        <div class="rows">
+          <div class="row">
+            <label for="sub-lang">
+              首选语言
+              <span class="c2md-meta">语言代码，如 zh-Hans、en。留空则跟随页面。</span>
+            </label>
+            <input id="sub-lang" type="text" placeholder="跟随页面" spellcheck="false" />
+          </div>
+          <div class="row">
+            <label for="sub-auto">
+              没有人工字幕时使用自动生成字幕
+              <span class="c2md-meta">关掉后，只有人工字幕才会被取用。</span>
+            </label>
+            <input id="sub-auto" type="checkbox" />
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="block-asr">
+        <h2>本地模型转录</h2>
+        <p class="c2md-meta">
+          优先快速提取音轨，再切片交给本机 ASR。YouTube、B 站可运行 npm run fast-asr；
+          普通视频可直接离线解码。仅在两者不可用时按播放速度录音。
+        </p>
+
+        <div class="rows">
+          <div class="row">
+            <label for="asr-endpoint">
+              服务地址
+              <span class="c2md-meta">whisper.cpp 默认 http://127.0.0.1:8080/v1/audio/transcriptions</span>
+            </label>
+            <input id="asr-endpoint" type="text" spellcheck="false" />
+          </div>
+
+          <div class="row">
+            <label for="asr-key">
+              API key
+              <span class="c2md-meta">本机服务通常不需要，留空即可。</span>
+            </label>
+            <input id="asr-key" type="password" spellcheck="false" autocomplete="off" />
+          </div>
+
+          <div class="row">
+            <label for="asr-model">
+              模型名
+              <span class="c2md-meta">服务端识别用的名字，faster-whisper 常用 large-v3。</span>
+            </label>
+            <input id="asr-model" type="text" spellcheck="false" />
+          </div>
+
+          <div class="row">
+            <label for="asr-language">
+              语言提示
+              <span class="c2md-meta">留空让模型自己判断。指定后短音频更稳。</span>
+            </label>
+            <input id="asr-language" type="text" placeholder="自动" spellcheck="false" />
+          </div>
+
+          <div class="row">
+            <label for="asr-chunk">
+              切片长度（秒）
+              <span class="c2md-meta">越长越快、越省请求；越短时间戳越准。30 是稳妥值。</span>
+            </label>
+            <input id="asr-chunk" type="number" min="5" max="120" step="5" />
+          </div>
+
+          <div class="row">
+            <label for="asr-rate">
+              录制倍率
+              <span class="c2md-meta">
+                仅用于播放器录音回退。大于 1 会让声音变调、识别质量下降；快速提取不受此项影响。
+              </span>
+            </label>
+            <input id="asr-rate" type="number" min="1" max="16" step="1" />
+          </div>
+        </div>
+
+        <div class="block-actions">
+          <button type="button" class="c2md-button" id="asr-grant">授权访问此地址</button>
+          <button type="button" class="c2md-button" id="asr-test">测试连接</button>
+          <span class="c2md-meta" id="asr-result"></span>
+        </div>
+      </section>
+
+      <section class="block" id="block-llm">
+        <h2>润色</h2>
+        <p class="c2md-meta">
+          任何 OpenAI 兼容的 /chat/completions 端点都行——本机 Ollama、LM Studio、自建网关，
+          或你已付费的服务商。插件按「段落边界」分块并发发送，每块带上一块的尾句作为上下文，
+          并要求模型逐条按 id 返回，对不上就整块保留原文。
+        </p>
+
+        <div class="rows">
+          <div class="row">
+            <label for="llm-url">
+              服务地址
+              <span class="c2md-meta">到 /v1 为止，例如 https://api.deepseek.com/v1</span>
+            </label>
+            <input id="llm-url" type="text" spellcheck="false" />
+          </div>
+
+          <div class="row">
+            <label for="llm-key">
+              API key
+              <span class="c2md-meta">本机 Ollama 之类留空即可。</span>
+            </label>
+            <input id="llm-key" type="password" spellcheck="false" autocomplete="off" />
+          </div>
+
+          <div class="row">
+            <label for="llm-model">
+              模型名
+              <span class="c2md-meta">例如 deepseek-chat、qwen2.5:14b。</span>
+            </label>
+            <input id="llm-model" type="text" spellcheck="false" />
+          </div>
+
+          <div class="row">
+            <label for="llm-concurrency">
+              并发块数
+              <span class="c2md-meta">默认 4。自建网关可调高，公有服务调高容易被限流。</span>
+            </label>
+            <input id="llm-concurrency" type="number" min="1" max="16" step="1" />
+          </div>
+
+          <div class="row">
+            <label for="llm-glossary">
+              术语表
+              <span class="c2md-meta">
+                每行一条。同音字错得最多的往往是专有名词，把它写下来最省事。
+              </span>
+            </label>
+            <textarea id="llm-glossary" rows="4" spellcheck="false" placeholder="Transformer&#10;混合专家（MoE）"></textarea>
+          </div>
+
+          <div class="row">
+            <label for="llm-instruction">
+              自定义校对指令
+              <span class="c2md-meta">
+                留空则用内置指令。输出格式的约束由插件强制追加，这里改不动它。
+              </span>
+            </label>
+            <textarea id="llm-instruction" rows="6" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <div class="block-actions">
+          <button type="button" class="c2md-button" id="llm-grant">授权访问此地址</button>
+          <button type="button" class="c2md-button" id="llm-test">测试连接</button>
+          <span class="c2md-meta" id="llm-result"></span>
+        </div>
+      </section>
+
+      <section class="block" id="block-appearance">
+        <h2>外观</h2>
+        <div class="rows">
+          <div class="row">
+            <span class="row-label">主题</span>
+            <div id="theme-control"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block block--quiet">
+        <h2>回到初始状态</h2>
+        <p class="c2md-meta">清空上面所有内容，包括密钥与自定义指令。</p>
+        <div class="block-actions">
+          <button type="button" class="c2md-button" id="reset">恢复默认设置</button>
+          <span class="c2md-meta" id="reset-result"></span>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

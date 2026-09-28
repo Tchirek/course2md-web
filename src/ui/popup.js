@@ -1,0 +1,287 @@
+//! 弹窗：三处勾选 + 文字来源 + 生成。
+//!
+//! 弹窗只做两件事——把设置写下去、把「开始」发出去。真正的进度与正文都在
+//! 页面内面板里，所以关掉弹窗不会打断任何工作。
+
+import { segmented, displayToggleRows, progress, note, applyTheme } from './controls.js';
+import { icon } from './icons.js';
+
+const el = {
+  title: document.getElementById('page-title'),
+  pageMeta: document.getElementById('page-meta'),
+  source: document.getElementById('source-control'),
+  sourceHint: document.getElementById('source-hint'),
+  toggles: document.getElementById('toggles'),
+  status: document.getElementById('status'),
+  run: document.getElementById('run'),
+  secondary: document.getElementById('secondary'),
+  options: document.getElementById('open-options'),
+};
+
+/** @type {object} */
+let settings = null;
+let tab = null;
+let state = null;
+
+// ---------- 启动 ----------
+
+init();
+
+async function init() {
+  el.options.appendChild(icon('settings', { size: 16 }));
+  el.options.addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+  const reply = await send({ type: 'settings.load' }).catch(() => null);
+  const { withDefaults } = await import('../core/settings.js');
+  settings = withDefaults(reply ?? {});
+  applyTheme(settings);
+
+  [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  renderPage();
+  renderSource();
+  renderToggles();
+
+  el.run.addEventListener('click', () => start());
+  el.secondary.addEventListener('click', () => showPanel());
+
+  // 页面里的控制器会广播状态，弹窗跟着刷新
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'c2md.state') return;
+    state = message.payload;
+    renderStatus();
+  });
+
+  // 打开时先问一次现状
+  const current = await ask({ type: 'c2md.status' }).catch(() => null);
+  if (current) {
+    state = current;
+    renderStatus();
+  }
+}
+
+// ---------- 渲染 ----------
+
+function renderPage() {
+  const url = tab?.url ?? '';
+  const site = siteOf(url);
+  el.title.textContent = tab?.title || '未命名标签页';
+  el.pageMeta.textContent = site
+    ? `${site} · 已支持，可直接生成`
+    : '这个页面不在内置站点里。若页面上有 <video> 也可以试，需要先授权访问该站点。';
+}
+
+function renderSource() {
+  el.source.replaceChildren(
+    segmented({
+      options: [
+        { value: 'subtitle', label: '平台字幕', title: '直接取平台已有的字幕，最快' },
+        { value: 'asr', label: '本地模型', title: '用你自己跑的本机模型从音频转写' },
+      ],
+      value: settings.source,
+      onChange: (value) => patch({ source: value }),
+    }),
+  );
+
+  if (settings.source === 'subtitle') {
+    el.sourceHint.textContent = '优先取人工字幕；没有则用自动生成字幕。';
+  } else if (!settings.asr.endpoint) {
+    el.sourceHint.textContent = '还没填本机 ASR 服务地址，去设置里填一个。';
+  } else {
+    el.sourceHint.textContent = `本机 ${settings.asr.endpoint}`;
+  }
+}
+
+function renderToggles() {
+  el.toggles.replaceChildren(
+    displayToggleRows({
+      settings,
+      onChange: (patchObject) => patch(patchObject),
+      onSetup: () => chrome.runtime.openOptionsPage(),
+    }),
+  );
+  // 分组标题补在勾选行上面，与「文字来源」的层级一致
+  const heading = document.createElement('h2');
+  heading.className = 'c2md-group-title';
+  heading.textContent = '显示与处理';
+  el.toggles.prepend(heading);
+}
+
+function renderStatus() {
+  if (!state) return;
+  const running = state.status === 'running';
+  el.run.disabled = running;
+  el.run.textContent = running ? '生成中' : state.status === 'ready' ? '重新生成' : '生成笔记';
+
+  // 生成完了就把「在页面打开面板」放到手边
+  const hasContent = state.status === 'ready';
+  el.secondary.hidden = !hasContent;
+  el.secondary.textContent = '在页面打开';
+
+  const lines = [];
+  if (state.meta?.title && state.meta.title !== el.title.textContent) {
+    lines.push(state.meta.title);
+  }
+  if (running && state.stageLabel) lines.push(state.stageLabel);
+  if (hasContent && state.stats) {
+    const bits = [state.siteLabel];
+    bits.push(state.stats.trackLabel || '');
+    bits.push(`${state.segmented} 段`);
+    if (state.polish?.summary) bits.push(state.polish.summary);
+    lines.push(bits.filter(Boolean).join(' · '));
+  }
+  if (state.error) lines.push(state.error.title ?? '出错了');
+
+  el.status.dataset.tone = state.error ? 'error' : 'default';
+  el.status.replaceChildren();
+
+  if (running) {
+    el.status.appendChild(progress({ ratio: null }));
+  }
+  for (const line of lines) {
+    const p = document.createElement('div');
+    p.textContent = line;
+    el.status.appendChild(p);
+  }
+}
+
+// ---------- 行为 ----------
+
+/**
+ * 改设置：先落盘再重绘。storage.onChanged 也会推一次，两条路径都写同一份
+ * 状态，所以不需要额外的同步逻辑。
+ */
+async function patch(patchObject) {
+  const reply = await send({ type: 'settings.save', payload: { patch: patchObject } }).catch(
+    () => null,
+  );
+  if (reply?.settings) settings = reply.settings;
+  else Object.assign(settings, patchObject);
+
+  applyTheme(settings);
+  renderSource();
+  renderToggles();
+  if (reply?.notes?.length) {
+    el.status.dataset.tone = 'default';
+    el.status.replaceChildren();
+    for (const text of reply.notes) {
+      const p = document.createElement('div');
+      p.textContent = text;
+      el.status.appendChild(p);
+    }
+  }
+}
+
+async function start() {
+  el.run.disabled = true;
+  el.status.dataset.tone = 'default';
+  el.status.replaceChildren(progress({ ratio: null, label: '正在连接页面' }));
+
+  try {
+    const ready = await ensureController();
+    if (!ready) return;
+    const reply = await ask({ type: 'c2md.run' }, 240_000);
+    state = reply ?? state;
+    renderStatus();
+    if (state?.status === 'ready') {
+      // 生成完了就打开面板，用户点一下就看到了
+      await ask({ type: 'c2md.showPanel' }).catch(() => null);
+      window.close();
+    } else if (state?.error) {
+      renderStatus();
+    }
+  } catch (error) {
+    el.status.dataset.tone = 'error';
+    el.status.replaceChildren();
+    const p = document.createElement('div');
+    p.textContent = String(error?.message ?? error);
+    el.status.appendChild(p);
+  } finally {
+    el.run.disabled = false;
+  }
+}
+
+async function showPanel() {
+  await ask({ type: 'c2md.showPanel' }).catch(() => null);
+  window.close();
+}
+
+/**
+ * 确认页面里有内容脚本。
+ * 内置站点是声明式注入的，但如果页面在安装/更新扩展之前就已打开，脚本并不在。
+ * 这时用 activeTab 权限主动注入一次。
+ */
+async function ensureController() {
+  if (!tab?.id) return false;
+
+  const ping = await ask({ type: 'c2md.ping' }, 1500).catch(() => null);
+  if (ping?.ready) return true;
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['src/content/boot.js'],
+    });
+  } catch (error) {
+    showError(
+      '无法在这个页面运行',
+      `${String(error?.message ?? error)}\n` +
+        '内置站点不需要额外授权；其他页面请在扩展详情里允许「在此站点上」访问。',
+    );
+    return false;
+  }
+
+  // 等脚本把控制器接起来
+  for (let i = 0; i < 10; i++) {
+    await sleep(150);
+    const pong = await ask({ type: 'c2md.ping' }, 1200).catch(() => null);
+    if (pong?.ready) return true;
+  }
+  showError('页面没有响应', '内容脚本没能启动。刷新页面后再试一次。');
+  return false;
+}
+
+function showError(title, body) {
+  el.status.dataset.tone = 'error';
+  el.status.replaceChildren(note({ title, body, tone: 'error' }));
+}
+
+function siteOf(url) {
+  try {
+    const host = new URL(url).hostname;
+    if (/(^|\.)youtube\.com$/.test(host)) return 'YouTube';
+    if (/(^|\.)bilibili\.com$/.test(host)) return '哔哩哔哩';
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+// ---------- 与页面控制器通信 ----------
+
+function send(message) {
+  return chrome.runtime.sendMessage(message).then((reply) => {
+    if (!reply) throw new Error('扩展后台没有响应');
+    if (!reply.ok) throw new Error(reply.error ?? '未知错误');
+    return reply.value;
+  });
+}
+
+async function ask(message, timeoutMs = 10_000) {
+  if (!tab?.id) return null;
+  const task = chrome.tabs.sendMessage(tab.id, message).then((reply) => {
+    if (!reply) throw new Error('页面没有响应');
+    if (!reply.ok) throw new Error(reply.error ?? '未知错误');
+    return reply.value;
+  });
+  if (!timeoutMs) return task;
+  return Promise.race([
+    task,
+    sleep(timeoutMs).then(() => {
+      throw new Error('页面响应超时');
+    }),
+  ]);
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
