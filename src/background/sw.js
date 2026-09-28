@@ -65,8 +65,8 @@ const HANDLERS = {
     if (!result.ok) throw new Error(value.error ?? '本机提取失败');
     return value;
   },
-  'asr.fast.status': async ({ id }) => {
-    const result = await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`);
+  'asr.fast.status': async ({ id, after = 0 }) => {
+    const result = await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}?after=${Math.max(0, Number(after) || 0)}`);
     const value = await result.json();
     if (!result.ok) throw new Error(value.error ?? '本机任务查询失败');
     return value;
@@ -83,10 +83,13 @@ const HANDLERS = {
   },
 
   /** 打开设置页（弹窗里的链接用，避免弹窗内嵌 options）。 */
-  'ui.openOptions': (payload) => {
-    const hash = payload.section ? `#${payload.section}` : '';
-    chrome.runtime.openOptionsPage();
-    return { opened: true, hash };
+  'ui.openOptions': async (payload) => {
+    if (payload.section) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL(`src/ui/options.html#${encodeURIComponent(payload.section)}`) });
+    } else {
+      await chrome.runtime.openOptionsPage();
+    }
+    return { opened: true };
   },
 
   'audio.extensions': () => supportedAudioExtensions(),

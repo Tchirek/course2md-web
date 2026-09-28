@@ -9,7 +9,7 @@ import { Panel } from './panel.js';
 import { visualSections, captureSectionImages } from './visual.js';
 import { buildDoc, toMarkdown, toPlainText, fileNameFor } from '../core/format.js';
 import {
-  runSubtitlePipeline, runAsrPipeline, polishSegments, finalize,
+  runSubtitlePipeline, runAsrPipeline, polishSegments, finalize, organize,
   MissingSourceError, AbortError,
 } from './pipeline.js';
 
@@ -236,6 +236,13 @@ class Controller {
         onProgress: (stage, info) => {
           if (this.abort === runAbort && !runAbort.signal.aborted) this.onProgress(stage, info);
         },
+        onPartial: (events) => {
+          if (this.abort !== runAbort || runAbort.signal.aborted) return;
+          const partial = organize([...events].sort((a, b) => a.start - b.start), meta);
+          this.meta = meta;
+          this.previewSections = visualSections(partial.sections, meta.duration);
+          this.broadcast();
+        },
       };
 
       const built = this.settings.source === 'asr'
@@ -412,10 +419,7 @@ class Controller {
   }
 
   async openOptions(section) {
-    // 扩展页面的 URL 在内容脚本里拿得到，直接开新标签页比绕后台更直接
-    const url = chrome.runtime.getURL(`src/ui/options.html${section ? `#${section}` : ''}`);
-    window.open(url, '_blank', 'noopener');
-    return { opened: true };
+    return send({ type: 'ui.openOptions', payload: { section } });
   }
 
   async patchSettings(patch) {

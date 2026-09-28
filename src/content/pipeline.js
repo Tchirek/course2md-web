@@ -95,7 +95,7 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
  * @param {(seconds:number)=>void} [args.seek]
  * @returns {Promise<PipelineResult>}
  */
-export async function runAsrPipeline({ adapter, meta, settings, onProgress, signal }) {
+export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPartial, signal }) {
   const warnings = [];
   const asr = settings.asr;
 
@@ -129,23 +129,29 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
       if (!started?.ok || !started.value?.id) throw new Error(started?.error ?? '本机提取未启动');
       fastJobId = started.value.id;
       let job;
+      let seen = 0;
       do {
         if (signal?.aborted) throw new AbortError();
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        const reply = await chrome.runtime.sendMessage({ type: 'asr.fast.status', payload: { id: started.value.id } });
+        const reply = await chrome.runtime.sendMessage({ type: 'asr.fast.status', payload: { id: started.value.id, after: seen } });
         if (!reply?.ok) throw new Error(reply?.error ?? '本机任务查询失败');
         job = reply.value;
+        if (job.events?.length) {
+          events.push(...job.events);
+          seen += job.events.length;
+          onPartial?.(events);
+        }
         onProgress?.('capture', { ratio: job.total ? job.done / job.total : 0, message: job.message });
       } while (job.state === 'running');
       if (job.state === 'error') throw new Error(job.error);
-      if (job.events?.length) {
-        const built = organize(job.events, meta, {});
+      if (events.length) {
+        const built = organize(events, meta, {});
         return {
           ...built,
           stats: {
             source: 'asr',
             trackLabel: `${asr.model || '本机模型'} · 本机快速提取`,
-            eventCount: job.events.length,
+            eventCount: events.length,
             chunkCount: job.chunks,
             captureMode: 'local-helper',
           },
@@ -159,6 +165,10 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
       }
       fastError = String(error?.message ?? error);
       warnings.push(`本机快速提取失败：${fastError}`);
+      if (events.length) {
+        events.length = 0;
+        onPartial?.(events);
+      }
       // 没运行辅助服务时继续尝试浏览器可读媒体。
     }
   }
@@ -195,6 +205,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, sign
         } else if (value.text) {
           events.push({ start: chunk.start, end: chunk.end, text: value.text });
         }
+        onPartial?.(events);
       }).catch((error) => { failure ??= error; }).finally(() => pending.delete(task));
       pending.add(task);
       if (pending.size >= 2) await Promise.race(pending);

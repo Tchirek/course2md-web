@@ -47,7 +47,7 @@ const browser = await puppeteer.launch({
 
 try {
   // ---- 面板 ----
-  for (const state of ['ready', 'polished', 'error']) {
+  for (const state of ['ready', 'running', 'polished', 'error']) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 760 });
     await page.goto(`${BASE}/tools/selftest-panel.html?state=${state}`, {
@@ -138,6 +138,23 @@ try {
       else fail(`panel/${state}`, `主按钮底色意外：${m.primaryBg}`);
     } else {
       fail(`panel/${state}`, `主按钮没有底色（权重被复位规则覆盖了）：${m.primaryBg}`);
+    }
+
+    if (state === 'running') {
+      const count = await page.evaluate(() => document.getElementById('c2md-panel-host')?.shadowRoot.querySelectorAll('.c2md-para').length ?? 0);
+      count > 0 ? pass('panel/running 已完成的文本可见') : fail('panel/running', '运行中仍隐藏已完成的文本');
+    }
+    if (state === 'polished') {
+      const counts = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const skipped = panel.scope.querySelector('.c2md-para[data-state="skipped"]');
+        const before = skipped?.style.display;
+        panel.setState({ settings: { ...panel.state.settings, polish: false } });
+        return { before, after: skipped?.style.display, original: skipped?.querySelector('.c2md-say')?.textContent };
+      });
+      counts.before === 'none' && counts.after !== 'none' && counts.original
+        ? pass('panel/polished 可切回完整原版转录')
+        : fail('panel/polished', `原版切换失败：${JSON.stringify(counts)}`);
     }
 
     await page.close();

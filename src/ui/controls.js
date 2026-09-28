@@ -218,7 +218,7 @@ export function applyTheme(settings, root = document.body) {
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
  * @returns {DocumentFragment}
  */
-export function displayToggleRows({ settings, onChange, onSetup }) {
+export function displayToggleRows({ settings, onChange, onSetup, polishHint = '' }) {
   const frag = document.createDocumentFragment();
 
   for (const toggle of DISPLAY_TOGGLES) {
@@ -231,7 +231,7 @@ export function displayToggleRows({ settings, onChange, onSetup }) {
           ? `需要先勾选「${labelOf(toggle.dependsOn)}」`
           : needsSetup && toggle.unconfiguredHint
             ? toggle.unconfiguredHint
-            : '',
+            : toggle.key === 'polish' ? polishHint : '',
         checked: Boolean(settings[toggle.key]),
         disabled,
         needsSetup,

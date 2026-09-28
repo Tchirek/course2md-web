@@ -83,7 +83,7 @@ export class Panel {
     Object.assign(this.state, patch);
 
     if (!this.scope) return;
-    const label = progressOnly && this.bodyEl?.querySelector('.c2md-progress-label');
+    const label = progressOnly && this.scope.querySelector('.c2md-progress-label');
     if (label) {
       label.textContent = this.state.stageLabel || '正在取文字';
       return;
@@ -115,6 +115,14 @@ export class Panel {
     for (const el of this.scope.querySelectorAll('.c2md-say')) {
       const next = polished && el.dataset.polished ? el.dataset.polished : el.dataset.raw;
       if (el.textContent !== next) el.textContent = next;
+    }
+    for (const section of this.scope.querySelectorAll('.c2md-section')) {
+      let visible = false;
+      for (const para of section.querySelectorAll('.c2md-para')) {
+        para.style.display = polished && para.dataset.state === 'skipped' ? 'none' : '';
+        if (para.style.display !== 'none') visible = true;
+      }
+      section.style.display = visible ? '' : 'none';
     }
     for (const ts of this.scope.querySelectorAll('.c2md-ts')) {
       const sec = Number(ts.dataset.start);
@@ -151,6 +159,7 @@ export class Panel {
   render() {
     if (!this.scope) return;
     const scrollTop = this.bodyEl?.scrollTop ?? 0;
+    const atBottom = this.bodyEl && this.bodyEl.scrollHeight - this.bodyEl.clientHeight - scrollTop < 80;
 
     this.scope.replaceChildren(
       this.renderHead(),
@@ -161,7 +170,7 @@ export class Panel {
     );
     this.applyDisplayMode();
 
-    if (this.bodyEl && scrollTop) this.bodyEl.scrollTop = scrollTop;
+    if (this.bodyEl) this.bodyEl.scrollTop = atBottom ? this.bodyEl.scrollHeight : scrollTop;
   }
 
   // ---------- 头部 ----------
@@ -204,7 +213,7 @@ export class Panel {
     let n = 0;
     for (const section of sections) {
       for (const seg of section.segments) {
-        if (seg.state === 'skipped') continue;
+        if (polished && seg.state === 'skipped') continue;
         if (!polished && !seg.text) continue;
         n++;
       }
@@ -222,6 +231,7 @@ export class Panel {
         settings,
         onChange: (patch) => this.handlers.onSettings?.(patch),
         onSetup: () => this.handlers.onOptions?.('llm'),
+        polishHint: this.state.polish?.hasResult ? '取消勾选查看原版转录' : '',
       }),
     );
     return wrap;
@@ -253,6 +263,8 @@ export class Panel {
           label: `正在润色 ${polish.done}/${polish.total} 块`,
         }),
       );
+    } else if (status === 'running' && this.state.sections?.length) {
+      wrap.appendChild(progress({ label: this.state.stageLabel || '正在转写' }));
     } else if (polish?.summary) {
       // 一行结果说明就是一行文字。给它套个带边框的卡片，等于给状态加装饰。
       const line = el('div', 'c2md-meta');
@@ -279,7 +291,7 @@ export class Panel {
     this.bodyEl = body;
 
     const { status, sections, settings } = this.state;
-    if (status === 'loading' || status === 'running') {
+    if ((status === 'loading' || status === 'running') && !sections?.length) {
       const empty = el('div', 'c2md-empty');
       empty.appendChild(progress({ ratio: null, label: this.state.stageLabel || '正在取文字' }));
       body.appendChild(empty);
@@ -297,9 +309,7 @@ export class Panel {
     const polished = Boolean(settings?.polish && this.state.polish?.hasResult);
 
     for (const section of sections) {
-      const visible = section.segments.filter(
-        (seg) => seg.state !== 'skipped' && (polished ? seg.text : seg.raw ?? seg.text),
-      );
+      const visible = section.segments.filter((seg) => seg.raw ?? seg.text);
       if (!visible.length) continue;
 
       const sec = el('section', 'c2md-section');
@@ -321,10 +331,11 @@ export class Panel {
       for (const seg of section.segments) {
         const raw = seg.raw ?? seg.text;
         const shown = polished ? seg.text : raw;
-        if (seg.state === 'skipped' || !shown) continue;
+        if (!shown && !raw) continue;
 
         const p = el('p', 'c2md-para');
         p.dataset.state = seg.state ?? 'kept';
+        p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
         p.dataset.start = String(seg.start);
 
         const sec0 = Number(seg.start);

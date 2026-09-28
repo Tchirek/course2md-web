@@ -35,9 +35,11 @@ http.createServer(async (req, res) => {
     return res.end(JSON.stringify(asrStatus));
   }
   if (req.method === 'GET' && req.url?.startsWith('/jobs/')) {
-    const job = jobs.get(req.url.slice(6));
+    const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+    const job = jobs.get(url.pathname.slice(6));
     if (!job) res.writeHead(404);
-    return res.end(JSON.stringify(job ?? { error: '任务不存在' }));
+    const after = Math.max(0, Number(url.searchParams.get('after')) || 0);
+    return res.end(JSON.stringify(job ? { ...job, events: job.events.slice(after) } : { error: '任务不存在' }));
   }
   if (req.method === 'DELETE' && req.url?.startsWith('/jobs/')) {
     const controller = controllers.get(req.url.slice(6));
@@ -57,7 +59,7 @@ http.createServer(async (req, res) => {
       throw new Error('ASR 服务必须在本机');
     }
     const id = randomUUID();
-    const job = { state: 'running', message: source.protocol === 'file:' ? '正在读取本地视频' : '正在下载音轨', done: 0, total: 0 };
+    const job = { state: 'running', message: source.protocol === 'file:' ? '正在读取本地视频' : '正在下载音轨', done: 0, total: 0, events: [] };
     const controller = new AbortController();
     jobs.set(id, job);
     controllers.set(id, controller);
@@ -161,7 +163,7 @@ async function processJob(input, source, endpoint, job, signal) {
     const files = (await readdir(dir)).filter((name) => /^part-\d+\.wav$/.test(name)).sort();
     if (!files.length) throw new Error('ffmpeg 未产出音频切片');
     job.total = files.length;
-    const events = [];
+    const events = job.events;
     for (let i = 0; i < files.length; i++) {
       if (signal.aborted) throw new Error('已取消');
       job.message = `正在转写 ${i + 1}/${files.length} 片`;

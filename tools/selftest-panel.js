@@ -72,6 +72,7 @@ if (scenario === 'polished') {
     .filter((i) => POLISHED[i] !== undefined)
     .map((i) => ({ id: i, text: POLISHED[i] }));
   applyPolish(built.segments, ids.slice(0, polished.length), polished);
+  built.segments[1].state = 'skipped';
 }
 
 if (scenario === 'running') {
@@ -111,4 +112,5 @@ if (scenario === 'running') {
 
 // 供截图脚本确认渲染完成
 window.__selftestReady = true;
+window.__selftestPanel = panel;
 document.title = `面板自测 · ${scenario}`;
