@@ -109,6 +109,13 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
     );
   }
 
+  if (/^https?:\/\/(?:127\.0\.0\.1|localhost):8081\/v1\/audio\/transcriptions\/?$/.test(asr.endpoint)) {
+    onProgress?.('capture', { ratio: 0, message: '正在启动本机转录服务' });
+    const started = await chrome.runtime.sendMessage({ type: 'asr.local.start' });
+    if (!started?.ok) throw new Error(started?.error ?? '本机转录服务启动失败');
+    if (started.value?.state === 'error') throw new Error(started.value.message);
+  }
+
   const events = [];
   let fastError = '';
   if (/^(https?:|file:)/.test(meta.url || '')) {

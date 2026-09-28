@@ -12,7 +12,7 @@ import { downloadBilibiliAudio } from './bilibili-audio.mjs';
 const PORT = 8766;
 const ASR_PORT = 8081;
 const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
-const BUILTIN_ASR = `http://127.0.0.1:${ASR_PORT}`;
+const BUILTIN_ASR = new Set([`http://127.0.0.1:${ASR_PORT}`, `http://localhost:${ASR_PORT}`]);
 const MAX_BODY = 128 * 1024;
 const jobs = new Map();
 const controllers = new Map();
@@ -126,7 +126,7 @@ function readyStatus(health) {
 async function processJob(input, source, endpoint, job, signal) {
   let dir;
   try {
-    if (endpoint.origin === BUILTIN_ASR) await startLocalAsr();
+    if (BUILTIN_ASR.has(endpoint.origin)) await startLocalAsr();
     const chunkSeconds = Math.max(5, Math.min(120, Number(input.chunkSeconds) || 30));
     dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-'));
     let mediaPath;
@@ -167,7 +167,7 @@ async function processJob(input, source, endpoint, job, signal) {
     const files = (await readdir(dir)).filter((name) => /^part-\d+\.wav$/.test(name)).sort();
     if (!files.length) throw new Error('ffmpeg 未产出音频切片');
     job.total = files.length;
-    if (endpoint.origin === BUILTIN_ASR) await waitForLocalAsr(job, signal);
+    if (BUILTIN_ASR.has(endpoint.origin)) await waitForLocalAsr(job, signal);
     const events = job.events;
     for (let i = 0; i < files.length; i++) {
       if (signal.aborted) throw new Error('已取消');

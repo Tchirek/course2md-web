@@ -82,6 +82,29 @@ test('本机提取和浏览器读取都失败时显示原始错误，不启动�
   }
 });
 
+test('点击本机模型生成笔记时先启动模型再提取音轨', async () => {
+  const oldChrome = globalThis.chrome;
+  const oldWindow = globalThis.window;
+  const calls = [];
+  globalThis.chrome = { runtime: { sendMessage: async ({ type }) => {
+    calls.push(type);
+    return type === 'asr.local.start' ? { ok: true, value: { state: 'starting' } } : { ok: false, error: '提取失败' };
+  } } };
+  globalThis.window = { addEventListener() {} };
+  try {
+    const { runAsrPipeline } = await import('../src/content/pipeline.js');
+    await assert.rejects(runAsrPipeline({
+      adapter: { video: () => ({ currentSrc: 'blob:video', duration: 1118 }) },
+      meta: { url: 'https://www.bilibili.com/video/BVtest', duration: 1118 },
+      settings: { asr: { endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions' } },
+    }), /浏览器也无法离线读取/);
+    assert.deepEqual(calls.slice(0, 2), ['asr.local.start', 'asr.fast.start']);
+  } finally {
+    globalThis.chrome = oldChrome;
+    globalThis.window = oldWindow;
+  }
+});
+
 test('只导出当前视频站点的 cookie，保留 HttpOnly 属性', () => {
   const cookies = [
     { domain: '.bilibili.com', hostOnly: false, path: '/', secure: true, httpOnly: true, name: 'SESSDATA', value: 'test', expirationDate: 2000000000 },

@@ -31,4 +31,4 @@ try {
 } catch {
   spawn(process.execPath, [helper], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
 }
-process.stdout.write('本机助手已安装并设置为登录后运行。现在可在扩展设置页启动转录模型。\n');
+process.stdout.write('本机助手已安装并设置为登录后运行。生成笔记时会自动启动转录模型。\n');
