@@ -326,6 +326,42 @@ test('planChunks 不跨章节，且换章节时不携带上下文', () => {
   assert.equal(chunks[1].context, '');
 });
 
+test('planChunks 续润时跳过已润色段落，并借其尾句作上下文', () => {
+  const segs = [
+    { start: 0, end: 1, text: '甲已润色', state: 'polished' },
+    { start: 1, end: 2, text: '乙已润色', state: 'polished' },
+    { start: 2, end: 3, text: '丙待润色' },
+    { start: 3, end: 4, text: '丁待润色' },
+  ];
+  const chunks = planChunks(segs, { maxItems: 20, maxChars: 100000, contextChars: 10, onlyUnpolished: true });
+  assert.equal(chunks.length, 1);
+  assert.deepEqual(chunks[0].ids, [2, 3]);
+  assert.equal(chunks[0].context, '乙已润色');
+});
+
+test('coalesce 把事件的润色状态带进段落：整段润过才算润过', () => {
+  const segs = coalesce([
+    { start: 0, end: 1, text: '润过的句子', raw: '原来的句子', state: 'polished' },
+    { start: 1.5, end: 2, text: '没润过的句子' },
+  ]);
+  assert.equal(segs.length, 1);
+  assert.equal(segs[0].text, '润过的句子没润过的句子');
+  assert.equal(segs[0].raw, '原来的句子没润过的句子');
+  // 段落里有未润色的事件，整段算未润色，续润时会重新处理
+  assert.equal(segs[0].state, 'kept');
+  assert.ok(!('allPolished' in segs[0]));
+});
+
+test('coalesce 全部事件润过时段落标为 polished', () => {
+  const segs = coalesce([
+    { start: 0, end: 1, text: '第一句润过', raw: '第一句', state: 'polished' },
+    { start: 1.5, end: 2, text: '第二句润过', raw: '第二句', state: 'polished' },
+  ]);
+  assert.equal(segs.length, 1);
+  assert.equal(segs[0].state, 'polished');
+  assert.equal(segs[0].raw, '第一句第二句');
+});
+
 test('mapPool 保持顺序、并发受限、个别失败不拖垮整批', async () => {
   let active = 0;
   let peak = 0;

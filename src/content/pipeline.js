@@ -334,6 +334,26 @@ export function organize(events, meta, opts = {}) {
   return { sections, segments, sectionIndexOf, chapters };
 }
 
+/**
+ * 事件列表 -> 章节下标（与 partitionByBoundaries 的中点归属一致）。
+ * 转录进行中就能算，用于在组织成段落之前先润色事件。
+ */
+export function eventSectionIndexOf(events, meta) {
+  const marks = [...new Set((meta?.chapters ?? [])
+    .map((c) => Number(c?.t))
+    .filter((n) => Number.isFinite(n) && n >= 0))].sort((a, b) => a - b);
+  if (!marks.length) return events.map(() => 0);
+  return events.map((e) => {
+    const mid = (Number(e.start) + Number(e.end)) / 2;
+    let idx = 0;
+    for (let i = 0; i < marks.length; i++) {
+      if (marks[i] <= mid) idx = i;
+      else break;
+    }
+    return idx;
+  });
+}
+
 function punctuate(text) {
   const value = String(text ?? '').trim();
   if (!value || /[。！？.!?；;][”’"')）】]*$/u.test(value)) return value;
@@ -352,16 +372,21 @@ function punctuate(text) {
  * @param {(done:number,total:number)=>void} [args.onProgress]
  * @param {AbortSignal} [args.signal]
  * @param {{ensure:()=>Promise<object>}} [args.fallback] 自备 LLM 三次失败后的本地回落；ensure 返回本机模型的 LLM 配置
+ * @param {boolean} [args.resume] 续润：跳过已润色的段落，只处理剩下的
  * @returns {Promise<{chunks:number, polished:number, failed:number, removed:number, errors:string[], firstError:string}>}
  */
-export async function polishSegments({ segments, sectionIndexOf, meta, settings, onProgress, onSegment, onReset, signal, fallback }) {
-  resetPolish(segments);
-  onReset?.();
+export async function polishSegments({ segments, sectionIndexOf, meta, settings, onProgress, onSegment, onReset, signal, fallback, resume = false }) {
+  if (resume) onReset?.();
+  else {
+    resetPolish(segments);
+    onReset?.();
+  }
 
   const llm = settings.llm;
   const chunks = planChunks(segments, {
     contextChars: llm.contextChars,
     sectionOf: (i) => sectionIndexOf?.[i] ?? 0,
+    onlyUnpolished: resume,
   });
   if (!chunks.length) {
     return { chunks: 0, polished: 0, failed: 0, removed: 0, errors: [] };

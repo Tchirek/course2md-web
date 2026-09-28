@@ -43,6 +43,8 @@ export function planChunks(segments, opts = {}) {
   const maxChars = opts.maxChars ?? CHUNK_MAX_CHARS;
   const contextChars = opts.contextChars ?? CHUNK_CONTEXT_CHARS;
   const sectionOf = opts.sectionOf ?? (() => 0);
+  /** 续润模式：state 已是 polished 的段落跳过，只规划剩下的。 */
+  const onlyUnpolished = opts.onlyUnpolished === true;
 
   const chunks = [];
   let ids = [];
@@ -63,6 +65,15 @@ export function planChunks(segments, opts = {}) {
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     const sec = sectionOf(i);
+
+    if (onlyUnpolished && seg.state === 'polished') {
+      // 已润色的段落不再送进块里，只当后续块的上下文
+      if (ids.length) flush();
+      nextContext = sec === section ? tailOf(seg.text, contextChars) : '';
+      section = sec;
+      continue;
+    }
+
     const len = [...seg.text].length;
 
     if (ids.length > 0) {

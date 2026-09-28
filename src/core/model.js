@@ -46,6 +46,7 @@ export function normalizeEvent(e) {
   const safeEnd = Number.isFinite(end) && end >= start ? end : start;
   const out = { start: Math.max(0, start), end: Math.max(0, safeEnd), text };
   if (typeof e.raw === 'string' && e.raw.length > 0) out.raw = e.raw;
+  if (typeof e.state === 'string' && e.state) out.state = e.state;
   return out;
 }
 

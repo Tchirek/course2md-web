@@ -110,6 +110,9 @@ export function coalesce(events, opts = {}) {
     if (!cur) return;
     // raw 与 text 相同（未润色过）时不重复存，省一半体积
     if (cur.raw === cur.text) delete cur.raw;
+    // 段落里有任何一条事件没润色过，整段算「未润色」——续润时会被重新处理
+    cur.state = cur.raw === undefined || !cur.allPolished ? 'kept' : 'polished';
+    delete cur.allPolished;
     segments.push(cur);
     cur = null;
   };
@@ -136,6 +139,7 @@ export function coalesce(events, opts = {}) {
       // 只在 raw 已经存在时继续累积；否则会从空串拼出半截原文
       if (cur.raw !== undefined) cur.raw = appendText(cur.raw, original);
       cur.end = Math.max(cur.end, event.end);
+      cur.allPolished &&= event.state === 'polished';
     } else {
       cur = {
         start: event.start,
@@ -143,6 +147,7 @@ export function coalesce(events, opts = {}) {
         text: display,
         raw: original,
         state: 'kept',
+        allPolished: event.state === 'polished',
       };
     }
   }

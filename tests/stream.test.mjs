@@ -172,3 +172,37 @@ test('本机模型失败时只重试不回落', async () => {
     globalThis.chrome = originalChrome;
   }
 });
+
+test('续润只处理未润色的段落，已润色的保留不动', async () => {
+  globalThis.window = { addEventListener() {} };
+  const { polishSegments } = await import('../src/content/pipeline.js');
+  const originalChrome = globalThis.chrome;
+  const calls = [];
+  scriptedLlm([
+    { done: true, ok: true, content: '{"segments":[{"id":1,"text":"续润后的第二段。"}]}' },
+  ], calls);
+  try {
+    const segments = [
+      { text: '已润色的第一段。', raw: '原第一段', start: 0, end: 1, state: 'polished' },
+      { text: '第二段', start: 1, end: 2, state: 'kept' },
+    ];
+    const result = await polishSegments({
+      segments, sectionIndexOf: [0, 0], meta: {},
+      settings: { polishLevel: 'standard', llm: CUSTOM_LLM },
+      resume: true,
+    });
+    assert.equal(result.failed, 0);
+    assert.equal(calls.length, 1);
+    const userContent = calls[0].messages[1].content;
+    assert.ok(userContent.includes('"id":1'));
+    assert.ok(!userContent.includes('"id":0'));
+    assert.equal(segments[1].text, '续润后的第二段。');
+    assert.equal(segments[1].raw, '第二段');
+    // 已润色的段落未被重置，也没有被重新发出去
+    assert.equal(segments[0].text, '已润色的第一段。');
+    assert.equal(segments[0].raw, '原第一段');
+    assert.equal(segments[0].state, 'polished');
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
+});
