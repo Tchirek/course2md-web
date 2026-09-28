@@ -5,7 +5,7 @@
 //!    CORS 头，没有这一步，请求会被浏览器拦掉。
 //!  - 「测试连接」：真的发一次请求，把服务端的原话带回来，而不是只说「失败」。
 
-import { segmented, displayToggleRows, applyTheme } from './controls.js';
+import { segmented, displayToggleRows, polishEngineRow, applyTheme } from './controls.js';
 import { withDefaults } from '../core/settings.js';
 
 /** 字段表：DOM id -> 设置路径。声明式绑定，省掉一堆重复的 addEventListener。 */
@@ -79,13 +79,7 @@ async function commit(path, value) {
 
 function renderPolishEngine() {
   const host = document.getElementById('llm-engine');
-  host.replaceChildren(segmented({
-    options: [{ value: 'local', label: '本机' }, { value: 'custom', label: '自定义' }],
-    value: settings.polishEngine === 'auto'
-      ? settings.llm.baseUrl && settings.llm.model ? 'custom' : 'local'
-      : settings.polishEngine,
-    onChange: (value) => commit('polishEngine', value),
-  }));
+  host.replaceChildren(polishEngineRow(settings, (patch) => commit('polishEngine', patch.polishEngine)));
 }
 
 function fillFields() {

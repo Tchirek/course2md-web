@@ -13,6 +13,8 @@
     showTimestamps: true,
     imageLevel: 'default',
     polish: false,
+    polishLevel: 'standard',
+    polishEngine: 'auto',
     showPanel: true,
     subtitle: { preferLang: '', allowAuto: true },
     asr: {      endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
@@ -112,6 +114,20 @@
     settingsStatus.segmented = 0;
   }
 
+  // 真实后台返回 normalizeSettings 之后的完整设置；替身也要补齐默认字段，
+  // 否则界面会拿到缺 polishLevel 之类的残缺对象，看到假象。
+  const withDefaults = (value) => {
+    const out = structuredClone(DEFAULTS);
+    const merge = (base, patch) => {
+      for (const [k, v] of Object.entries(patch ?? {})) {
+        if (v && typeof v === 'object' && !Array.isArray(v) && base[k] && typeof base[k] === 'object') merge(base[k], v);
+        else base[k] = v;
+      }
+    };
+    merge(out, value);
+    return out;
+  };
+
   const chromeMock = {
     runtime: {
       // 相对扩展根目录解析，与真实语义一致：'/src/ui/tokens.css'
@@ -119,18 +135,18 @@
       id: 'selftest-mock-extension-id',
       async sendMessage(message) {
         const type = message?.type;
-        if (type === 'settings.load') return { ok: true, value: structuredClone(store.settings) };
+        if (type === 'settings.load') return { ok: true, value: withDefaults(store.settings) };
         if (type === 'settings.save') {
           const patch = message.payload?.patch ?? {};
           deepMerge(store.settings, patch);
           for (const fn of changeListeners) {
-            fn({ settings: { newValue: structuredClone(store.settings) } }, 'local');
+            fn({ settings: { newValue: withDefaults(store.settings) } }, 'local');
           }
-          return { ok: true, value: { settings: structuredClone(store.settings), notes: [] } };
+          return { ok: true, value: { settings: withDefaults(store.settings), notes: [] } };
         }
         if (type === 'settings.reset') {
           store.settings = structuredClone(DEFAULTS);
-          return { ok: true, value: structuredClone(store.settings) };
+          return { ok: true, value: withDefaults(store.settings) };
         }
         if (type === 'llm.test') {
           return {

@@ -81,11 +81,14 @@ function renderSource() {
 
 }
 
-function renderToggles() {
+function renderToggles({ animatePolish = false } = {}) {
   el.toggles.replaceChildren(
     displayToggleRows({
       settings,
       showPolishLevel: true,
+      showPolishEngine: true,
+      polishLevelWhenChecked: true,
+      animatePolish,
       onChange: (patchObject) => patch(patchObject),
       onSetup: () => chrome.runtime.openOptionsPage(),
     }),
@@ -127,7 +130,8 @@ async function patch(patchObject) {
 
   applyTheme(settings);
   renderSource();
-  renderToggles();
+  // 勾选润色的那一下，强度/方式行带入场动画出现
+  renderToggles({ animatePolish: patchObject.polish === true });
   if (reply?.notes?.length) {
     el.status.dataset.tone = 'default';
     el.status.replaceChildren();

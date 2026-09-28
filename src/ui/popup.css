@@ -1,5 +1,15 @@
 /* 弹窗：宽 360，高由内容决定。所有颜色/字体/圆角都来自 tokens.css。 */
 
+/* 勾选「润色文本」时，强度/方式行轻巧地滑入 */
+@keyframes c2md-row-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.c2md-row-enter {
+  animation: c2md-row-in 0.16s ease-out;
+}
+
 html,
 body {
   margin: 0;

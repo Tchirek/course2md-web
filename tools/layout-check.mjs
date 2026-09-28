@@ -229,7 +229,7 @@ try {
   // ---- 弹窗与设置页：不能横向溢出 ----
   // 设置页另有本机／自定义润色模型选择。
   for (const [name, path, size, expectedSegments] of [
-    ['popup', '/src/ui/popup.html', { width: 360, height: 620 }, 3],
+    ['popup', '/src/ui/popup.html', { width: 360, height: 620 }, 2],
     ['options', '/src/ui/options.html', { width: 860, height: 900 }, 4],
   ]) {
     const page = await browser.newPage();
@@ -252,6 +252,21 @@ try {
     if (m.segmentedSelected !== expectedSegments) {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);
     } else pass(`${name} 分段选择选中项数正确（${expectedSegments}）`);
+    if (name === 'popup') {
+      // 勾选「润色文本」后，强度与方式两行应以动画出现
+      const after = await page.evaluate(() => new Promise((resolve) => {
+        const polish = [...document.querySelectorAll('.c2md-check')]
+          .find((node) => node.textContent.includes('润色文本'));
+        polish?.click();
+        setTimeout(() => resolve({
+          pressed: document.querySelectorAll('.c2md-segmented button[aria-pressed="true"]').length,
+          animated: Boolean(document.querySelector('.c2md-row-enter')),
+        }), 250);
+      }));
+      after.pressed === 4 && after.animated
+        ? pass('popup 勾选润色后强度与方式行动画出现')
+        : fail('popup', `润色行出现检查失败：${JSON.stringify(after)}`);
+    }
     if (name === 'popup' && (!m.primaryBg || m.primaryBg === 'rgba(0, 0, 0, 0)')) {
       fail(name, '主按钮没有底色');
     }

@@ -211,9 +211,12 @@ export function applyTheme(settings, root = document.body) {
  * @param {object} args.settings
  * @param {(patch:object) => void} args.onChange 用户改动后回调（只需处理持久化）
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
+ * @param {boolean} [args.showPolishEngine] 显示润色方式（本机/自备）选择
+ * @param {boolean} [args.polishLevelWhenChecked] 只在勾选润色时显示润色强度/方式
+ * @param {boolean} [args.animatePolish] 润色强度/方式行出现时播放入场动画
  * @returns {DocumentFragment}
  */
-export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, polishProgress = null }) {
+export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, showPolishEngine = false, polishLevelWhenChecked = false, animatePolish = false, polishProgress = null }) {
   const frag = document.createDocumentFragment();
 
   for (const toggle of DISPLAY_TOGGLES) {
@@ -251,9 +254,10 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
       }));
       frag.appendChild(row);
     }
-    if (toggle.key === 'polish' && showPolishLevel) {
+    if (toggle.key === 'polish' && showPolishLevel && (!polishLevelWhenChecked || settings.polish)) {
       const row = document.createElement('div');
       row.className = 'c2md-image-choice';
+      if (animatePolish) row.classList.add('c2md-row-enter');
       const label = document.createElement('span');
       label.textContent = '润色强度';
       row.append(label, segmented({
@@ -264,7 +268,30 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
       frag.appendChild(row);
     }
   }
+  if (showPolishEngine && (!polishLevelWhenChecked || settings.polish)) {
+    const row = document.createElement('div');
+    row.className = 'c2md-image-choice';
+    if (animatePolish) row.classList.add('c2md-row-enter');
+    const label = document.createElement('span');
+    label.textContent = '润色方式';
+    row.append(label, polishEngineRow(settings, onChange));
+    frag.appendChild(row);
+  }
   return frag;
+}
+
+/** 润色方式选择：本机内置模型 or 自备 API（兼容旧的 auto 语义）。 */
+export function polishEngineRow(settings, onChange) {
+  return segmented({
+    options: [
+      { value: 'local', label: '本机', title: '内置 FireRedPunc + Qwen3.5-2B，在本机免费运行' },
+      { value: 'custom', label: '自备 API', title: '使用你自己配置的 OpenAI 兼容 LLM' },
+    ],
+    value: settings.polishEngine === 'auto'
+      ? (settings.llm?.baseUrl && settings.llm?.model ? 'custom' : 'local')
+      : settings.polishEngine,
+    onChange: (polishEngine) => onChange?.({ polishEngine }),
+  });
 }
 
 /** 有已知总量时才画圆环；每完成一块推进一次。 */

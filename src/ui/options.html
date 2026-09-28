@@ -100,7 +100,10 @@
 
       <section class="block" id="block-llm">
         <h2>润色</h2>
-        <div class="rows"><div class="row"><span class="row-label">使用模型</span><div id="llm-engine"></div></div></div>
+        <div class="rows">
+          <div class="row"><span class="row-label">润色方式</span><div id="llm-engine"></div></div>
+          <p class="c2md-meta">本机：内置 FireRedPunc + Qwen3.5-2B，免费在本机运行；自备 API：使用你自己配置的 OpenAI 兼容 LLM。</p>
+        </div>
         <div class="block-actions"><button type="button" class="c2md-button" id="llm-local-start">启用本机润色</button><span class="c2md-meta" id="llm-local-result"></span></div>
 
         <div class="rows">
