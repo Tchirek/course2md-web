@@ -12,6 +12,7 @@ import { downloadBilibiliAudio } from './bilibili-audio.mjs';
 const PORT = 8766;
 const ASR_PORT = 8081;
 const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
+const BUILTIN_ASR = `http://127.0.0.1:${ASR_PORT}`;
 const MAX_BODY = 128 * 1024;
 const jobs = new Map();
 const controllers = new Map();
@@ -125,6 +126,7 @@ function readyStatus(health) {
 async function processJob(input, source, endpoint, job, signal) {
   let dir;
   try {
+    if (endpoint.origin === BUILTIN_ASR) await startLocalAsr();
     const chunkSeconds = Math.max(5, Math.min(120, Number(input.chunkSeconds) || 30));
     dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-'));
     let mediaPath;
@@ -132,24 +134,26 @@ async function processJob(input, source, endpoint, job, signal) {
       mediaPath = fileURLToPath(source);
     } else {
       const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', 'bestaudio/best', '-o', path.join(dir, 'input.%(ext)s')];
-      try {
-        await run('yt-dlp', [...args, '--', source.href], signal);
-      } catch (error) {
-        if (signal.aborted) throw error;
-        if (source.hostname === 'www.bilibili.com') {
-          try {
-            mediaPath = await downloadBilibiliAudio(source, dir, signal, (message) => { job.message = message; });
-          } catch (backupError) {
-            if (!input.cookieFile) throw new Error(`${error.message}; ${backupError.message}`);
-          }
+      let backupError;
+      if (source.hostname === 'www.bilibili.com') {
+        try {
+          mediaPath = await downloadBilibiliAudio(source, dir, signal, (message) => { job.message = message; });
+        } catch (error) {
+          if (signal.aborted) throw error;
+          backupError = error;
         }
-        if (!mediaPath && input.cookieFile) {
-          job.message = '正在使用浏览器登录态重试下载';
+      }
+      if (!mediaPath) {
+        if (input.cookieFile) {
+          job.message = '正在使用浏览器登录态下载音轨';
           const cookiePath = path.join(dir, 'cookies.txt');
           await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
-          await run('yt-dlp', [...args, '--cookies', cookiePath, '--', source.href], signal);
-        } else if (!mediaPath) {
-          throw error;
+          args.push('--cookies', cookiePath);
+        }
+        try {
+          await run('yt-dlp', [...args, '--', source.href], signal);
+        } catch (error) {
+          throw new Error(backupError ? `${backupError.message}; ${error.message}` : error.message);
         }
       }
       if (!mediaPath) {
@@ -163,6 +167,7 @@ async function processJob(input, source, endpoint, job, signal) {
     const files = (await readdir(dir)).filter((name) => /^part-\d+\.wav$/.test(name)).sort();
     if (!files.length) throw new Error('ffmpeg 未产出音频切片');
     job.total = files.length;
+    if (endpoint.origin === BUILTIN_ASR) await waitForLocalAsr(job, signal);
     const events = job.events;
     for (let i = 0; i < files.length; i++) {
       if (signal.aborted) throw new Error('已取消');
@@ -199,6 +204,15 @@ async function processJob(input, source, endpoint, job, signal) {
     return { events, chunks: files.length };
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function waitForLocalAsr(job, signal) {
+  while (asrStatus.state !== 'ready') {
+    if (signal.aborted) throw new Error('已取消');
+    if (asrStatus.state === 'error') throw new Error(asrStatus.message);
+    job.message = asrStatus.message || '正在加载本机转录模型';
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
 

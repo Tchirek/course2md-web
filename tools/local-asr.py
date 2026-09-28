@@ -76,7 +76,11 @@ class Handler(BaseHTTPRequestHandler):
             language = fields.get("language")
             language = language.get_content().strip() if language else None
             language = language.split("-")[0].split("_")[0].lower() if language else None
-            segments, _ = model.transcribe(io.BytesIO(audio), beam_size=1, language=language or None)
+            segments, _ = model.transcribe(
+                io.BytesIO(audio), beam_size=1, temperature=0,
+                language=language or None, vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+            )
             items = [{"start": item.start, "end": item.end, "text": item.text} for item in segments]
             self.send_json(200, {"text": "".join(item["text"] for item in items).strip(), "segments": items})
         except Exception as error:

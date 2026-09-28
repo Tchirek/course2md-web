@@ -21,7 +21,7 @@ export async function downloadBilibiliAudio(source, dir, signal, onProgress = ()
   const cid = part === 1 ? (view.pages?.[0]?.cid ?? view.cid) : view.pages?.[part - 1]?.cid;
   if (!cid) throw new Error('B 站未返回分集编号');
   const play = await json(`https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&fnval=16&qn=64`);
-  const audio = [...(play.dash?.audio ?? [])].sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0];
+  const audio = [...(play.dash?.audio ?? [])].sort((a, b) => (a.bandwidth || 0) - (b.bandwidth || 0))[0];
   if (!audio) throw new Error('B 站未返回可下载音轨');
   const urls = [...(audio.backupUrl ?? audio.backup_url ?? []), audio.baseUrl ?? audio.base_url]
     .filter((url) => typeof url === 'string' && url.startsWith('https://'));
