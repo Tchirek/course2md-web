@@ -1,11 +1,11 @@
 //! B 站适配器：元信息、字幕轨、章节（看点）、跳转。
 //!
-//! 字幕要走 `x/player/v2` 接口，而且这个接口对 Referer/登录态敏感。
-//! 所以字幕请求用**内容脚本自己的 fetch**（源就是 b 站，Referer 与 cookie 天然正确），
-//! 不走后台服务 worker——后台的 Origin 是 chrome-extension://，容易被接口拒。
+//! 字幕优先读播放器 JSON 接口，空轨时再读新版 Protobuf 接口。
+//! 请求从 B 站页面的内容脚本发出，保留浏览器登录态。
 
 import { readInlineJson } from '../core/json.js';
 import { callPage } from './bridge.js';
+import { parseWebSubtitle } from './bili-proto.js';
 
 export const id = 'bilibili';
 export const label = '哔哩哔哩';
@@ -54,7 +54,7 @@ export async function meta() {
       videoId: bvid,
       // 交给下游拼接口用，不属于展示信息
       aid: Number(data.aid) || Number(state?.aid) || 0,
-      cid: Number(state?.cid) || Number(data.cid) || 0,
+      cid: Number(data.pages?.[(Number(part) || 1) - 1]?.cid) || Number(state?.cid) || Number(data.cid) || 0,
     };
   }
 
@@ -88,10 +88,42 @@ async function playerV2(info) {
   }
 }
 
+async function subtitleInfo(info) {
+  if (info.aid && info.cid) return info;
+  if (!info.videoId) return info;
+  try {
+    const res = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(info.videoId)}`, { credentials: 'include' });
+    const data = (await res.json())?.data;
+    const page = Number(new URL(info.url).searchParams.get('p')) || 1;
+    return { ...info, aid: Number(data?.aid) || 0, cid: Number(data?.pages?.[page - 1]?.cid ?? data?.cid) || 0 };
+  } catch { return info; }
+}
+
+async function subtitleTracks(info) {
+  const query = new URLSearchParams({ bvid: info.videoId, cid: String(info.cid) });
+  for (const endpoint of ['/x/player/v2', '/x/player/wbi/v2']) {
+    try {
+      const res = await fetch(`https://api.bilibili.com${endpoint}?${query}`, { credentials: 'include' });
+      const json = await res.json();
+      const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
+      if (Array.isArray(tracks) && tracks.length) return tracks;
+    } catch { /* 尝试下一种接口 */ }
+  }
+  if (!info.aid) return [];
+  try {
+    const params = new URLSearchParams({
+      oid: String(info.cid), pid: String(info.aid), context_ext: '{"video_type":1}',
+      type: '1', cur_production_type: '0', preferred_language: 'ai-zh', playlist_switch: '0',
+    });
+    const res = await fetch(`https://api.bilibili.com/x/v2/subtitle/web/view?${params}`, {
+      credentials: 'include', headers: { Accept: 'application/octet-stream' },
+    });
+    return res.ok ? parseWebSubtitle(new Uint8Array(await res.arrayBuffer())) : [];
+  } catch { return []; }
+}
+
 export async function tracks(info) {
-  const data = await playerV2(info ?? {});
-  const list = data?.subtitle?.subtitles;
-  if (!Array.isArray(list)) return [];
+  const list = await subtitleTracks(await subtitleInfo(info ?? {}));
 
   return list
     .filter((t) => t && typeof t.subtitle_url === 'string' && t.subtitle_url)
@@ -99,7 +131,7 @@ export async function tracks(info) {
       id: String(t.id ?? t.lan ?? i),
       language: String(t.lan ?? ''),
       label: String(t.lan_doc ?? t.lan ?? `字幕 ${i + 1}`),
-      kind: t.type === 0 ? 'manual' : t.type === 1 ? 'automatic' : 'unknown',
+      kind: String(t.lan ?? '').startsWith('ai-') || t.ai_type === 1 || t.type === 1 ? 'automatic' : t.type === 0 ? 'manual' : 'unknown',
       // subtitle_url 常以 // 开头，补上协议
       fetch: { url: t.subtitle_url.startsWith('//') ? `https:${t.subtitle_url}` : t.subtitle_url, as: 'json' },
     }));

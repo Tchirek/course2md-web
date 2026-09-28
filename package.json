@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --test tests/core.test.mjs tests/adapters.test.mjs",
+    "test": "node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs",
     "test:core": "node --test tests/core.test.mjs",
     "serve": "node tools/serve.mjs",
     "fast-asr": "node tools/fast-asr-server.mjs",
@@ -15,7 +15,7 @@
     "check:layout": "node tools/layout-check.mjs",
     "shots": "node tools/shoot.mjs",
     "icons": "node tools/make-icons.mjs",
-    "check": "node tools/check-manifest.mjs && node --test tests/core.test.mjs tests/adapters.test.mjs && node tools/layout-check.mjs",
+    "check": "node tools/check-manifest.mjs && node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs && node tools/layout-check.mjs",
     "check:manifest": "node tools/check-manifest.mjs"
   },
   "engines": {
