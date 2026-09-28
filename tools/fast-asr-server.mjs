@@ -7,7 +7,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { downloadBilibiliAudio } from './bilibili-audio.mjs';
+import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
 const ASR_PORT = 8081;
@@ -98,16 +98,26 @@ async function processFrames(input, source, job, signal) {
   if (!mediaPath) {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-video-'));
     try {
-      const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', 'bestvideo[height<=720]/best[height<=720]', '-o', path.join(dir, 'input.%(ext)s')];
-      if (input.cookieFile) {
-        const cookiePath = path.join(dir, 'cookies.txt');
-        await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
-        args.push('--cookies', cookiePath);
+      if (source.hostname === 'www.bilibili.com') {
+        try {
+          mediaPath = await downloadBilibiliVideo(source, dir, signal, (message) => { job.message = message; });
+        } catch (error) {
+          if (signal.aborted) throw error;
+          job.message = '备用画面线路失败，正在尝试 yt-dlp';
+        }
       }
-      await run('yt-dlp', [...args, '--', source.href], signal);
-      const name = (await readdir(dir)).find((entry) => entry.startsWith('input.') && !entry.endsWith('.part'));
-      if (!name) throw new Error('yt-dlp 未取得视频画面');
-      mediaPath = path.join(dir, name);
+      if (!mediaPath) {
+        const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', 'bestvideo[height<=720]/best[height<=720]', '-o', path.join(dir, 'input.%(ext)s')];
+        if (input.cookieFile) {
+          const cookiePath = path.join(dir, 'cookies.txt');
+          await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
+          args.push('--cookies', cookiePath);
+        }
+        await run('yt-dlp', [...args, '--', source.href], signal);
+        const name = (await readdir(dir)).find((entry) => entry.startsWith('input.') && !entry.endsWith('.part'));
+        if (!name) throw new Error('yt-dlp 未取得视频画面');
+        mediaPath = path.join(dir, name);
+      }
       videoCache.set(source.href, { file: mediaPath, dir });
       setTimeout(async () => {
         if (videoCache.get(source.href)?.dir === dir) videoCache.delete(source.href);

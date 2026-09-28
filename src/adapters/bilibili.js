@@ -123,9 +123,20 @@ async function subtitleTracks(info) {
 }
 
 export async function tracks(info) {
-  const list = await subtitleTracks(await subtitleInfo(info ?? {}));
+  const current = await subtitleInfo(info ?? {});
+  const list = await subtitleTracks(current);
+  const loaded = (performance.getEntriesByType?.('resource') ?? [])
+    .map((entry) => entry.name)
+    .filter((name) => {
+      try {
+        const url = new URL(name);
+        return current.cid > 0 && ['aisubtitle.hdslb.com', 'subtitle.bilibili.com'].includes(url.hostname) &&
+          url.pathname.includes(String(current.cid)) && url.protocol === 'https:';
+      } catch { return false; }
+    })
+    .map((subtitle_url) => ({ subtitle_url, lan: 'ai-zh', lan_doc: '中文 AI', ai_type: 1 }));
 
-  return list
+  return [...list, ...loaded]
     .filter((t) => t && typeof t.subtitle_url === 'string' && t.subtitle_url)
     .map((t, i) => ({
       id: String(t.id ?? t.lan ?? i),
@@ -134,7 +145,8 @@ export async function tracks(info) {
       kind: String(t.lan ?? '').startsWith('ai-') || t.ai_type === 1 || t.type === 1 ? 'automatic' : t.type === 0 ? 'manual' : 'unknown',
       // subtitle_url 常以 // 开头，补上协议
       fetch: { url: t.subtitle_url.startsWith('//') ? `https:${t.subtitle_url}` : t.subtitle_url, as: 'json' },
-    }));
+    }))
+    .filter((track, index, all) => all.findIndex((item) => item.fetch.url === track.fetch.url) === index);
 }
 
 /** 章节 = 视频看点（view_points）。 */

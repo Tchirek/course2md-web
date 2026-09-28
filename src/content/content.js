@@ -26,6 +26,7 @@ class Controller {
     this.doc = null;
     this.status = 'idle';
     this.error = null;
+    this.imageError = null;
     this.stageLabel = '';
     this.stageRatio = null;
     this.abort = null;
@@ -222,7 +223,7 @@ class Controller {
   }
 
   panelState() {
-    return { ...this.summaryState(), sections: this.previewSections };
+    return { ...this.summaryState(), error: this.error || this.imageError, sections: this.previewSections };
   }
 
   broadcast(updatePanel = true) {
@@ -261,6 +262,7 @@ class Controller {
     this.status = 'running';
     this.stageRatio = null;
     this.error = null;
+    this.imageError = null;
     this.built = null;
     this.previewSections = [];
     this.doc = null;
@@ -533,6 +535,7 @@ class Controller {
 
   refreshImages() {
     const previous = this.imagePromise;
+    this.imageError = null;
     if (!this.imageAbort || this.imageAbort.signal.aborted) this.imageAbort = new AbortController();
     this.imageLevel = this.settings.imageLevel;
     const level = this.imageLevel;
@@ -565,7 +568,7 @@ class Controller {
         return count;
       }).catch((error) => {
         if (!current.signal.aborted) {
-          this.error = toErrorState(error);
+          this.imageError = toErrorState(error);
           this.broadcast();
         }
         return 0;

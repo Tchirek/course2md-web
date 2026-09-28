@@ -64,18 +64,23 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
     );
   }
 
-  const track = pickTrack(tracks, {
+  const remaining = [...tracks];
+  let track;
+  let events = [];
+  let lastError = '';
+  while ((track = pickTrack(remaining, {
     preferLang: settings.subtitle.preferLang,
     allowAuto: settings.subtitle.allowAuto,
     pageLang: meta.language,
-  });
-  if (!track) throw new MissingSourceError('没有符合当前语言偏好的字幕轨。');
-
-  onProgress?.('download', { message: `正在取字幕：${trackLabel(track)}` });
-  const events = await readTrack(track);
+  }))) {
+    onProgress?.('download', { message: `正在取字幕：${trackLabel(track)}` });
+    try { events = await readTrack(track); } catch (error) { lastError = String(error?.message ?? error); }
+    if (events.length) break;
+    remaining.splice(remaining.indexOf(track), 1);
+  }
   if (!events.length) {
     throw new MissingSourceError(
-      `字幕轨「${trackLabel(track)}」是空的（平台有时会返回空字幕）。可在设置里换一条轨，或改用本地模型转录。`,
+      `${lastError ? `字幕地址不可用：${lastError}。` : '平台没有返回可用字幕。'}可改用本地模型转录。`,
     );
   }
   if (signal?.aborted) throw new AbortError();

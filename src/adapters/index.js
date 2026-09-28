@@ -54,6 +54,15 @@ export async function readTrack(track) {
   if (track.fetch.as === 'json' || text.trimStart().startsWith('{')) {
     const asBili = parseBilibili(text);
     if (asBili.length) return asBili;
+    if (track.fetch.as === 'json') {
+      try {
+        const reply = JSON.parse(text);
+        if (reply?.code && reply?.message) throw new Error(`B 站字幕：${reply.message}`);
+      } catch (error) {
+        if (error instanceof SyntaxError) return [];
+        throw error;
+      }
+    }
   }
   return parseSubtitle(text);
 }
