@@ -19,8 +19,6 @@ export const DEFAULT_SETTINGS = {
   /** auto 保留旧设置的行为；也可明确选择本机或自定义模型。 */
   polishEngine: 'auto',
 
-  /** 打开页面时自动抓取并生成（默认关闭，避免误发请求） */
-  autoRun: false,
   /** 生成后自动展开页面内面板 */
   showPanel: true,
 
@@ -67,6 +65,7 @@ export const DEFAULT_SETTINGS = {
 export function withDefaults(stored) {
   const settings = deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {});
   delete settings.clickToSeek; // 旧版开关由 showTimestamps 取代
+  delete settings.autoRun; // 旧版开关：现在切换视频一律自动生成
   if (settings.asr.endpoint === 'http://127.0.0.1:8080/v1/audio/transcriptions' && settings.asr.model === 'small') {
     settings.asr.endpoint = DEFAULT_SETTINGS.asr.endpoint;
   }

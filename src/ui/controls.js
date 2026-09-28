@@ -264,10 +264,6 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
       frag.appendChild(row);
     }
   }
-  if (showPolishLevel) frag.appendChild(checkboxRow({
-    label: '切换视频自动生成', checked: settings.autoRun,
-    onChange: (autoRun) => onChange?.({ autoRun }),
-  }));
   return frag;
 }
 

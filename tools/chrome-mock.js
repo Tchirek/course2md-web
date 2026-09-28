@@ -13,7 +13,6 @@
     showTimestamps: true,
     imageLevel: 'default',
     polish: false,
-    autoRun: false,
     showPanel: true,
     subtitle: { preferLang: '', allowAuto: true },
     asr: {      endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',

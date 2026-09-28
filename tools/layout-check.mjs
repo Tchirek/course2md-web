@@ -247,7 +247,7 @@ try {
     }));
     if (m.docOverflow > 1) fail(name, `横向溢出 ${m.docOverflow}px`);
     else pass(`${name} 无横向溢出`);
-    if (m.checkboxCount !== 3) fail(name, `勾选行有 ${m.checkboxCount} 个，应为 3 个`);
+    if (m.checkboxCount !== 2) fail(name, `勾选行有 ${m.checkboxCount} 个，应为 2 个`);
     else pass(`${name} 两处勾选就位`);
     if (m.segmentedSelected !== expectedSegments) {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);

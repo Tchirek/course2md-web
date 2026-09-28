@@ -114,7 +114,7 @@ class Controller {
       if (cached.imageLevel !== this.settings.imageLevel || this.imagesPending) this.refreshImages();
     }
     this.broadcast();
-    if (!cached && this.settings.autoRun) this.scheduleAutoRun();
+    if (!cached) this.scheduleAutoRun();
   }
 
   currentUrlKey() {
@@ -141,14 +141,14 @@ class Controller {
     this.error = null;
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.panel.setState(this.panelState());
-    if (this.settings.autoRun) this.scheduleAutoRun();
+    this.scheduleAutoRun();
   }
 
   scheduleAutoRun() {
     const key = this.urlKey;
     clearTimeout(this.autoTimer);
     this.autoTimer = setTimeout(() => {
-      if (this.urlKey !== key || !this.settings.autoRun) return;
+      if (this.urlKey !== key) return;
       if (!this.adapter.video()) return this.scheduleAutoRun();
       this.run();
     }, 1000);
