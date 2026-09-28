@@ -11,10 +11,12 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from subprocess import Popen
-from huggingface_hub import hf_hub_download
 
 ROOT = Path(os.environ['C2MD_POLISH_HOME'])
 ROOT.mkdir(parents=True, exist_ok=True)
+# Xet 下载后端在大文件上内存波动大，低内存机器会直接崩；走普通 HTTP 分块下载。
+os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
+os.environ.setdefault('HF_HUB_ENABLE_HF_TRANSFER', '0')
 
 
 def state(name, message):
@@ -39,19 +41,58 @@ def prepare_punc():
         archive.unlink()
         (ROOT / 'fireredasr2s' / '__init__.py').write_text('')
     sys.path.insert(0, str(ROOT))
-    from huggingface_hub import snapshot_download
     from fireredasr2s.fireredpunc.punc import FireRedPunc, FireRedPuncConfig
     model_dir = ROOT / 'FireRedPunc'
-    if not (model_dir / 'model.pth.tar').exists():
-        state('downloading', '正在下载 FireRedPunc 模型')
-        snapshot_download('FireRedTeam/FireRedPunc', local_dir=str(model_dir))
+    # 对照远端清单下载全部需要的文件（tf_model.h5 是 TensorFlow 权重，用不到）。
+    # 不用 huggingface_hub 的下载器：它在本机反复崩溃，robust_download 更稳。
+    with urllib.request.urlopen('https://huggingface.co/api/models/FireRedTeam/FireRedPunc/tree/main?recursive=true', timeout=30) as response:
+        manifest = json.load(response)
+    for item in manifest:
+        if item.get('type') != 'file' or item['path'].startswith('.git') or item['path'].startswith('.cache'):
+            continue
+        if item['path'].endswith(('.h5', '.msgpack', '.ckpt.index')):
+            continue
+        target = model_dir / item['path']
+        if target.exists() and target.stat().st_size == item['size']:
+            continue
+        state('downloading', f'正在下载 {item["path"]}')
+        robust_download(f'https://huggingface.co/FireRedTeam/FireRedPunc/resolve/main/{item["path"]}', target, item['path'])
     state('loading', '正在加载 FireRedPunc')
     return FireRedPunc.from_pretrained(str(model_dir), FireRedPuncConfig(use_gpu=False))
 
 
+def robust_download(url, target, message):
+    """纯 urllib 断点续传下载；hf_hub 的下载后端在本机反复崩溃，不再依赖它。"""
+    part = target.with_suffix(target.suffix + '.part')
+    request = urllib.request.Request(url, method='HEAD')
+    with urllib.request.urlopen(request, timeout=30) as response:
+        total = int(response.headers.get('Content-Length') or 0)
+    if target.exists() and total and target.stat().st_size == total:
+        return target
+    while not (total and part.exists() and part.stat().st_size >= total):
+        done = part.stat().st_size if part.exists() else 0
+        headers = {'Range': f'bytes={done}-'} if done else {}
+        request = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response, open(part, 'ab' if done else 'wb') as sink:
+                while True:
+                    block = response.read(1 << 20)
+                    if not block:
+                        break
+                    sink.write(block)
+        except Exception:
+            time.sleep(2)
+    if total and part.stat().st_size != total:
+        raise RuntimeError(f'下载不完整：{part.stat().st_size}/{total}')
+    part.replace(target)
+    return target
+
+
 def start_qwen():
     state('downloading', '正在下载 Qwen3.5-2B')
-    model = hf_hub_download('SoAIHQ/Qwen3.5-2B-GGUF', 'Qwen3.5-2B-Q4_K_M.gguf', local_dir=str(ROOT / 'qwen'))
+    model = robust_download(
+        'https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+        ROOT / 'qwen' / 'Qwen3.5-2B-Q4_K_M.gguf', '正在下载 Qwen3.5-2B')
     binary = next((ROOT / 'llama').rglob('llama-server.exe'), None)
     if binary is None:
         state('downloading', '正在准备 Qwen3.5-2B 运行库')
