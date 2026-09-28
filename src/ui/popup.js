@@ -103,32 +103,13 @@ function renderStatus() {
   el.run.disabled = running;
   el.run.textContent = running ? '生成中' : state.status === 'ready' ? '重新生成' : '生成笔记';
 
-  // 生成完了就把「在页面打开面板」放到手边
-  const hasContent = state.status === 'ready';
+  const hasContent = state.status === 'ready' || Boolean(state.error);
   el.secondary.hidden = !hasContent;
   el.secondary.textContent = '在页面打开';
 
-  const lines = [];
-  if (running && state.stageLabel) lines.push(state.stageLabel);
-  if (hasContent && state.stats) {
-    const bits = [state.siteLabel];
-    bits.push(state.stats.trackLabel || '');
-    bits.push(`${state.segmented} 段`);
-    lines.push(bits.filter(Boolean).join(' · '));
-  }
-  if (state.error) lines.push(state.error.title ?? '出错了');
-
-  el.status.dataset.tone = state.error ? 'error' : 'default';
+  el.status.dataset.tone = 'default';
   el.status.replaceChildren();
-
-  if (running) {
-    el.status.appendChild(progress({ ratio: null }));
-  }
-  for (const line of lines) {
-    const p = document.createElement('div');
-    p.textContent = line;
-    el.status.appendChild(p);
-  }
+  if (running) el.status.appendChild(progress({ ratio: state.stageRatio ?? null }));
 }
 
 // ---------- 行为 ----------

@@ -393,7 +393,9 @@ class Controller {
 
     if (signal?.aborted) throw new AbortError();
 
-    if (result.failed) this.built.warnings.push(`${result.failed} 块润色失败，已保留原文。`);
+    if (result.failed) {
+      this.built.warnings.push(`润色失败 ${result.failed}/${result.chunks}：${result.firstError || '模型未返回可用文本'}`);
+    }
     this.polishState = { hasResult: true, running: false, done: result.chunks, total: result.chunks };
     this.doc = finalize(this.built, this.meta, this.settings);
     await this.saveCache();

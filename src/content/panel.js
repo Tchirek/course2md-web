@@ -5,9 +5,7 @@
 //! 不会跳滚动位置，也不需要为了看一眼原文再请求一次 LLM。
 
 import { fmtTs } from '../core/time.js';
-import { icon } from '../ui/icons.js';
 import { displayToggleRows, iconButton, note, progress, progressRing } from '../ui/controls.js';
-import { sourceLabel } from '../core/format.js';
 
 export class Panel {
   /**
@@ -141,10 +139,13 @@ export class Panel {
     Object.assign(this.state, patch);
 
     if (!this.scope) return;
+    if (progressOnly) {
+      const stage = this.scope.querySelector('.c2md-stage-label');
+      if (stage) stage.textContent = this.state.stageLabel || '';
+    }
     const label = progressOnly && this.scope.querySelector('.c2md-progress-label');
     if (label) {
       label.textContent = this.state.stageLabel || '正在取文字';
-      return;
     }
     if (progressOnly) {
       const ring = this.scope.querySelector('.c2md-source .c2md-ring');
@@ -248,7 +249,7 @@ export class Panel {
 
   // ---------- 头部 ----------
   renderHead() {
-    const { meta, stats, status } = this.state;
+    const { meta, status } = this.state;
     const head = el('div', 'c2md-panel-head');
     head.addEventListener('pointerdown', (event) => this.startDrag(event));
 
@@ -268,34 +269,17 @@ export class Panel {
     head.appendChild(top);
 
     const line = el('div', 'c2md-source');
-    if (status === 'ready' || status === 'running') {
-      line.appendChild(chip('text', sourceLabel(stats?.source)));
-      if (stats?.trackLabel) line.appendChild(chip('info', stats.trackLabel));
-      if (this.countedSegments() !== null) {
-        line.appendChild(chip('', `${this.countedSegments()} 段`));
-      }
-      if (meta?.duration) line.appendChild(plain(fmtTs(meta.duration)));
-      if (status === 'running' && Number.isFinite(this.state.stageRatio)) {
+    if (meta?.duration) line.appendChild(plain(fmtTs(meta.duration)));
+    if (status === 'running') {
+      if (Number.isFinite(this.state.stageRatio)) {
         line.appendChild(progressRing(Math.round(this.state.stageRatio * 100), 100, '转写'));
       }
+      const stage = el('span', 'c2md-stage-label');
+      stage.textContent = this.state.stageLabel || '';
+      line.appendChild(stage);
     }
-    head.appendChild(line);
+    if (line.childNodes.length) head.appendChild(line);
     return head;
-  }
-
-  countedSegments() {
-    const { sections, settings } = this.state;
-    if (!sections?.length) return null;
-    const polished = Boolean(settings?.polish && this.state.polish?.hasResult);
-    let n = 0;
-    for (const section of sections) {
-      for (const seg of section.segments) {
-        if (polished && seg.state === 'skipped') continue;
-        if (!polished && !seg.text) continue;
-        n++;
-      }
-    }
-    return n;
   }
 
   // ---------- 勾选 ----------
@@ -317,7 +301,7 @@ export class Panel {
   // ---------- 状态 ----------
   renderStatus() {
     const wrap = el('div', 'c2md-panel-status');
-    const { status, error, warnings, polish } = this.state;
+    const { error, warnings } = this.state;
     if (error) {
       const actions = [];
       if (error.switchToAsr) {
@@ -472,15 +456,6 @@ function button(label, onClick, variant) {
   b.textContent = label;
   b.addEventListener('click', onClick);
   return b;
-}
-
-function chip(iconName, text) {
-  const span = document.createElement('span');
-  if (iconName) span.appendChild(icon(iconName));
-  const label = document.createElement('span');
-  label.textContent = text ?? '';
-  span.appendChild(label);
-  return span;
 }
 
 function plain(text) {

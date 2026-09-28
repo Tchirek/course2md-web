@@ -367,6 +367,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
   onProgress?.(0, chunks.length);
 
   const errors = [];
+  let firstError = '';
   let polished = 0;
   let removed = 0;
 
@@ -438,7 +439,10 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
       }
       return outcome;
     },
-    (done, total) => onProgress?.(done, total),
+    (done, total, outcome) => {
+      if (outcome?.error && !firstError) firstError = String(outcome.error?.message ?? outcome.error);
+      onProgress?.(done, total);
+    },
   );
 
   results.forEach((outcome, i) => {
@@ -450,7 +454,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
     removed += outcome.removed;
   });
 
-  return { chunks: chunks.length, polished, failed: errors.length, removed, errors };
+  return { chunks: chunks.length, polished, failed: errors.length, removed, errors, firstError };
 }
 
 /** 由 pipeline 结果生成最终文档。 */
