@@ -12,6 +12,8 @@ const PORT = 8765;
 const MAX_BODY = 16 * 1024;
 const jobs = new Map();
 const controllers = new Map();
+let asrProcess = null;
+let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
 
 http.createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -21,6 +23,11 @@ http.createServer(async (req, res) => {
     return res.end('{"error":"仅接受扩展请求"}');
   }
   if (req.method === 'GET' && req.url === '/health') return res.end('{"ok":true}');
+  if (req.method === 'GET' && req.url === '/asr/status') return res.end(JSON.stringify(asrStatus));
+  if (req.method === 'POST' && req.url === '/asr/start') {
+    startLocalAsr();
+    return res.end(JSON.stringify(asrStatus));
+  }
   if (req.method === 'GET' && req.url?.startsWith('/jobs/')) {
     const job = jobs.get(req.url.slice(6));
     if (!job) res.writeHead(404);
@@ -63,6 +70,37 @@ http.createServer(async (req, res) => {
 }).listen(PORT, '127.0.0.1', () => {
   process.stdout.write(`course2md 本机提取服务：http://127.0.0.1:${PORT}\n`);
 });
+
+function startLocalAsr() {
+  if (asrProcess && ['starting', 'downloading', 'loading', 'ready'].includes(asrStatus.state)) return;
+  asrStatus = { state: 'starting', message: '正在检查本机模型' };
+  const child = spawn(process.env.C2MD_PYTHON || 'python', ['-u', fileURLToPath(new URL('./local-asr.py', import.meta.url))], {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  asrProcess = child;
+  let output = '';
+  let errors = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    output += chunk;
+    for (let newline = output.indexOf('\n'); newline >= 0; newline = output.indexOf('\n')) {
+      const line = output.slice(0, newline);
+      output = output.slice(newline + 1);
+      try { asrStatus = JSON.parse(line); } catch { /* 模型库的普通输出 */ }
+    }
+  });
+  child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-800); });
+  child.on('error', (error) => {
+    asrStatus = { state: 'error', message: `无法启动 Python：${error.message}` };
+    asrProcess = null;
+  });
+  child.on('exit', (code) => {
+    if (asrStatus.state !== 'error') asrStatus = { state: 'error', message: errors || `转录服务退出：${code}` };
+    asrProcess = null;
+  });
+}
 
 async function processJob(input, source, endpoint, job, signal) {
   let dir;

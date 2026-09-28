@@ -43,6 +43,8 @@ const HANDLERS = {
     return { ok: true, ...parseAsrResponse(result.data), raw: undefined };
   },
   'asr.test': (payload) => testAsr(payload),
+  'asr.local.start': () => localAsr('start'),
+  'asr.local.status': () => localAsr('status'),
   'asr.fast.start': async (payload) => {
     const probe = await fetch('http://127.0.0.1:8765/health', { signal: AbortSignal.timeout(700) });
     if (!probe.ok) throw new Error('本机提取服务不可用');
@@ -81,6 +83,20 @@ const HANDLERS = {
 
   'audio.extensions': () => supportedAudioExtensions(),
 };
+
+async function localAsr(action) {
+  let response;
+  try {
+    response = await fetch(`http://127.0.0.1:8765/asr/${action}`, {
+      method: action === 'start' ? 'POST' : 'GET',
+      signal: AbortSignal.timeout(1200),
+    });
+  } catch {
+    throw new Error('本机助手未运行。先在项目目录运行 npm run local:install。');
+  }
+  if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
+  return response.json();
+}
 
 /**
  * 保存文本文件。

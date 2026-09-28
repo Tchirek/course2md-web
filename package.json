@@ -10,6 +10,8 @@
     "test:core": "node --test tests/core.test.mjs",
     "serve": "node tools/serve.mjs",
     "fast-asr": "node tools/fast-asr-server.mjs",
+    "local:install": "node tools/install-local-asr.mjs",
+    "local:check": "node tools/check-local-asr.mjs",
     "check:layout": "node tools/layout-check.mjs",
     "shots": "node tools/shoot.mjs",
     "icons": "node tools/make-icons.mjs",

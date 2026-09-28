@@ -40,7 +40,20 @@ YouTube 优先取人工字幕，没有再取自动生成字幕；B 站取 `playe
 
 优先通过本机提取服务直接下载和处理流媒体音轨；普通可读取视频则在浏览器里离线解码。两条快路径都不等播放器走完。音频按 30 秒切片，交给你配置的本机 ASR 服务。
 
-先跑一个服务，任选其一：
+Windows 首次在项目目录运行：
+
+```sh
+npm run local:install
+```
+
+它安装 Python `faster-whisper` 运行库（本机没有时），并让轻量本机助手在登录后运行。
+然后打开插件设置页，在「本地模型转录」点**启动本机转录服务**。首次没有 `small`
+多语言模型时会从 Hugging Face 下载到本机；按钮会显示下载、加载与就绪状态，
+并自动填好转录地址和模型名。需要 Python 3、Node.js 22、`ffmpeg`；YouTube、B 站
+快速提取还需要 `yt-dlp`。移动项目目录后要重新运行安装命令。
+可运行 `npm run local:check` 核对本机服务是否真的接收音频。
+
+也可以接入自己已有的 OpenAI 兼容 ASR 服务，任选其一：
 
 ```sh
 # whisper.cpp（默认 8080 端口，路径刚好是 /v1/audio/transcriptions）
@@ -52,7 +65,7 @@ faster-whisper-server --model large-v3
 
 然后到插件设置页的「本地模型转录」填服务地址、模型名，点「测试连接」和「授权访问此地址」。
 
-YouTube、B 站这类分段流可运行本仓库的本机提取服务（需先安装 `yt-dlp` 和 `ffmpeg` 并加入 PATH）；浏览器直接打开的长本地视频也能用这个服务，只需 `ffmpeg`：
+没有安装登录后运行的本机助手时，也可手动运行提取服务：
 
 ```sh
 npm run fast-asr

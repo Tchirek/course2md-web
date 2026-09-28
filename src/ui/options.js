@@ -27,6 +27,8 @@ const FIELDS = [
 ];
 
 let settings = null;
+let asrPoll = null;
+const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8080/v1/audio/transcriptions';
 
 init();
 
@@ -37,6 +39,7 @@ async function init() {
   renderDisplay();
   renderTheme();
   bindActions();
+  send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch(() => {});
 
   // 用户在弹窗里改了勾选，设置页开着的话要跟着变
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -150,6 +153,7 @@ function bindActions() {
 
   document.getElementById('llm-test').addEventListener('click', () => test('llm'));
   document.getElementById('asr-test').addEventListener('click', () => test('asr'));
+  document.getElementById('asr-start').addEventListener('click', startLocalAsr);
 
   document.getElementById('reset').addEventListener('click', async () => {
     const reply = await send({ type: 'settings.reset' }).catch(() => null);
@@ -162,6 +166,41 @@ function bindActions() {
       flash('reset-result', '已恢复默认。', true);
     }
   });
+}
+
+async function startLocalAsr() {
+  const button = document.getElementById('asr-start');
+  button.disabled = true;
+  flash('asr-result', '正在启动本机转录服务…', null);
+  try {
+    const granted = await chrome.permissions.request({ origins: ['http://127.0.0.1:8080/*'] });
+    if (!granted) throw new Error('没有授予本机转录端点的访问权限。');
+    const status = await send({ type: 'asr.local.start' });
+    await commitPatch({ source: 'asr', asr: { endpoint: LOCAL_ASR_ENDPOINT, model: 'small', apiKey: '' } });
+    fillFields();
+    showLocalAsrStatus(status);
+  } catch (error) {
+    button.disabled = false;
+    flash('asr-result', String(error?.message ?? error), false);
+  }
+}
+
+function showLocalAsrStatus(status) {
+  const running = ['starting', 'downloading', 'loading'].includes(status.state);
+  const button = document.getElementById('asr-start');
+  const configured = settings.asr.endpoint === LOCAL_ASR_ENDPOINT && settings.asr.model === 'small';
+  button.disabled = running;
+  button.textContent = status.state === 'ready' ? configured ? '本机服务已启动 · 检查' : '使用本机转录服务' : '启动本机转录服务';
+  if (status.state !== 'idle') flash('asr-result', status.message, status.state === 'ready' ? true : status.state === 'error' ? false : null);
+  if (asrPoll) clearInterval(asrPoll);
+  if (running) asrPoll = setInterval(() => {
+    send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch((error) => {
+      clearInterval(asrPoll);
+      asrPoll = null;
+      button.disabled = false;
+      flash('asr-result', String(error?.message ?? error), false);
+    });
+  }, 1000);
 }
 
 /**

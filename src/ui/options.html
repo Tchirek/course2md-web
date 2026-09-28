@@ -46,8 +46,12 @@
       <section class="block" id="block-asr">
         <h2>本地模型转录</h2>
         <p class="c2md-meta">
-          优先快速提取音轨，再切片交给本机 ASR。YouTube、B 站可运行 npm run fast-asr；
+          优先快速提取音轨，再切片交给本机 ASR。安装本机助手后，YouTube、B 站可直接快速提取；
           普通视频可直接离线解码。仅在两者不可用时按播放速度录音。
+        </p>
+        <p class="c2md-meta">
+          首次在项目目录运行 npm run local:install。之后点“启动本机转录服务”；
+          缺少 small 多语言模型时会从 Hugging Face 下载，模型保存在本机。
         </p>
 
         <div class="rows">
@@ -103,6 +107,7 @@
         </div>
 
         <div class="block-actions">
+          <button type="button" class="c2md-button" id="asr-start">启动本机转录服务</button>
           <button type="button" class="c2md-button" id="asr-grant">授权访问此地址</button>
           <button type="button" class="c2md-button" id="asr-test">测试连接</button>
           <span class="c2md-meta" id="asr-result"></span>
