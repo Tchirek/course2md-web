@@ -140,14 +140,6 @@ export class Panel {
 
     if (!this.scope) return;
     if (progressOnly) {
-      const stage = this.scope.querySelector('.c2md-stage-label');
-      if (stage) stage.textContent = this.state.stageLabel || '';
-    }
-    const label = progressOnly && this.scope.querySelector('.c2md-progress-label');
-    if (label) {
-      label.textContent = this.state.stageLabel || '正在取文字';
-    }
-    if (progressOnly) {
       const ring = this.scope.querySelector('.c2md-source .c2md-ring');
       if (Boolean(ring) !== Number.isFinite(this.state.stageRatio)) {
         this.render();
@@ -270,13 +262,8 @@ export class Panel {
 
     const line = el('div', 'c2md-source');
     if (meta?.duration) line.appendChild(plain(fmtTs(meta.duration)));
-    if (status === 'running') {
-      if (Number.isFinite(this.state.stageRatio)) {
-        line.appendChild(progressRing(Math.round(this.state.stageRatio * 100), 100, '转写'));
-      }
-      const stage = el('span', 'c2md-stage-label');
-      stage.textContent = this.state.stageLabel || '';
-      line.appendChild(stage);
+    if (status === 'running' && Number.isFinite(this.state.stageRatio)) {
+      line.appendChild(progressRing(Math.round(this.state.stageRatio * 100), 100, '转写'));
     }
     if (line.childNodes.length) head.appendChild(line);
     return head;
@@ -338,7 +325,7 @@ export class Panel {
     const { status, sections, settings } = this.state;
     if ((status === 'loading' || status === 'running') && !sections?.length) {
       const empty = el('div', 'c2md-empty');
-      empty.appendChild(progress({ ratio: null, label: this.state.stageLabel || '正在取文字' }));
+      empty.appendChild(progress({ ratio: null, label: '正在取文字' }));
       body.appendChild(empty);
       return body;
     }
