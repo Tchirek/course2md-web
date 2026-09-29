@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "course2md — 视频讲义笔记",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "从视频生成可跳转的图文讲义，并导出按章节组织的文字 Markdown。文字取自平台字幕或本地转录。",
   "minimum_chrome_version": "116",
   "icons": {
