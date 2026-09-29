@@ -74,17 +74,22 @@ class Handler(BaseHTTPRequestHandler):
             fields = {part.get_param("name", header="content-disposition"): part for part in message.iter_parts()}
             audio = fields["file"].get_payload(decode=True)
             language = fields.get("language")
-            language = language.get_content().strip() if language else None
+            language = language.get_payload(decode=True).decode("utf-8").strip() if language else None
             language = language.split("-")[0].split("_")[0].lower() if language else None
             prompt = fields.get("prompt")
-            prompt = prompt.get_content().strip()[:200] if prompt else None
-            segments, _ = model.transcribe(
-                io.BytesIO(audio), beam_size=3, temperature=0,
-                language=language or None, vad_filter=True,
-                initial_prompt=prompt,
-                vad_parameters={"min_silence_duration_ms": 500},
-            )
+            prompt = prompt.get_payload(decode=True).decode("utf-8").strip()[:200] if prompt else None
+            options = dict(beam_size=3, temperature=(0, .2, .4, .6),
+                           condition_on_previous_text=False, language=language or None,
+                           vad_filter=True, initial_prompt=prompt,
+                           vad_parameters={"min_silence_duration_ms": 500})
+            segments, _ = model.transcribe(io.BytesIO(audio), **options)
             items = [{"start": item.start, "end": item.end, "text": item.text} for item in segments]
+            if sum(item["text"].count("\ufffd") for item in items) >= 3:
+                options.update(beam_size=5, temperature=(.4, .6, .8, 1.0), initial_prompt=None)
+                segments, _ = model.transcribe(io.BytesIO(audio), **options)
+                items = [{"start": item.start, "end": item.end, "text": item.text} for item in segments]
+            if sum(item["text"].count("\ufffd") for item in items) >= 3:
+                return self.send_json(500, {"error": "本机模型连续产出乱码，已停止；请重试或改用平台字幕"})
             self.send_json(200, {"text": "".join(item["text"] for item in items).strip(), "segments": items})
         except Exception as error:
             self.send_json(400, {"error": str(error)})
