@@ -15,3 +15,11 @@ export class MissingSourceError extends Error {
     if (brief) this.brief = brief;
   }
 }
+
+/** 利用者の取消・中断。 */
+export class AbortError extends Error {
+  constructor(message = '已取消') {
+    super(message);
+    this.name = 'AbortError';
+  }
+}
