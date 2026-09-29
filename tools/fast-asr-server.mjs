@@ -289,6 +289,7 @@ async function processJob(input, source, endpoint, job, signal) {
         form.set('model', String(input.model || 'whisper-1'));
         form.set('response_format', format);
         form.set('temperature', '0');
+        if (input.prompt) form.set('prompt', String(input.prompt).slice(0, 200));
         if (input.language) form.set('language', String(input.language));
         return fetch(endpoint, {
           method: 'POST',

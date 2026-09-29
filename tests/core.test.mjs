@@ -621,6 +621,22 @@ test('本地转录默认不加速：倍率大于 1 会变调并降低识别质�
   assert.equal(s.asr.chunkSeconds, 30);
 });
 
+test('本机转录把视频标题作为识别提示传给模型', async () => {
+  const { transcribe } = await import('../src/background/asr.js');
+  const original = globalThis.fetch;
+  let prompt;
+  globalThis.fetch = async (_url, options) => {
+    prompt = options.body.get('prompt');
+    return new Response(JSON.stringify({ text: '广德寺' }), { status: 200 });
+  };
+  try {
+    const result = await transcribe({ endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
+      model: 'small', prompt: '宁海广德寺仿日有多专业？', audio: new Uint8Array([1]) });
+    assert.equal(result.ok, true);
+    assert.equal(prompt, '宁海广德寺仿日有多专业？');
+  } finally { globalThis.fetch = original; }
+});
+
 test('getPath / setPath 处理嵌套字段', () => {
   const o = { llm: {} };
   setPath(o, 'llm.apiKey', 'k');

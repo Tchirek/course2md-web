@@ -30,6 +30,7 @@ export async function transcribe({
   endpoint,
   apiKey,
   model,
+  prompt,
   language,
   audio,
   mimeType = 'audio/webm',
@@ -48,6 +49,7 @@ export async function transcribe({
     form.append('model', model || 'whisper-1');
     form.append('response_format', responseFormat);
     form.append('temperature', '0');
+    if (prompt) form.append('prompt', String(prompt).slice(0, 200));
     if (language) form.append('language', language);
 
     const headers = {};
