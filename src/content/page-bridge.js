@@ -58,7 +58,13 @@ const handlers = {
 window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   const data = event.data;
-  if (!data || data.channel !== CHANNEL || data.dir !== 'req') return;
+  if (!data || data.channel !== CHANNEL) return;
+  // 後から読み込まれた内容スクリプトの問い合わせ：document_start の ready を取り逃がしている
+  if (data.dir === 'hello') {
+    window.postMessage({ channel: CHANNEL, dir: 'ready' }, '*');
+    return;
+  }
+  if (data.dir !== 'req') return;
   const handler = handlers[data.method];
   let value = null;
   try {

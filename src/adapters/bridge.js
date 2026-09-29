@@ -35,6 +35,9 @@ function whenReady(timeoutMs = 2000) {
       clearTimeout(timer);
       resolve(true);
     });
+    // ページ側は document_start に一度だけ ready を告げる。document_idle で読み込まれる
+    // こちらはそれを必ず取り逃がすので、問い合わせて ready を返してもらう
+    window.postMessage({ channel: CHANNEL, dir: 'hello' }, '*');
   });
 }
 
