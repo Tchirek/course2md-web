@@ -5,6 +5,8 @@
 //! 允许 api.deepseek.com，请求会被直接拦掉。后台的 fetch 只受扩展自己的权限
 //! 约束（host_permissions），完全绕开页面策略。
 
+import { timedRequest } from './net.js';
+
 /** 与 course2md 一致：校对任务不需要创造性，温度取 0。 */
 const TEMPERATURE = 0;
 const MAX_ATTEMPTS = 3;
@@ -22,9 +24,10 @@ const REQUEST_TIMEOUT_MS = 120_000;
  * @param {string} args.model
  * @param {{role:string, content:string}[]} args.messages
  * @param {AbortSignal} [args.signal]
+ * @param {number} [args.timeoutMs] 無応答で打ち切るまでの時間（テスト用に短くできる）
  * @returns {Promise<{ok:true, content:string, usage?:object}|{ok:false, error:string, retryable:boolean}>}
  */
-export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta }) {
+export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, timeoutMs = REQUEST_TIMEOUT_MS }) {
   const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
   const body = {
     model,
@@ -36,57 +39,50 @@ export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta }
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
+  const attempts = onDelta ? 1 : MAX_ATTEMPTS;
   let lastError = '未知错误';
-  for (let attempt = 1; attempt <= (onDelta ? 1 : MAX_ATTEMPTS); attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let outcome;
     try {
-      const res = await withTimeout(
-        fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-          signal,
-        }),
-        REQUEST_TIMEOUT_MS,
-      );
-
-      if (!res.ok) {
-        const detail = await readErrorBody(res);
-        lastError = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
-        const retryable = res.status === 429 || res.status >= 500;
-        if (!retryable) return { ok: false, error: lastError, retryable: false };
-        await backoff(attempt);
-        continue;
-      }
-
-      let content;
-      let usage;
-      if (onDelta) {
-        content = await readStream(res, onDelta);
-      } else {
-        const json = await res.json();
-        content = json?.choices?.[0]?.message?.content;
-        usage = json?.usage;
-      }
-      if (typeof content !== 'string') {
+      outcome = await timedRequest(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal }, timeoutMs,
+        async (res, keepAlive) => {
+          if (!res.ok) {
+            const detail = await readErrorBody(res);
+            const error = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+            return { ok: false, error, retryable: res.status === 429 || res.status >= 500 };
+          }
+          if (onDelta) return { ok: true, content: await readStream(res, onDelta, keepAlive) };
+          const json = await res.json();
+          return { ok: true, content: json?.choices?.[0]?.message?.content, usage: json?.usage };
+        });
+    } catch (err) {
+      // 利用者の取消だけは即座に終える。期限切れと接続失敗は再試行の対象
+      // （以前は期限切れも AbortError 扱いで「已取消」になり、再試行されなかった）
+      if (signal?.aborted) return { ok: false, error: '已取消', retryable: false };
+      outcome = { ok: false, error: err?.name === 'TimeoutError' ? err.message : describeFetchError(err, endpoint), retryable: true };
+    }
+    if (outcome.ok) {
+      if (typeof outcome.content !== 'string') {
         return { ok: false, error: '回复里没有 choices[0].message.content', retryable: false };
       }
-      return { ok: true, content, usage };
-    } catch (err) {
-      if (err?.name === 'AbortError') return { ok: false, error: '已取消', retryable: false };
-      lastError = describeFetchError(err, endpoint);
-      await backoff(attempt);
+      return { ok: true, content: outcome.content, usage: outcome.usage };
     }
+    lastError = outcome.error;
+    if (!outcome.retryable) return { ok: false, error: lastError, retryable: false };
+    // 最後の試行の後は待たずに返す
+    if (attempt < attempts) await backoff(attempt);
   }
   return { ok: false, error: lastError, retryable: true };
 }
 
-async function readStream(res, onDelta) {
+async function readStream(res, onDelta, keepAlive) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let pending = '';
   let content = '';
   while (true) {
-    const { value, done } = await withTimeout(reader.read(), REQUEST_TIMEOUT_MS);
+    const { value, done } = await reader.read();
+    keepAlive();
     pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
     pending = pending.replace(/\r\n/g, '\n');
     let cut;
@@ -147,26 +143,6 @@ function backoff(attempt) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function withTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const err = new Error('请求超时');
-      err.name = 'AbortError';
-      reject(err);
-    }, ms);
-    promise.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
-}
-
 /**
  * 探测一个端点是否可用：拉一次 /models，失败就退化成发一条最小对话请求。
  * 设置页的「测试连接」用它。
@@ -177,14 +153,9 @@ function withTimeout(promise, ms) {
 export async function testConnection({ baseUrl, apiKey, model }) {
   const base = String(baseUrl).replace(/\/+$/, '');
   try {
-    const res = await withTimeout(
-      fetch(`${base}/models`, {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      }),
-      15_000,
-    );
-    if (res.ok) {
-      const json = await res.json();
+    const json = await timedRequest(`${base}/models`, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} }, 15_000,
+      async (res) => (res.ok ? res.json() : null));
+    if (json) {
       const ids = (json?.data ?? []).map((m) => m?.id).filter(Boolean);
       if (ids.length && model && !ids.includes(model)) {
         return {

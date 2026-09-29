@@ -6,6 +6,8 @@
 //!   - Ollama 之外的任何 `/v1/audio/transcriptions` 实现
 //! 端点地址、模型名、可选的 API key 都由用户自己填，插件不预设任何云服务。
 
+import { timedRequest } from './net.js';
+
 const REQUEST_TIMEOUT_MS = 300_000;
 
 /**
@@ -24,6 +26,7 @@ const REQUEST_TIMEOUT_MS = 300_000;
  * @param {string} [args.mimeType]
  * @param {string} [args.fileName]
  * @param {AbortSignal} [args.signal]
+ * @param {number} [args.timeoutMs] 打ち切るまでの時間（テスト用に短くできる）
  * @returns {Promise<{ok:true, data:object}|{ok:false, error:string, hint?:string}>}
  */
 export async function transcribe({
@@ -36,6 +39,7 @@ export async function transcribe({
   mimeType = 'audio/webm',
   fileName = 'chunk.webm',
   signal,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 }) {
   const url = String(endpoint ?? '').trim();
   if (!url) return { ok: false, error: '还没填写本机 ASR 端点地址。' };
@@ -55,23 +59,22 @@ export async function transcribe({
     const headers = {};
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-    const res = await withTimeout(
-      fetch(url, { method: 'POST', headers, body: form, signal }),
-      REQUEST_TIMEOUT_MS,
-    );
-    if (!res.ok) {
-      const detail = await readError(res);
-      const err = new Error(`HTTP ${res.status}${detail ? ` — ${detail}` : ''}`);
-      err.status = res.status;
-      throw err;
-    }
-    return res.json();
+    return timedRequest(url, { method: 'POST', headers, body: form, signal }, timeoutMs, async (res) => {
+      if (!res.ok) {
+        const detail = await readError(res);
+        const err = new Error(`HTTP ${res.status}${detail ? ` — ${detail}` : ''}`);
+        err.status = res.status;
+        throw err;
+      }
+      return res.json();
+    });
   };
 
   try {
     return { ok: true, data: await attempt('verbose_json') };
   } catch (err) {
-    if (err?.name === 'AbortError') return { ok: false, error: '已取消' };
+    // 期限切れ（TimeoutError）は「已取消」ではなく超時として伝える
+    if (signal?.aborted) return { ok: false, error: '已取消' };
     // 400/422 多半是服务端不认识 verbose_json，退回 json 再试一次
     if (err?.status === 400 || err?.status === 422) {
       try {
@@ -112,12 +115,9 @@ export async function testEndpoint({ endpoint, apiKey, model }) {
   // 先试着读模型列表；读不到不算错，直接发 0.3 秒的静音去实测
   try {
     const base = url.replace(/\/audio\/transcriptions\/?$/, '');
-    const res = await withTimeout(
-      fetch(`${base}/models`, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} }),
-      10_000,
-    );
-    if (res.ok) {
-      const json = await res.json();
+    const json = await timedRequest(`${base}/models`, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} }, 10_000,
+      async (res) => (res.ok ? res.json() : null));
+    if (json) {
       const ids = (json?.data ?? []).map((m) => m?.id).filter(Boolean);
       if (ids.length) {
         return {
@@ -206,24 +206,4 @@ async function readError(res) {
   } catch {
     return '';
   }
-}
-
-function withTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const err = new Error('请求超时');
-      err.name = 'AbortError';
-      reject(err);
-    }, ms);
-    promise.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
 }
