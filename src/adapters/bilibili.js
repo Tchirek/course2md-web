@@ -1,11 +1,13 @@
 //! B 站适配器：元信息、字幕轨、章节（看点）、跳转。
 //!
-//! 字幕优先读播放器 JSON 接口，空轨时再读新版 Protobuf 接口。
+//! 字幕只认播放器 JSON 接口（/x/player/v2，按 aid+cid 严格对应本视频）。
+//! 曾经的 Protobuf 回落接口（/x/v2/subtitle/web/view）返回的是加密分发地址，
+//! 内容归属无法验证，实测会给 A 视频返回 B 视频的字幕，已弃用。
 //! 请求从 B 站页面的内容脚本发出，保留浏览器登录态。
 
+import { MissingSourceError } from '../core/errors.js';
 import { readInlineJson } from '../core/json.js';
 import { callPage } from './bridge.js';
-import { parseWebSubtitle } from './bili-proto.js';
 
 export const id = 'bilibili';
 export const label = '哔哩哔哩';
@@ -107,26 +109,21 @@ async function subtitleInfo(info) {
 
 async function subtitleTracks(info) {
   const query = new URLSearchParams({ bvid: info.videoId, aid: String(info.aid), cid: String(info.cid) });
+  let needLogin = false;
   for (const endpoint of ['/x/player/v2', '/x/player/wbi/v2']) {
     try {
       const json = await biliFetch(`https://api.bilibili.com${endpoint}?${query}`);
       const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
-      if (Array.isArray(tracks) && tracks.length) return tracks;
+      needLogin = needLogin || Boolean(json?.data?.need_login_subtitle);
+      if (Array.isArray(tracks) && tracks.length) return { tracks, needLogin };
     } catch { /* 尝试下一种接口 */ }
   }
-  if (!info.aid) return [];
-  try {
-    const params = new URLSearchParams({
-      oid: String(info.cid), pid: String(info.aid), context_ext: '{"video_type":1}',
-      type: '1', cur_production_type: '0', preferred_language: 'ai-zh', playlist_switch: '0',
-    });
-    return parseWebSubtitle(await biliFetch(`https://api.bilibili.com/x/v2/subtitle/web/view?${params}`, true));
-  } catch { return []; }
+  return { tracks: [], needLogin };
 }
 
 export async function tracks(info) {
   const current = await subtitleInfo(info ?? {});
-  const list = await subtitleTracks(current);
+  const { tracks: list, needLogin } = await subtitleTracks(current);
   const loaded = (performance.getEntriesByType?.('resource') ?? [])
     .map((entry) => entry.name)
     .filter((name) => {
@@ -137,6 +134,13 @@ export async function tracks(info) {
       } catch { return false; }
     })
     .map((subtitle_url) => ({ subtitle_url, lan: 'ai-zh', lan_doc: '中文 AI', ai_type: 1 }));
+
+  // 字幕元数据要登录；明确告诉用户下一步，而不是让他们对着空结果猜
+  if (!list.length && !loaded.length && needLogin) {
+    throw new MissingSourceError(
+      'B 站字幕要登录后才能获取。登录 B 站后重新生成；不想登录就改用「本地模型转录」从音频转写。',
+    );
+  }
 
   return [...list, ...loaded]
     .filter((t) => t && typeof t.subtitle_url === 'string' && t.subtitle_url)
@@ -150,7 +154,6 @@ export async function tracks(info) {
     }))
     .filter((track, index, all) => all.findIndex((item) => item.fetch.url === track.fetch.url) === index);
 }
-
 /** 章节 = 视频看点（view_points）。 */
 export async function chapters(info) {
   const data = await playerV2(info ?? {});

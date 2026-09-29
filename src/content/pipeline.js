@@ -535,14 +535,10 @@ export function finalize(built, meta, settings) {
   return doc;
 }
 
-/** 源缺失：用户配置问题，不是崩溃。UI 要给出可操作的下一步。 */
-export class MissingSourceError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'MissingSourceError';
-    this.actionable = true;
-  }
-}
+// MissingSourceError 移到 core/errors.js：adapters 也要抛它，放这里会成环。
+// 这里保留再导出，既有引用不变。
+import { MissingSourceError } from '../core/errors.js';
+export { MissingSourceError };
 
 export class AbortError extends Error {
   constructor(message = '已取消') {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 globalThis.window = { addEventListener() {} };
 const { tracks } = await import('../src/adapters/bilibili.js');
+const { MissingSourceError } = await import('../src/core/errors.js');
 const { downloadBilibiliVideo } = await import('../tools/bilibili-audio.mjs');
 
 const v = (number) => {
@@ -17,24 +18,26 @@ const field = (number, value) => {
   return Uint8Array.from([...v(number * 8 + 2), ...v(bytes.length), ...bytes]);
 };
 
-test('B 站旧接口无字幕时读取新版 AI 字幕，并补齐 aid/cid', async () => {
+test('B 站播放器接口无字幕且需登录时给出指引，不再调用内容归属不明的字幕接口', async () => {
   const original = globalThis.fetch;
-  const item = Uint8Array.from([...field(3, 'ai-zh'), ...field(4, '中文 AI'), ...field(5, '//example.com/subtitle.json')]);
-  const proto = field(1, field(3, item));
   const calls = [];
   globalThis.fetch = async (url) => {
-    const path = new URL(url).pathname;
-    calls.push(path);
+    const u = String(url);
+    calls.push(u);
+    const path = new URL(u).pathname;
     if (path === '/x/web-interface/view') return { ok: true, json: async () => ({ data: { aid: 12, cid: 34, pages: [{ cid: 34 }, { cid: 56 }] } }) };
-    if (path === '/x/v2/subtitle/web/view') return { ok: true, arrayBuffer: async () => proto.buffer };
-    return { ok: true, json: async () => ({ code: 0, data: { subtitle: { subtitles: [] } } }) };
+    return { ok: true, json: async () => ({ code: 0, data: { need_login_subtitle: true, subtitle: { subtitles: [] } } }) };
   };
   try {
-    const result = await tracks({ videoId: 'BVtest', url: 'https://www.bilibili.com/video/BVtest?p=2' });
-    assert.equal(result.length, 1);
-    assert.equal(result[0].language, 'ai-zh');
-    assert.equal(result[0].fetch.url, 'https://example.com/subtitle.json');
-    assert.ok(calls.includes('/x/v2/subtitle/web/view'));
+    await assert.rejects(
+      tracks({ videoId: 'BVtest', url: 'https://www.bilibili.com/video/BVtest?p=2' }),
+      (error) => error instanceof MissingSourceError && error.message.includes('登录'),
+    );
+    // 字幕请求按分 P 的 cid 补齐（p=2 → cid=56），且绝不回落到内容归属无法验证的 Protobuf 接口
+    const playerUrl = calls.find((u) => new URL(u).pathname === '/x/player/v2');
+    assert.ok(playerUrl, '应请求播放器接口');
+    assert.equal(new URL(playerUrl).searchParams.get('cid'), '56');
+    assert.ok(calls.some((u) => new URL(u).pathname === '/x/v2/subtitle/web/view') === false, '不得调用加密分发的字幕接口');
   } finally { globalThis.fetch = original; }
 });
 
