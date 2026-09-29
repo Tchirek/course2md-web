@@ -3,3 +3,4 @@ tools/shots/
 .DS_Store
 *.log
 __pycache__/
+dist/
