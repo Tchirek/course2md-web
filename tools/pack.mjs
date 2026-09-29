@@ -42,6 +42,8 @@ const HELPER_FILES = [
   'tools/check-native-helper.mjs',
   'tools/check-local-polish.mjs',
 ];
+/** 两个包都附带：说明、本项目许可与第三方许可声明。 */
+const LEGAL_FILES = ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'];
 const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:uninstall', 'local:check-host', 'check:local-polish'];
 
 // ---------- 0. 清单自检：扩展引用闭包不完整就不许出门 ----------
@@ -56,8 +58,8 @@ const artifacts = [];
 artifacts.push(await makeZip(`course2md-${version}.zip`, join(DIST, 'stage-ext'), async (stage) => {
   cpSync(join(ROOT, 'manifest.json'), join(stage, 'manifest.json'));
   cpSync(join(ROOT, 'src'), join(stage, 'src'), { recursive: true });
-  cpSync(join(ROOT, 'README.md'), join(stage, 'README.md'));
-  return ['manifest.json', 'README.md', ...allFiles(join(ROOT, 'src'), 'src')];
+  for (const file of LEGAL_FILES) cpSync(join(ROOT, file), join(stage, file));
+  return ['manifest.json', ...LEGAL_FILES, ...allFiles(join(ROOT, 'src'), 'src')];
 }));
 
 // ---------- 2. 本机助手 zip ----------
@@ -74,12 +76,12 @@ artifacts.push(await makeZip(`course2md-helper-${version}.zip`, join(DIST, 'stag
       return [key, pkg.scripts[key]];
     })),
   }, null, 2) + '\n');
-  cpSync(join(ROOT, 'README.md'), join(stage, 'README.md'));
+  for (const file of LEGAL_FILES) cpSync(join(ROOT, file), join(stage, file));
   for (const rel of HELPER_FILES) {
     mkdirSync(dirname(join(stage, rel)), { recursive: true });
     cpSync(join(ROOT, rel), join(stage, rel));
   }
-  return ['package.json', 'README.md', ...HELPER_FILES];
+  return ['package.json', ...LEGAL_FILES, ...HELPER_FILES];
 }));
 
 // ---------- 3. 校验和 ----------

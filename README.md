@@ -169,5 +169,6 @@ manifest 里出现，`web_accessible_resources` 覆盖不到就会在运行时�
 
 ## 许可
 
-MIT。设计令牌取自 kill-ai-slop（Apache-2.0），数值原样保留，出处写在
+MIT，全文见 `LICENSE`。第三方组件（随包分发的与运行时下载的）及其许可列在 `THIRD_PARTY_NOTICES.md`。
+设计令牌取自 kill-ai-slop（Apache-2.0），数值原样保留，出处写在
 `src/ui/tokens.css` 的注释里。繁简转换使用 opencc-js，许可文件随 `src/vendor/` 提供。
