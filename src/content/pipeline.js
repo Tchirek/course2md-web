@@ -440,7 +440,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
         try { item = JSON.parse(match[0]); } catch { continue; }
         if (seen.has(item.id) || !chunk.ids.includes(item.id)) continue;
         seen.add(item.id);
-        if (item.text.trim()) {
+        if (item.text.trim() && !/^\s*\{\s*"segments"\s*:/.test(item.text)) {
           const seg = segments[item.id];
           seg.raw ??= seg.text;
           seg.text = item.text.trim();

@@ -35,6 +35,10 @@ test('图片密度分四档；多档至多每十秒取一张候选帧', () => {
   assert.equal(visualSections(sections, 181, 'many').length, 19);
 });
 
+test('润色文本不能把嵌套的 segments JSON 当作正文', () => {
+  assert.equal(parsePolishResponse('{"segments":[{"id":0,"text":"{\\"segments\\":[{\\"id\\":0,\\"text\\":\\"误入正文\\"}]}"}]}'), null);
+});
+
 test('下载版 Markdown 在相应讲述段前引用帧，普通复制版不带图', () => {
   const section = { t: 10, title: '片段', image: 'frames/slide_0001.jpg', segments: [{ start: 10, end: 12, text: '讲述。' }] };
   const doc = { meta: { title: '课程', source: 'subtitle', url: 'https://example.com/watch' }, sections: [section] };

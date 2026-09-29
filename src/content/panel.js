@@ -350,7 +350,7 @@ export class Panel {
       if (!visible.length) continue;
 
       const sec = el('section', 'c2md-section');
-      if (section.image) {
+      if (settings?.imageLevel !== 'none' && section.image) {
         const figure = el('figure', 'c2md-frame');
         const image = document.createElement('img');
         image.src = section.image;

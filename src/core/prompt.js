@@ -112,6 +112,7 @@ export function parsePolishResponse(content) {
     if (!Number.isInteger(id) || id < 0) continue;
     const text = typeof item.text === 'string' ? item.text : null;
     if (text === null) continue;
+    if (/^\s*\{\s*"segments"\s*:/.test(text)) return null;
     out.push({ id, text: text.trim() });
   }
   return out.length ? out : null;

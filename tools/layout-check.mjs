@@ -152,6 +152,20 @@ try {
       count > 0 ? pass('panel/running 已完成的文本可见') : fail('panel/running', '运行中仍隐藏已完成的文本');
     }
     if (state === 'ready') {
+      const images = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const sections = panel.state.sections.map((section, index) => ({ ...section, image: index === 0 ? 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' : '' }));
+        panel.setState({ sections });
+        const before = panel.scope.querySelectorAll('.c2md-frame').length;
+        panel.setState({ settings: { ...panel.state.settings, imageLevel: 'none' } });
+        const hidden = panel.scope.querySelectorAll('.c2md-frame').length;
+        panel.setState({ settings: { ...panel.state.settings, imageLevel: 'few' } });
+        const restored = panel.scope.querySelectorAll('.c2md-frame').length;
+        return { before, hidden, restored };
+      });
+      images.before === 1 && images.hidden === 0 && images.restored === 1
+        ? pass('panel/ready 图片密度切到无即隐藏、切回即显示')
+        : fail('panel/ready', `图片密度切换未生效：${JSON.stringify(images)}`);
       const gate = await page.evaluate(() => {
         const panel = window.__selftestPanel;
         panel.setState({ imagesPending: true });
