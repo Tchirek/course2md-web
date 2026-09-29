@@ -42,14 +42,17 @@ export async function readTrack(track) {
   }
   if (!track?.fetch?.url) return [];
 
-  const res = await fetch(track.fetch.url, {
-    credentials: 'include',
-    headers: { Accept: '*/*' },
-  });
-  if (!res.ok) {
-    throw new Error(`取字幕失败（HTTP ${res.status}）`);
+  let text;
+  try {
+    const res = await fetch(track.fetch.url, { credentials: 'include', headers: { Accept: '*/*' } });
+    if (!res.ok) throw new Error(`取字幕失败（HTTP ${res.status}）`);
+    text = await res.text();
+  } catch (error) {
+    if (track.fetch.as !== 'json' || !globalThis.chrome?.runtime?.sendMessage) throw error;
+    const reply = await chrome.runtime.sendMessage({ type: 'subtitle.fetch', payload: { url: track.fetch.url } });
+    if (!reply?.ok) throw new Error(reply?.error || String(error));
+    text = reply.value;
   }
-  const text = await res.text();
   // b 站的字幕是自带 body[].from/to/content 的 JSON，走专用解析器
   if (track.fetch.as === 'json' || text.trimStart().startsWith('{')) {
     const asBili = parseBilibili(text);

@@ -49,6 +49,15 @@ const HANDLERS = {
 
   'llm.chat': (payload) => chat(payload),
   'llm.test': (payload) => testLlm(payload),
+  'subtitle.fetch': async ({ url, binary = false }) => {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || !(/(^|\.)bilibili\.com$/.test(parsed.hostname) || /(^|\.)hdslb\.com$/.test(parsed.hostname))) {
+      throw new Error('字幕地址不受支持');
+    }
+    const response = await fetch(parsed.href, { credentials: 'include', headers: { Accept: '*/*' } });
+    if (!response.ok) throw new Error(`取字幕失败（HTTP ${response.status}）`);
+    return binary ? [...new Uint8Array(await response.arrayBuffer())] : response.text();
+  },
 
   'asr.transcribe': async (payload) => {
     const result = await transcribe({
@@ -64,8 +73,7 @@ const HANDLERS = {
   'polish.local.start': () => localPolish('start'),
   'polish.local.status': () => localPolish('status'),
   'asr.fast.start': async (payload) => {
-    const probe = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
-    if (!probe.ok) throw new Error('本机提取服务不可用');
+    await ensureLocalHelper();
     let cookieFile = '';
     try {
       const url = new URL(payload.sourceUrl);
@@ -93,6 +101,7 @@ const HANDLERS = {
     return { cancelled: true };
   },
   'frame.start': async (payload) => {
+    await ensureLocalHelper();
     let cookieFile = '';
     try {
       const url = new URL(payload.sourceUrl);
@@ -142,7 +151,8 @@ async function localAsr(action) {
       signal: AbortSignal.timeout(1200),
     });
   } catch {
-    throw new Error('本机助手未运行。先在项目目录运行 npm run local:install。');
+    if (await wakeLocalHelper()) return localAsr(action);
+    throw new Error('本机助手无法启动。请在项目目录运行 npm run local:install。');
   }
   if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
   return response.json();
@@ -155,10 +165,35 @@ async function localPolish(action) {
       method: action === 'start' ? 'POST' : 'GET', signal: AbortSignal.timeout(1500),
     });
   } catch {
-    throw new Error('本机助手未运行。先在项目目录运行 npm run local:install。');
+    if (await wakeLocalHelper()) return localPolish(action);
+    throw new Error('本机助手无法启动。请在项目目录运行 npm run local:install。');
   }
   if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
   return response.json();
+}
+
+let wakingHelper;
+async function ensureLocalHelper() {
+  try {
+    const response = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
+    if (response.ok) return;
+  } catch { /* 唤醒已安装的本机宿主 */ }
+  if (!await wakeLocalHelper()) throw new Error('本机助手无法启动。请在项目目录运行 npm run local:install。');
+}
+async function wakeLocalHelper() {
+  if (wakingHelper) return wakingHelper;
+  wakingHelper = new Promise((resolve) => {
+    try {
+      chrome.runtime.sendNativeMessage('com.course2md.helper', { action: 'start' }, async () => {
+        if (chrome.runtime.lastError) return resolve(false);
+        try {
+          const response = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(2000) });
+          resolve(response.ok);
+        } catch { resolve(false); }
+      });
+    } catch { resolve(false); }
+  }).finally(() => { wakingHelper = null; });
+  return wakingHelper;
 }
 
 /**

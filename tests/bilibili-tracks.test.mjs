@@ -25,9 +25,9 @@ test('B 站旧接口无字幕时读取新版 AI 字幕，并补齐 aid/cid', asy
   globalThis.fetch = async (url) => {
     const path = new URL(url).pathname;
     calls.push(path);
-    if (path === '/x/web-interface/view') return { json: async () => ({ data: { aid: 12, cid: 34, pages: [{ cid: 34 }, { cid: 56 }] } }) };
+    if (path === '/x/web-interface/view') return { ok: true, json: async () => ({ data: { aid: 12, cid: 34, pages: [{ cid: 34 }, { cid: 56 }] } }) };
     if (path === '/x/v2/subtitle/web/view') return { ok: true, arrayBuffer: async () => proto.buffer };
-    return { json: async () => ({ code: 0, data: { subtitle: { subtitles: [] } } }) };
+    return { ok: true, json: async () => ({ code: 0, data: { subtitle: { subtitles: [] } } }) };
   };
   try {
     const result = await tracks({ videoId: 'BVtest', url: 'https://www.bilibili.com/video/BVtest?p=2' });
@@ -48,6 +48,25 @@ test('B 站已加载的 AI 字幕地址可作为接口失效时的备用轨道',
     assert.equal(result.length, 1);
     assert.equal(result[0].fetch.url, 'https://aisubtitle.hdslb.com/bfs/ai_subtitle/prod/1234.json');
   } finally { globalThis.fetch = originalFetch; globalThis.performance = originalPerformance; }
+});
+
+test('B 站字幕接口携带 aid/cid，字幕文件跨域失败时走扩展后台', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalChrome = globalThis.chrome;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    if (String(url).includes('/x/web-interface/view')) return { ok: true, json: async () => ({ data: { aid: 12, cid: 34, pages: [{ cid: 34 }] } }) };
+    if (String(url).includes('/x/player/v2')) return { ok: true, json: async () => ({ code: 0, data: { subtitle: { subtitles: [{ lan: 'ai-zh', subtitle_url: 'https://aisubtitle.hdslb.com/sub.json' }] } } }) };
+    throw new TypeError('Failed to fetch');
+  };
+  globalThis.chrome = { runtime: { sendMessage: async () => ({ ok: true, value: JSON.stringify({ body: [{ from: 0, to: 1, content: '测试字幕' }] }) }) } };
+  try {
+    const found = await tracks({ videoId: 'BVtest', url: 'https://www.bilibili.com/video/BVtest' });
+    assert.match(requests.find((url) => url.includes('/x/player/v2')), /aid=12&cid=34/);
+    const { readTrack } = await import('../src/adapters/index.js');
+    assert.equal((await readTrack(found[0]))[0].text, '测试字幕');
+  } finally { globalThis.fetch = originalFetch; globalThis.chrome = originalChrome; }
 });
 
 test('取画面先尝试 B 站备用 CDN，主线路 SSL 失败不再交给 yt-dlp', async () => {

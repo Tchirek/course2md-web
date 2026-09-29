@@ -12,6 +12,19 @@ export const label = '哔哩哔哩';
 
 const API = 'https://api.bilibili.com/x/player/v2';
 
+async function biliFetch(url, binary = false) {
+  try {
+    const response = await fetch(url, { credentials: 'include', headers: { Accept: binary ? 'application/octet-stream' : 'application/json' } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return binary ? new Uint8Array(await response.arrayBuffer()) : await response.json();
+  } catch (error) {
+    if (!globalThis.chrome?.runtime?.sendMessage) throw error;
+    const reply = await chrome.runtime.sendMessage({ type: 'subtitle.fetch', payload: { url, binary } });
+    if (!reply?.ok) throw new Error(reply?.error || String(error));
+    return binary ? Uint8Array.from(reply.value) : JSON.parse(reply.value);
+  }
+}
+
 /** @param {Location} loc */
 export function matches(loc) {
   return /(^|\.)bilibili\.com$/.test(loc.hostname) && loc.pathname.startsWith('/video/');
@@ -75,12 +88,7 @@ export async function meta() {
 async function playerV2(info) {
   if (!info.aid || !info.cid) return null;
   try {
-    const res = await fetch(`${API}?aid=${info.aid}&cid=${info.cid}`, {
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
+    const json = await biliFetch(`${API}?aid=${info.aid}&cid=${info.cid}`);
     return json?.code === 0 ? json.data : null;
   } catch {
     // 跨域被拦、网络不可用、未登录都走这里；由 UI 提示用户改用本地转录
@@ -89,22 +97,19 @@ async function playerV2(info) {
 }
 
 async function subtitleInfo(info) {
-  if (info.aid && info.cid) return info;
   if (!info.videoId) return info;
   try {
-    const res = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(info.videoId)}`, { credentials: 'include' });
-    const data = (await res.json())?.data;
+    const data = (await biliFetch(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(info.videoId)}`))?.data;
     const page = Number(new URL(info.url).searchParams.get('p')) || 1;
-    return { ...info, aid: Number(data?.aid) || 0, cid: Number(data?.pages?.[page - 1]?.cid ?? data?.cid) || 0 };
+    return { ...info, aid: Number(data?.aid) || info.aid || 0, cid: Number(data?.pages?.[page - 1]?.cid ?? data?.cid) || info.cid || 0 };
   } catch { return info; }
 }
 
 async function subtitleTracks(info) {
-  const query = new URLSearchParams({ bvid: info.videoId, cid: String(info.cid) });
+  const query = new URLSearchParams({ bvid: info.videoId, aid: String(info.aid), cid: String(info.cid) });
   for (const endpoint of ['/x/player/v2', '/x/player/wbi/v2']) {
     try {
-      const res = await fetch(`https://api.bilibili.com${endpoint}?${query}`, { credentials: 'include' });
-      const json = await res.json();
+      const json = await biliFetch(`https://api.bilibili.com${endpoint}?${query}`);
       const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
       if (Array.isArray(tracks) && tracks.length) return tracks;
     } catch { /* 尝试下一种接口 */ }
@@ -115,10 +120,7 @@ async function subtitleTracks(info) {
       oid: String(info.cid), pid: String(info.aid), context_ext: '{"video_type":1}',
       type: '1', cur_production_type: '0', preferred_language: 'ai-zh', playlist_switch: '0',
     });
-    const res = await fetch(`https://api.bilibili.com/x/v2/subtitle/web/view?${params}`, {
-      credentials: 'include', headers: { Accept: 'application/octet-stream' },
-    });
-    return res.ok ? parseWebSubtitle(new Uint8Array(await res.arrayBuffer())) : [];
+    return parseWebSubtitle(await biliFetch(`https://api.bilibili.com/x/v2/subtitle/web/view?${params}`, true));
   } catch { return []; }
 }
 

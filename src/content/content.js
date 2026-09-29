@@ -43,6 +43,8 @@ class Controller {
     this.polishAbort = null;
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
+    this.polishRestart = false;
+    this.finalizingPolish = false;
     this.urlKey = this.currentUrlKey();
 
     this.panel = new Panel({
@@ -91,8 +93,11 @@ class Controller {
       const configChanged = next.polishLevel !== old.polishLevel ||
         next.polishEngine !== old.polishEngine ||
         next.llm?.baseUrl !== old.llm?.baseUrl || next.llm?.model !== old.llm?.model;
-      const repolish = this.built && next.polish && !this.polishState.running &&
+      const repolish = this.built && !this.finalizingPolish && next.polish && !this.polishState.running &&
         (!old.polish || configChanged);
+      if (this.built && next.polish && (this.finalizingPolish || this.polishState.running) && (!old.polish || configChanged)) {
+        this.polishRestart = true;
+      }
       const resumeEarly = !this.built && this.status === 'running' && next.polish &&
         !this.earlyPolish.active && !this.earlyPolish.done &&
         (this.liveEvents?.length ?? 0) >= EARLY_POLISH_MIN_EVENTS && (!old.polish || configChanged);
@@ -160,6 +165,8 @@ class Controller {
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
+    this.polishRestart = false;
+    this.finalizingPolish = false;
     this.panel.setState(this.panelState());
     if (this.autoRunArmed) this.scheduleAutoRun();
   }
@@ -292,6 +299,8 @@ class Controller {
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
+    this.polishRestart = false;
+    this.finalizingPolish = false;
     this.stageLabel = '正在读取页面信息';
     this.panel.mount();
     this.broadcast();
@@ -334,6 +343,7 @@ class Controller {
       if (runAbort.signal.aborted) throw new AbortError();
       this.meta = meta;
       this.built = built;
+      this.finalizingPolish = true;
 
       this.doc = finalize(this.built, this.meta, this.settings);
       this.status = 'ready';
@@ -346,13 +356,15 @@ class Controller {
         // 先等提前润色收尾，续润只处理还没润过的段落
         if (this.earlyPolish.promise) await this.earlyPolish.promise.catch(() => {});
         if (runAbort.signal.aborted) throw new AbortError();
-        try {
-          await this.runPolish({ resume: true });
-        } catch (error) {
-          if (runAbort.signal.aborted) throw error;
-          this.polishState.running = false;
-          if (!(error instanceof AbortError)) this.error = toErrorState(error);
-        }
+        do {
+          this.polishRestart = false;
+          try {
+            await this.runPolish({ resume: true });
+          } catch (error) {
+            if (runAbort.signal.aborted) throw error;
+            if (!(error instanceof AbortError)) this.error = toErrorState(error);
+          }
+        } while (this.settings.polish && this.polishRestart && !runAbort.signal.aborted);
       }
       if (runAbort.signal.aborted) throw new AbortError();
 
@@ -360,6 +372,7 @@ class Controller {
       this.status = 'ready';
       this.stageLabel = '';
       await this.saveCache();
+      this.finalizingPolish = false;
     } catch (error) {
       if (this.abort !== runAbort) return { status: 'stale' };
       if (error instanceof AbortError || runAbort.signal.aborted) {
@@ -378,6 +391,11 @@ class Controller {
     }
 
     if (this.settings.showPanel) this.panel.mount();
+    this.finalizingPolish = false;
+    if (this.polishRestart && this.settings.polish && this.built && !this.polishState.running) {
+      this.polishRestart = false;
+      this.repolish();
+    }
     this.broadcast();
     return { status: this.status, error: this.error };
   }
@@ -399,6 +417,7 @@ class Controller {
     const signal = AbortSignal.any([this.polishAbort.signal, this.abort?.signal].filter(Boolean));
     this.polishState = { hasResult: this.polishState.hasResult, running: true, done: 0, total: 0 };
     this.panel.setState({ polish: this.polishState });
+    try {
     const useLocal = useLocalPolish(this.settings);
     if (this.settings.polishEngine === 'custom' && (!this.settings.llm.baseUrl || !this.settings.llm.model)) {
       throw new Error('请先填写自定义模型的服务地址和模型名');
@@ -436,6 +455,10 @@ class Controller {
     if (!early) {
       this.doc = finalize(this.built, this.meta, this.settings);
       await this.saveCache();
+    }
+    } finally {
+      this.polishState.running = false;
+      this.panel.setState({ polish: this.polishState });
     }
   }
 
@@ -507,7 +530,15 @@ class Controller {
     this.panel.setState(this.panelState());
     try {
       // 默认续润（跳过已润色的段落）；设置变了才从头再来
-      await this.runPolish({ resume: !options.reset });
+      do {
+        this.polishRestart = false;
+        try {
+          await this.runPolish({ resume: !options.reset });
+        } catch (error) {
+          if (!(error instanceof AbortError) || !this.settings.polish || !this.polishRestart) throw error;
+        }
+        options.reset = false;
+      } while (this.settings.polish && this.polishRestart);
       this.error = null;
     } catch (error) {
       this.polishState.running = false;

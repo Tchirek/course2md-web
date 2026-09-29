@@ -16,9 +16,23 @@ if (probe.status !== 0) {
 const dir = path.join(process.env.LOCALAPPDATA, 'course2md');
 const helper = path.resolve('tools/fast-asr-server.mjs');
 const launcher = path.join(dir, 'start-helper.vbs');
+const nativeLauncher = path.join(dir, 'native-helper.cmd');
+const nativeManifest = path.join(dir, 'native-helper.json');
 const command = `"${process.execPath}" "${helper}"`;
 await mkdir(dir, { recursive: true });
 await writeFile(launcher, `CreateObject("WScript.Shell").Run "${command.replaceAll('"', '""')}", 0, False\r\n`);
+await writeFile(nativeLauncher, `@echo off\r\n"${process.execPath}" "${path.resolve('tools/native-helper.mjs')}" "${helper}"\r\n`);
+const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
+if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('扩展 ID 格式错误');
+await writeFile(nativeManifest, JSON.stringify({
+  name: 'com.course2md.helper', description: 'course2md local helper launcher',
+  path: nativeLauncher, type: 'stdio', allowed_origins: [`chrome-extension://${extensionId}/`],
+}, null, 2));
+for (const browser of ['Microsoft\\Edge', 'Google\\Chrome']) {
+  const result = spawnSync('reg.exe', ['add', `HKCU\\Software\\${browser}\\NativeMessagingHosts\\com.course2md.helper`,
+    '/ve', '/t', 'REG_SZ', '/d', nativeManifest, '/f'], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr || '无法注册本机助手');
+}
 const wscript = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe');
 const registration = spawnSync('reg.exe', [
   'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
