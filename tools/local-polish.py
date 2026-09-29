@@ -136,13 +136,15 @@ def start_qwen():
     raise RuntimeError('Qwen3.5-2B 加载超时')
 
 
-def qwen_polish(original, punctuated, instruction):
+def qwen_polish(original, punctuated, instruction, context):
+    # 外层的逐条 JSON 契约只约束 HTTP 回复；内部单句校对要输出纯文本。
+    instruction = instruction.split('输出与输入逐条对应的 JSON 对象', 1)[0].strip()
     body = json.dumps({
         'model': 'Qwen/Qwen3.5-2B', 'temperature': 0,
         'chat_template_kwargs': {'enable_thinking': False},
         'messages': [
-            {'role': 'system', 'content': instruction + '\n只输出一段校对后的文字；不得增删观点或事实。'},
-            {'role': 'user', 'content': f'原文：{original}\n标点参考：{punctuated}'},
+            {'role': 'system', 'content': instruction + '\n校正有把握的同音错字与术语；拿不准的专名保留原字。只输出校对后的纯文本，不解释，不增删观点或事实。'},
+            {'role': 'user', 'content': f'参考信息（不要输出）：{context}\n\n仅校对这句：{original}\n标点参考：{punctuated}'},
         ], 'max_tokens': 512,
     }, ensure_ascii=False).encode()
     request = urllib.request.Request('http://127.0.0.1:8083/v1/chat/completions', body,
@@ -158,6 +160,12 @@ def payload_from(messages):
     if start < 0:
         raise ValueError('未收到逐段文本')
     return json.JSONDecoder().raw_decode(user[start:])[0]['segments']
+
+
+def tidy_punctuation(text):
+    text = re.sub(r'[，,]\s*([。！？!?])', r'\1', text)
+    text = re.sub(r'([，。！？、；：,.!?;:])(?:\s*\1)+', r'\1', text)
+    return re.sub(r'\s+([，。！？、；：])', r'\1', text).strip()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -187,10 +195,10 @@ class Handler(BaseHTTPRequestHandler):
             if not items:
                 raise ValueError('文本为空')
             instruction = request['messages'][0]['content']
+            context = request['messages'][-1]['content'].split('待校对：', 1)[0].strip()[-600:]
             light = '只修正标点' in instruction
-            deep = '主动拆分长句' in instruction
             with PUNC_LOCK:
-                punctuated = PUNC.process([item['text'] for item in items])
+                punctuated = PUNC.process([re.sub(r'[，。！？、；：!?;]|(?<!\d)[.,]|[.,](?!\d)', '', item['text']) for item in items])
             output = []
             if request.get('stream'):
                 self.send_response(200)
@@ -199,13 +207,13 @@ class Handler(BaseHTTPRequestHandler):
                 streaming = True
             for item, punc in zip(items, punctuated):
                 original = item['text']
-                text = punc['punc_text']
-                if not light and (deep or len(original) > 80 or re.search(r'(.)\1{3,}', original)):
+                text = tidy_punctuation(punc['punc_text'])
+                if not light:
                     try:
-                        candidate = qwen_polish(original, text, instruction)
+                        candidate = tidy_punctuation(qwen_polish(original, text, instruction, context))
                     except Exception:
                         candidate = ''
-                    if candidate and len(candidate) >= len(original) / 2:
+                    if candidate and not re.search(r'^(?:前文|原文|标点参考)[:：]|^\{', candidate) and len(original) * .65 <= len(candidate) <= len(original) * 1.5:
                         text = candidate
                 output.append({'id': item['id'], 'text': text})
                 if request.get('stream'):
