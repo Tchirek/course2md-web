@@ -157,7 +157,10 @@ async function processFrames(input, source, job, signal) {
         }
       }
       if (!mediaPath) {
-        const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', 'bestvideo[height<=720]/best[height<=720]', '-o', path.join(dir, 'input.%(ext)s')];
+        // 取帧优先 H.264：YouTube 的 720p 常是 AV1，老版本 ffmpeg 一解码就崩溃（实测 4.2 段错误）；
+        // 截图不需要高码率，H.264 几乎所有 ffmpeg 都能解。没有 H.264 才退回其他编码
+        const format = 'bestvideo[height<=720][vcodec^=avc1]/best[height<=720][vcodec^=avc1]/bestvideo[height<=720]/best[height<=720]';
+        const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', format, '-o', path.join(dir, 'input.%(ext)s')];
         if (input.cookieFile) {
           const cookiePath = path.join(dir, 'cookies.txt');
           await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
@@ -202,9 +205,17 @@ function runOutput(command, args, signal) {
     child.on('error', reject);
     child.on('exit', (code) => {
       signal.removeEventListener('abort', abort);
-      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(stderr || `${command} 退出码 ${code}`));
+      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(stderr || exitReason(command, code)));
     });
   });
+}
+
+/** 退出码翻译成人话：Windows 上 3221225477（0xC0000005）是进程崩溃，多半是 ffmpeg 版本过旧解不了这种编码。 */
+function exitReason(command, code) {
+  if (code === 3221225477 || code === -1073741819 || code === 139) {
+    return `${command} 崩溃了（退出码 ${code}），多半是版本过旧、解不了该视频的编码；请升级 ${command}`;
+  }
+  return `${command} 退出码 ${code}`;
 }
 
 async function startLocalAsr() {
@@ -457,7 +468,7 @@ function run(command, args, signal) {
     child.on('error', reject);
     child.on('exit', (code) => {
       signal.removeEventListener('abort', onAbort);
-      code === 0 ? resolve() : reject(new Error(signal.aborted ? '已取消' : `${command} 失败：${errorText || `退出码 ${code}`}`));
+      code === 0 ? resolve() : reject(new Error(signal.aborted ? "已取消" : `${command} 失败：${errorText || exitReason(command, code)}`));
     });
   });
 }
