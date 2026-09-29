@@ -56,11 +56,11 @@ def idle_message(what):
 _jobs = []
 
 
-def popen_bound(args):
-    """子プロセスをこのプロセスの寿命に縛って起動する。"""
+def popen_bound(args, **options):
+    """子プロセスをこのプロセスの寿命に縛って起動する。options は Popen にそのまま渡す。"""
     if sys.platform.startswith("linux"):
-        return subprocess.Popen(args, preexec_fn=_die_with_parent)
-    process = subprocess.Popen(args)
+        return subprocess.Popen(args, preexec_fn=_die_with_parent, **options)
+    process = subprocess.Popen(args, **options)
     if sys.platform == "win32":
         try:
             _kill_on_close(process)

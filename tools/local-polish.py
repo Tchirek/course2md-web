@@ -212,12 +212,16 @@ def start_qwen():
                             ROOT / 'qwen' / qwen['file'], qwen['sha256'], '正在下载 Qwen3.5-2B')
     binary, gpu_layers = prepare_llama()
     state('loading', '正在加载 Qwen3.5-2B')
-    # llama-server は数 GB を抱えるので、このプロセスが強制終了されても道連れにする
+    # llama-server は数 GB を抱えるので、このプロセスが強制終了されても道連れにする。
+    # 出力はログに残し、起動に失敗したら「失敗した」だけでなく理由を伝える
+    log = open(ROOT / 'llama-server.log', 'w', encoding='utf-8', errors='replace')
     process = popen_bound([str(binary), '-m', str(model), '--alias', 'Qwen/Qwen3.5-2B',
-                     '--host', '127.0.0.1', '--port', '8083', '-ngl', str(gpu_layers), '-c', '4096', '--parallel', '1'])
+                           '--host', '127.0.0.1', '--port', '8083', '-ngl', str(gpu_layers), '-c', '4096', '--parallel', '1'],
+                          stdout=log, stderr=subprocess.STDOUT)
     for _ in range(120):
         if process.poll() is not None:
-            raise RuntimeError('Qwen3.5-2B 服务启动失败')
+            log.close()
+            raise RuntimeError(f'Qwen3.5-2B 服务启动失败：{llama_failure(ROOT / "llama-server.log")}')
         try:
             with urllib.request.urlopen('http://127.0.0.1:8083/health', timeout=1) as response:
                 if response.status == 200:
@@ -225,6 +229,21 @@ def start_qwen():
         except Exception:
             time.sleep(1)
     raise RuntimeError('Qwen3.5-2B 加载超时')
+
+
+def llama_failure(log_path):
+    """llama-server のログから、利用者に伝えるべき失敗理由を取り出す。"""
+    try:
+        lines = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return '没有留下日志'
+    text = '\n'.join(lines)
+    if re.search(r'out of memory|bad allocation|failed to allocate|unable to allocate', text, re.I):
+        return '内存或显存不足。关掉占内存的程序，或等转录服务空闲释放后再试'
+    if re.search(r"address already in use|couldn't bind", text, re.I):
+        return '端口 8083 被占用（可能有残留的 llama-server）'
+    errors = [line.split(' E ', 1)[-1].strip() for line in lines if ' E ' in line]
+    return (errors[-1] if errors else (lines[-1] if lines else '没有输出'))[:200]
 
 
 def qwen_polish(original, punctuated, instruction, context):
