@@ -1,6 +1,7 @@
 """Local punctuation first, Qwen3.5-2B for hard sentences, OpenAI-style stream."""
 import json
 import os
+import platform
 import re
 import sys
 import tarfile
@@ -88,12 +89,46 @@ def robust_download(url, target, message):
     return target
 
 
+def llama_spec():
+    """各系统要下载的 llama.cpp 运行库：资产名后缀、期望条数、GPU 卸载层数。
+
+    Windows 走 CUDA 12.4（主包 + cudart 运行时各一个 zip）；macOS 走官方
+    Metal 包；Linux 默认 CPU 包（NVIDIA 用户可改用 ubuntu-cuda 包，此处保守）。
+    """
+    machine = platform.machine().lower()
+    if sys.platform == 'win32':
+        return {'suffix': 'win-cuda-12.4-x64.zip', 'count': 2, 'ngl': 99}
+    if sys.platform == 'darwin':
+        return {'suffix': f'bin-macos-{"arm64" if "arm" in machine else "x64"}.tar.gz', 'count': 1, 'ngl': 99}
+    return {'suffix': 'bin-ubuntu-x64.tar.gz' if 'x86' in machine or 'amd64' in machine else f'bin-ubuntu-{machine}.tar.gz',
+            'count': 1, 'ngl': 0}
+
+
+def extract_archive(archive, target):
+    if str(archive).endswith('.zip'):
+        with zipfile.ZipFile(archive) as source:
+            for member in source.infolist():
+                if member.filename.startswith('/') or '..' in Path(member.filename).parts:
+                    raise RuntimeError('运行库压缩包路径异常')
+            source.extractall(target)
+    else:
+        with tarfile.open(archive) as source:
+            for member in source.getmembers():
+                if member.name.startswith('/') or '..' in Path(member.name).parts:
+                    raise RuntimeError('运行库压缩包路径异常')
+                if member.issym() or member.islnk():
+                    raise RuntimeError('运行库压缩包含链接，拒收')
+            source.extractall(target)
+
+
 def start_qwen():
     state('downloading', '正在下载 Qwen3.5-2B')
+    spec = llama_spec()
+    binary_name = 'llama-server.exe' if sys.platform == 'win32' else 'llama-server'
     model = robust_download(
         'https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
         ROOT / 'qwen' / 'Qwen3.5-2B-Q4_K_M.gguf', '正在下载 Qwen3.5-2B')
-    binary = next((ROOT / 'llama').rglob('llama-server.exe'), None)
+    binary = next((ROOT / 'llama').rglob(binary_name), None)
     if binary is None:
         state('downloading', '正在准备 Qwen3.5-2B 运行库')
         request = urllib.request.Request('https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10',
@@ -102,28 +137,27 @@ def start_qwen():
             releases = json.load(response)
         assets = []
         for release in releases:
-            assets = [asset for asset in release['assets'] if asset['name'].endswith('win-cuda-12.4-x64.zip')]
-            if len(assets) == 2:
+            assets = [asset for asset in release['assets'] if asset['name'].endswith(spec['suffix'])]
+            if len(assets) == spec['count']:
                 break
-        if len(assets) != 2:
-            raise RuntimeError('未找到 Windows CUDA 12.4 运行库')
+        if len(assets) != spec['count']:
+            raise RuntimeError(f'未找到本机运行库（{spec["suffix"]}）')
         target = ROOT / 'llama'
         target.mkdir(exist_ok=True)
         for asset in assets:
             archive = ROOT / asset['name']
             urllib.request.urlretrieve(asset['browser_download_url'], archive)
-            with zipfile.ZipFile(archive) as source:
-                for member in source.infolist():
-                    if member.filename.startswith('/') or '..' in Path(member.filename).parts:
-                        raise RuntimeError('运行库压缩包路径异常')
-                source.extractall(target)
+            extract_archive(archive, target)
             archive.unlink()
-        binary = next(target.rglob('llama-server.exe'), None)
+        binary = next(target.rglob(binary_name), None)
         if binary is None:
-            raise RuntimeError('运行库缺少 llama-server.exe')
+            raise RuntimeError(f'运行库缺少 {binary_name}')
+        if sys.platform != 'win32':
+            # zip/tar 解包不保证可执行位，补一个再拉起
+            binary.chmod(0o755)
     state('loading', '正在加载 Qwen3.5-2B')
     process = Popen([str(binary), '-m', str(model), '--alias', 'Qwen/Qwen3.5-2B',
-                     '--host', '127.0.0.1', '--port', '8083', '-ngl', '99', '-c', '4096', '--parallel', '1'])
+                     '--host', '127.0.0.1', '--port', '8083', '-ngl', str(spec['ngl']), '-c', '4096', '--parallel', '1'])
     for _ in range(120):
         if process.poll() is not None:
             raise RuntimeError('Qwen3.5-2B 服务启动失败')
