@@ -18,7 +18,7 @@ const POLL_MS = 1500;
 /** 提前润色起步的最少事件数：攒够一点内容就开始，不等转录全部结束。 */
 const EARLY_POLISH_MIN_EVENTS = 12;
 
-class Controller {
+export class Controller {
   constructor() {
     this.adapter = pickAdapter();
     this.settings = null;
@@ -615,12 +615,16 @@ class Controller {
   }
 
   plainText() {
-    if (!this.built) return '';
+    const available = this.built?.sections ?? this.liveSections;
+    if (!available?.some((section) => section.segments.some((seg) => seg.raw ?? seg.text))) return '';
     const original = !this.settings.polish;
-    const sections = this.built.sections.map((section) => ({
+    const sections = available.map((section) => ({
       ...section,
-      segments: section.segments.map((seg) => ({ ...seg, text: original ? (seg.raw ?? seg.text) : seg.text,
-        state: original ? 'kept' : seg.state })),
+      segments: section.segments.map((seg) => ({
+        ...seg,
+        text: original ? (seg.raw ?? seg.text) : seg.text,
+        state: original ? 'kept' : seg.state,
+      })),
     }));
     return toPlainText({ meta: this.meta, sections }, { timestamps: this.settings.showTimestamps });
   }

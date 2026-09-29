@@ -421,7 +421,8 @@ export class Panel {
       label: '复制纯文本',
       onClick: () => this.handlers.onCopyText?.(),
     });
-    copyText.disabled = !ready;
+    copyText.disabled = !ready && !(status === 'running' && this.state.sections?.some((section) =>
+      section.segments.some((seg) => seg.raw ?? seg.text)));
     foot.appendChild(copyText);
 
     return foot;

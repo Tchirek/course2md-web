@@ -150,6 +150,20 @@ try {
       stable ? pass('panel/running 正文更新不重建悬停中的选项') : fail('panel/running', '正文更新重建了选项');
       const count = await page.evaluate(() => document.getElementById('c2md-panel-host')?.shadowRoot.querySelectorAll('.c2md-para').length ?? 0);
       count > 0 ? pass('panel/running 已完成的文本可见') : fail('panel/running', '运行中仍隐藏已完成的文本');
+      const plainGate = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const plain = () => [...panel.scope.querySelectorAll('.c2md-panel-foot button')]
+          .find((button) => button.getAttribute('aria-label') === '复制纯文本');
+        const sections = panel.state.sections;
+        const withText = plain()?.disabled;
+        panel.setState({ sections: [] });
+        const withoutText = plain()?.disabled;
+        panel.setState({ sections });
+        return { withText, withoutText, restored: plain()?.disabled };
+      });
+      plainGate.withText === false && plainGate.withoutText === true && plainGate.restored === false
+        ? pass('panel/running 转录中可复制已生成的纯文本')
+        : fail('panel/running', `运行中复制纯文本按钮状态错误：${JSON.stringify(plainGate)}`);
     }
     if (state === 'ready') {
       const images = await page.evaluate(() => {

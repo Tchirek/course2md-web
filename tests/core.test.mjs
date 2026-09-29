@@ -54,6 +54,32 @@ test('复制纯文本先在点击事件内聚焦并复制', async () => {
   } finally { globalThis.document = oldDocument; globalThis.window = oldWindow; }
 });
 
+test('转录或润色进行中可复制已生成的纯文本，尚未就绪时为空', async () => {
+  const oldDocument = globalThis.document;
+  const oldWindow = globalThis.window;
+  globalThis.window = { addEventListener() {} };
+  globalThis.document = { createElement: () => ({ setAttribute() {}, style: {}, focus() {}, select() {}, remove() {} }), body: { appendChild() {} }, execCommand: () => true };
+  try {
+    const { Controller } = await import('../src/content/content.js');
+    const controller = Object.create(Controller.prototype);
+    controller.built = null;
+    controller.meta = { title: '课程标题' };
+    controller.settings = { polish: false, showTimestamps: true };
+    controller.liveSections = [{ t: 0, title: '第一章', segments: [{ start: 0, end: 2, text: '已经转出的正文' }] }];
+    const text = controller.plainText();
+    assert.match(text, /课程标题/);
+    assert.match(text, /\[00:00\] 已经转出的正文/);
+    controller.liveSections = null;
+    assert.equal(controller.plainText(), '');
+    // 润色开启时复制润色后的正文，没润完的段落到哪算哪
+    controller.settings = { polish: true, showTimestamps: false };
+    controller.liveSections = [{ t: 0, title: '', segments: [{ start: 5, end: 7, text: '润色后的正文', raw: '原始正文', state: 'polished' }] }];
+    const polished = controller.plainText();
+    assert.match(polished, /润色后的正文/);
+    assert.doesNotMatch(polished, /原始正文/);
+  } finally { globalThis.document = oldDocument; globalThis.window = oldWindow; }
+});
+
 test('润色文本不能把嵌套的 segments JSON 当作正文', () => {
   assert.equal(parsePolishResponse('{"segments":[{"id":0,"text":"{\\"segments\\":[{\\"id\\":0,\\"text\\":\\"误入正文\\"}]}"}]}'), null);
 });
