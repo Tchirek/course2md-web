@@ -34,15 +34,20 @@ class Controller {
     this.abort = null;
     this.imageAbort = null;
     this.imagePromise = Promise.resolve(0);
+    this.imageQueue = new Map();
+    this.imageInFlight = new Set();
+    this.imageWorking = false;
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.imageCache = new Map();
     this.imagesPending = false;
     this.autoTimer = null;
     // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
     this.autoRunArmed = false;
+    this.panelDismissed = false;
     this.polishAbort = null;
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
+    this.liveSections = null;
     this.polishRestart = false;
     this.finalizingPolish = false;
     this.urlKey = this.currentUrlKey();
@@ -105,8 +110,8 @@ class Controller {
       this.panel.setState({ settings: this.settings });
       // 半途取消润色：停掉手头的润色，已完成的段落保留
       if (old.polish && !next.polish && this.polishState.running) this.polishAbort?.abort();
-      if (this.built && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
-      if (this.settings.showPanel && this.doc) this.panel.mount();
+      if (this.meta && (this.built || this.liveSections) && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
+      if (this.settings.showPanel && this.doc && !this.panelDismissed) this.panel.mount();
       if (repolish) this.repolish({ reset: configChanged });
       if (resumeEarly) this.startEarlyPolish(this.liveEvents);
     });
@@ -141,7 +146,10 @@ class Controller {
 
   currentUrlKey() {
     const loc = location;
-    return `${this.adapter.id}:${loc.origin}${loc.pathname}${loc.search}`;
+    const query = new URLSearchParams(loc.search);
+    const part = this.adapter.id === 'bilibili' ? `?p=${query.get('p') || '1'}` :
+      this.adapter.id === 'youtube' ? `?v=${query.get('v') || ''}` : loc.search;
+    return `${this.adapter.id}:${loc.origin}${loc.pathname}${part}`;
   }
 
   checkNavigation() {
@@ -157,6 +165,8 @@ class Controller {
     this.built = null;
     this.previewSections = [];
     this.imageCache.clear();
+    this.imageQueue.clear();
+    this.imageInFlight.clear();
     this.imagesPending = false;
     this.doc = null;
     this.meta = null;
@@ -165,6 +175,7 @@ class Controller {
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
+    this.liveSections = null;
     this.polishRestart = false;
     this.finalizingPolish = false;
     this.panel.setState(this.panelState());
@@ -190,6 +201,7 @@ class Controller {
       siteLabel: siteLabel(this.adapter.id),
       hasVideo: Boolean(this.adapter.video()),
       status: this.status,
+      busy: this.status === 'running' || this.finalizingPolish,
     }),
 
     'c2md.status': async () => {
@@ -212,7 +224,9 @@ class Controller {
     'c2md.cancel': async () => this.cancel(),
     'c2md.polish': async () => this.repolish(),
     'c2md.showPanel': async () => {
+      this.panelDismissed = false;
       this.panel.mount();
+      this.broadcast();
       return { shown: true };
     },
     'c2md.hidePanel': async () => {
@@ -228,6 +242,7 @@ class Controller {
   summaryState() {
     return {
       status: this.status,
+      busy: this.status === 'running' || this.finalizingPolish,
       site: this.adapter.id,
       siteLabel: siteLabel(this.adapter.id),
       settings: this.settings,
@@ -284,6 +299,8 @@ class Controller {
 
     this.abort?.abort();
     this.imageAbort?.abort();
+    this.imageQueue.clear();
+    this.imageInFlight.clear();
     this.polishAbort?.abort();
     this.abort = new AbortController();
     this.polishAbort = new AbortController();
@@ -299,9 +316,11 @@ class Controller {
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
+    this.liveSections = null;
     this.polishRestart = false;
     this.finalizingPolish = false;
     this.stageLabel = '正在读取页面信息';
+    this.panelDismissed = false;
     this.panel.mount();
     this.broadcast();
 
@@ -324,8 +343,8 @@ class Controller {
           const partial = organize([...events].sort((a, b) => a.start - b.start), meta);
           this.meta = meta;
           this.liveEvents = events;
-          this.previewSections = visualSections(partial.sections, meta.duration, this.settings.imageLevel);
-          this.broadcast();
+          this.liveSections = partial.sections;
+          this.refreshImages();
           // 润色不必等转录全部结束：攒够量就先润一批，上一批落定后接着推进
           const batchDue = events.length - (this.earlyPolish.covered ?? 0) >= EARLY_POLISH_MIN_EVENTS;
           const batchFree = !this.earlyPolish.active &&
@@ -348,7 +367,7 @@ class Controller {
       this.doc = finalize(this.built, this.meta, this.settings);
       this.status = 'ready';
       this.stageLabel = '';
-      this.refreshImages(); // 文字先出现，截图随后补齐。
+      this.refreshImages();
       if (runAbort.signal.aborted) throw new AbortError();
 
       // 勾了润色且配置齐全，就在同一次流程里顺带跑掉
@@ -390,7 +409,7 @@ class Controller {
       this.stageLabel = '';
     }
 
-    if (this.settings.showPanel) this.panel.mount();
+    if (this.settings.showPanel && !this.panelDismissed) this.panel.mount();
     this.finalizingPolish = false;
     if (this.polishRestart && this.settings.polish && this.built && !this.polishState.running) {
       this.polishRestart = false;
@@ -486,6 +505,7 @@ class Controller {
   /** 关闭浮窗：自动生成随之失效，直到用户再次手动点生成。 */
   closePanel() {
     this.autoRunArmed = false;
+    this.panelDismissed = true;
     this.panel.unmount();
   }
 
@@ -662,53 +682,60 @@ class Controller {
     const reply = await send({ type: 'settings.save', payload: { patch } });
     if (reply?.settings) {
       this.settings = reply.settings;
-      if (this.built && previousLevel !== this.settings.imageLevel && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
+      if (this.meta && (this.built || this.liveSections) && previousLevel !== this.settings.imageLevel && this.imageLevel !== this.settings.imageLevel) this.refreshImages();
       this.broadcast();
     }
     return reply;
   }
 
   refreshImages() {
-    const previous = this.imagePromise;
-    this.imageError = null;
+    const sections = this.built?.sections ?? this.liveSections;
+    if (!sections || !this.meta) return this.imagePromise;
     if (!this.imageAbort || this.imageAbort.signal.aborted) this.imageAbort = new AbortController();
+    if (this.imageLevel !== this.settings.imageLevel) this.imageError = null;
     this.imageLevel = this.settings.imageLevel;
-    const level = this.imageLevel;
-    this.previewSections = visualSections(this.built.sections, this.meta.duration, this.imageLevel);
+    this.previewSections = visualSections(sections, this.meta.duration, this.imageLevel);
     for (const section of this.previewSections) section.image = this.imageCache.get(section.t) ?? '';
     this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((section) => !this.imageCache.has(section.t));
     this.broadcast();
-    if (this.imageLevel === 'none') {
-      this.imageAbort.abort();
-      return this.imagePromise = Promise.resolve(0);
+    if (this.imageLevel !== 'none' && !this.imageError) {
+      for (const section of this.previewSections) {
+        if (!this.imageCache.has(section.t) && !this.imageQueue.has(section.t) && !this.imageInFlight.has(section.t)) this.imageQueue.set(section.t, { ...section });
+      }
+      if (!this.imageWorking && this.imageQueue.size) this.imagePromise = this.drainImages();
     }
-    const current = this.imageAbort;
-    this.imagePromise = Promise.resolve(previous).then(() => current.signal.aborted ? 0 :
-      captureSectionImages(this.meta.url, visualSections(this.built.sections, this.meta.duration, level).map((section) => ({
-        ...section, image: this.imageCache.get(section.t) ?? '', captured: this.imageCache.has(section.t),
-      })), current.signal,
-        (section) => { if (!current.signal.aborted) {
+    return this.imagePromise;
+  }
+
+  async drainImages() {
+    this.imageWorking = true;
+    const abort = this.imageAbort;
+    const sourceUrl = this.meta.url;
+    try {
+      while (!abort.signal.aborted && this.imageQueue.size) {
+        const batch = [...this.imageQueue.values()];
+        this.imageQueue.clear();
+        for (const section of batch) this.imageInFlight.add(section.t);
+        try { await captureSectionImages(sourceUrl, batch, abort.signal, (section) => {
+          if (abort.signal.aborted) return;
           this.imageCache.set(section.t, section.image);
           const visible = this.previewSections.find((item) => item.t === section.t);
           if (visible) visible.image = section.image;
+          this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((item) => !this.imageCache.has(item.t));
           this.broadcast();
-        } }))
-      .then(async (count) => {
-        if (!current.signal.aborted) {
-          for (const section of this.previewSections) section.image = this.imageCache.get(section.t) ?? '';
-          this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((section) => !this.imageCache.has(section.t));
-          this.broadcast();
-          await this.saveCache();
-        }
-        return count;
-      }).catch((error) => {
-        if (!current.signal.aborted) {
-          this.imageError = toErrorState(error);
-          this.broadcast();
-        }
-        return 0;
-      });
-    return this.imagePromise;
+        }); } finally { for (const section of batch) this.imageInFlight.delete(section.t); }
+        if (this.built) await this.saveCache();
+      }
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        this.imageQueue.clear();
+        this.imageError = toErrorState(error);
+        this.broadcast();
+      }
+    } finally {
+      this.imageWorking = false;
+      if (abort.signal.aborted && this.imageQueue.size && this.imageAbort !== abort) this.imagePromise = this.drainImages();
+    }
   }
 
   // ---------- 缓存 ----------

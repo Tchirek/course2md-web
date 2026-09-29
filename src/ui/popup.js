@@ -102,11 +102,11 @@ function renderToggles({ animatePolish = false } = {}) {
 
 function renderStatus() {
   if (!state) return;
-  const running = state.status === 'running';
+  const running = Boolean(state.busy ?? (state.status === 'running' || state.polish?.running));
   el.run.disabled = running;
   el.run.textContent = running ? '生成中' : state.status === 'ready' ? '重新生成' : '生成笔记';
 
-  const hasContent = state.status === 'ready' || Boolean(state.error);
+  const hasContent = running || state.status === 'ready' || Boolean(state.error);
   el.secondary.hidden = !hasContent;
   el.secondary.textContent = '在页面打开';
 
@@ -171,8 +171,13 @@ async function start() {
 }
 
 async function showPanel() {
-  await ask({ type: 'c2md.showPanel' }).catch(() => null);
-  window.close();
+  if (!await ensureController()) return;
+  try {
+    await ask({ type: 'c2md.showPanel' });
+    window.close();
+  } catch (error) {
+    showError('无法打开浮窗', String(error?.message ?? error));
+  }
 }
 
 /**
