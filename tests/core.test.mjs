@@ -11,7 +11,7 @@ import { withDefaults, normalizeSettings, canPolish, canTranscribe, useLocalPoli
 import { visualSections } from '../src/content/visual.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 import { captureAudio } from '../src/content/capture.js';
-import { cookieFileFor } from '../src/background/cookies.js';
+import { cookieFileFor, cookieHeaderFor } from '../src/background/cookies.js';
 
 test('面板画面分组不改动按章节导出的正文', () => {
   const segments = [0, 80, 100, 210].map((start) => ({ start, end: start + 2, text: String(start) }));
@@ -210,6 +210,23 @@ test('只导出当前视频站点的 cookie，保留 HttpOnly 属性', () => {
   assert.match(file, /# Netscape HTTP Cookie File\r\n#HttpOnly_\.bilibili\.com\tTRUE\t\/\tTRUE\t2000000000\tSESSDATA\ttest/);
   assert.doesNotMatch(file, /example|secret/);
   assert.equal(cookieFileFor('https://example.com/video', cookies), '');
+});
+
+test('Cookie 头按目标域过滤，剔除含分隔符的坏值，显式注入登录态', () => {
+  const cookies = [
+    { domain: '.bilibili.com', name: 'SESSDATA', value: 'abc%2Cdef' },
+    { domain: 'api.bilibili.com', hostOnly: true, name: 'buvid3', value: 'xyz' },
+    { domain: '.youtube.com', name: 'VISITOR_INFO1_LIVE', value: 'nope' },
+    { domain: '.bilibili.com', name: 'bad;name', value: 'x' },
+    { domain: '.bilibili.com', name: 'bad\r\nvalue', value: 'x' },
+  ];
+  assert.equal(
+    cookieHeaderFor('https://api.bilibili.com/x/player/v2?aid=1', cookies),
+    'SESSDATA=abc%2Cdef; buvid3=xyz',
+  );
+  assert.equal(cookieHeaderFor('https://www.youtube.com/watch', cookies), 'VISITOR_INFO1_LIVE=nope');
+  assert.equal(cookieHeaderFor('https://example.com/', cookies), '');
+  assert.equal(cookieHeaderFor('::::', cookies), '');
 });
 
 // ---------- time ----------

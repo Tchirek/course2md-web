@@ -11,7 +11,7 @@ import { loadSettings, saveSettings, resetSettings } from './store.js';
 import { chat, testConnection as testLlm } from './llm.js';
 import { transcribe, testEndpoint as testAsr, parseAsrResponse } from './asr.js';
 import { supportedAudioExtensions } from '../core/audio-ext.js';
-import { cookieFileFor } from './cookies.js';
+import { cookieFileFor, cookieHeaderFor } from './cookies.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handler = HANDLERS[message?.type];
@@ -54,7 +54,15 @@ const HANDLERS = {
     if (parsed.protocol !== 'https:' || !(/(^|\.)bilibili\.com$/.test(parsed.hostname) || /(^|\.)hdslb\.com$/.test(parsed.hostname))) {
       throw new Error('字幕地址不受支持');
     }
-    const response = await fetch(parsed.href, { credentials: 'include', headers: { Accept: '*/*' } });
+    // MV3 后台 fetch 受跨源 SameSite 规则约束，SESSDATA 可能不随请求发出，
+    // 已登录也会被 B 站判成未登录（need_login_subtitle → 字幕为空）。
+    // 用户已授权直接读 cookie：像 yutto 一样显式自备登录态，不赌浏览器行为。
+    const cookies = await chrome.cookies.getAll({ url: parsed.href }).catch(() => []);
+    const login = cookieHeaderFor(parsed.href, cookies);
+    const response = await fetch(parsed.href, {
+      credentials: 'include',
+      headers: login ? { Accept: '*/*', Cookie: login } : { Accept: '*/*' },
+    });
     if (!response.ok) throw new Error(`取字幕失败（HTTP ${response.status}）`);
     return binary ? [...new Uint8Array(await response.arrayBuffer())] : response.text();
   },

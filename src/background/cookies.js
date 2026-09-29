@@ -17,3 +17,22 @@ export function cookieFileFor(sourceUrl, cookies) {
   }
   return lines.length ? `# Netscape HTTP Cookie File\r\n${lines.join('\r\n')}\r\n` : '';
 }
+
+/**
+ * 把指定 URL 应携带的 cookie 拼成 Cookie 头。
+ * MV3 后台 fetch 的跨源 SameSite 规则可能丢掉 SESSDATA（已登录却被判未登录），
+ * 所以像 yutto 那样由请求方显式自备登录态，不依赖浏览器自动附带。
+ */
+export function cookieHeaderFor(sourceUrl, cookies) {
+  let host;
+  try { host = new URL(sourceUrl).hostname.toLowerCase(); } catch { return ''; }
+  const pairs = [];
+  for (const cookie of cookies) {
+    const bareDomain = String(cookie.domain ?? '').replace(/^\./, '').toLowerCase();
+    if (bareDomain !== host && !host.endsWith(`.${bareDomain}`)) continue;
+    if (typeof cookie.name !== 'string' || !cookie.name || typeof cookie.value !== 'string') continue;
+    if (/[\s;,\\]/.test(cookie.name) || /[\s;,\\]/.test(cookie.value)) continue;
+    pairs.push(`${cookie.name}=${cookie.value}`);
+  }
+  return pairs.join('; ');
+}
