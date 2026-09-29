@@ -42,6 +42,27 @@ except Exception as error:
     sys.exit(1)
 
 
+# CUDA のエラーは「張り付く」：一度起きるとこのプロセスの CUDA コンテキストは以後の推論で
+# 失敗し続ける（実例：仮想メモリ枯渇で最初の切片が失敗した後、すべての切片が
+# cudaErrorInvalidResourceHandle になった）。こうした失敗では応答を返してから自ら終了し、
+# 助手に新しいプロセスで起動し直させる。入力音声の不備などはプロセスを残す。
+FATAL_WORDS = ("cuda", "cudnn", "cublas", "out of memory")
+
+
+def describe(error):
+    """空にならないエラー文。MemoryError などは str() が空なので型名で補う。"""
+    text = str(error).strip()
+    if isinstance(error, MemoryError):
+        return "内存不足：系统可用内存（含虚拟内存）已耗尽" + (f"（{text}）" if text else "")
+    return f"{type(error).__name__}: {text}" if text else type(error).__name__
+
+
+def poisons_process(error):
+    if isinstance(error, MemoryError):
+        return True
+    return device == "cuda" and any(word in str(error).lower() for word in FATAL_WORDS)
+
+
 class Handler(BaseHTTPRequestHandler):
     def send_json(self, code, value):
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -92,7 +113,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(500, {"error": "本机模型连续产出乱码，已停止；请重试或改用平台字幕"})
             self.send_json(200, {"text": "".join(item["text"] for item in items).strip(), "segments": items})
         except Exception as error:
-            self.send_json(400, {"error": str(error)})
+            if poisons_process(error):
+                message = describe(error)
+                self.send_json(503, {"error": message, "restart": True})
+                self.wfile.flush()
+                state("error", message)
+                os._exit(75)
+            self.send_json(400, {"error": describe(error)})
 
     def log_message(self, *_args):
         pass
