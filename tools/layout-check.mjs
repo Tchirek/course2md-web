@@ -164,7 +164,7 @@ try {
       plainGate.withText === false && plainGate.withoutText === true && plainGate.restored === false
         ? pass('panel/running 转录中可复制已生成的纯文本')
         : fail('panel/running', `运行中复制纯文本按钮状态错误：${JSON.stringify(plainGate)}`);
-      const anchorStable = await page.evaluate(() => {
+      const anchorStable = await page.evaluate(async () => {
         const panel = window.__selftestPanel;
         const sections = panel.state.sections;
         const body = panel.scope.querySelector('.c2md-panel-body');
@@ -172,17 +172,21 @@ try {
         const paras = body.querySelectorAll('.c2md-para');
         const target = paras[Math.min(3, paras.length - 1)];
         const before = target.getBoundingClientRect().top;
+        const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         // 第一节新增图片（模拟取帧到达）：正在阅读的段落视口位置应保持不变
         const withImage = sections.map((section, index) => index === 0
-          ? { ...section, image: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' } : section);
+          ? { ...section, frames: [{ t: section.segments[0].start, image: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' }] } : section);
         panel.setState({ sections: withImage });
+        await frame(); // 原生滚动锚定在渲染帧里补偿，量之前先等它落地
         const withFigure = target.getBoundingClientRect().top;
         // 再取消图片（模拟取消点选）：同样不应移动正文
         panel.setState({ sections });
+        await frame();
         const afterRemoval = target.getBoundingClientRect().top;
-        // 滚到顶时不加补偿：新图片自然出现，绝不自己滚动
+        // 滚到顶时锚定不生效：新图片自然出现，绝不自己滚动
         body.scrollTop = 0;
         panel.setState({ sections: withImage });
+        await frame();
         const atTop = panel.scope.querySelector('.c2md-panel-body').scrollTop;
         panel.setState({ sections });
         return {
@@ -197,37 +201,40 @@ try {
         : fail('panel/running', `图片增删扰动了阅读位置：${JSON.stringify(anchorStable)}`);
     }
     if (state === 'ready') {
-      const images = await page.evaluate(() => {
+      const images = await page.evaluate(async () => {
         const panel = window.__selftestPanel;
         const originalSections = panel.state.sections;
         const originalSettings = panel.state.settings;
-        const sections = originalSections.map((section, index) => ({ ...section, image: index === 0 ? 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' : '' }));
+        const sections = originalSections.map((section, index) => ({ ...section, frames: index === 0 ? [{ t: section.segments[0].start, image: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' }] : [] }));
         panel.setState({ sections });
         const withImage = panel.scope.querySelectorAll('.c2md-frame img').length;
         const boxes = panel.scope.querySelectorAll('.c2md-frame').length;
-        // 档位切换时正在阅读的段落不应被图片框的增删顶动（视口锚定补偿）。
-        // 目标要滚到正文深处：贴近顶部时补偿需要的 scrollTop 会变负、被钳到 0，
+        // 档位切换时正在阅读的段落不应被图片框的增删顶动（原生滚动锚定补偿）。
+        // 目标要滚到正文深处：贴近顶部时锚定需要的 scrollTop 会变负、被钳到 0，
         // 那是物理上保不住位置的情形，不算扰动。
         const body = panel.scope.querySelector('.c2md-panel-body');
         const paras = body.querySelectorAll('.c2md-para');
         const target = paras[paras.length - 2];
         target.scrollIntoView({ block: 'center' });
         const beforeTop = target.getBoundingClientRect().top;
+        const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         panel.setState({ settings: { ...originalSettings, imageLevel: 'none' } });
+        await frame();
         const boxesNone = panel.scope.querySelectorAll('.c2md-frame').length;
         const noneTop = target.getBoundingClientRect().top;
         panel.setState({ settings: { ...originalSettings, imageLevel: 'few' } });
+        await frame();
         const boxesFew = panel.scope.querySelectorAll('.c2md-frame').length;
         const fewTop = target.getBoundingClientRect().top;
         panel.setState({ sections: originalSections, settings: originalSettings });
         return {
-          withImage, boxes, sectionsCount: sections.length, boxesNone, boxesFew,
+          withImage, boxes, boxesNone, boxesFew,
           driftNone: Math.abs(noneTop - beforeTop), driftFew: Math.abs(fewTop - beforeTop),
         };
       });
-      images.withImage === 1 && images.boxes === images.sectionsCount && images.boxesNone === 0 &&
-      images.boxesFew >= 1 && images.driftNone <= 2 && images.driftFew <= 2
-        ? pass('panel/ready 图片框恒定占位：切挡即终版版面，阅读位置不顶动')
+      images.withImage === 1 && images.boxes === 1 && images.boxesNone === 0 &&
+      images.boxesFew === 1 && images.driftNone <= 2 && images.driftFew <= 2
+        ? pass('panel/ready 图片有图才渲染且原生锚定兜住阅读位置')
         : fail('panel/ready', `图片档位切换扰动版面：${JSON.stringify(images)}`);
       const gate = await page.evaluate(() => {
         const panel = window.__selftestPanel;
