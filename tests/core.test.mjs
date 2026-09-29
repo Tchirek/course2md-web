@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { fmtTs, parseTimestamp, clampTime } from '../src/core/time.js';
 import { coalesce, isStandaloneFiller, appendText, dedupeRepeats, partitionByBoundaries } from '../src/core/paragraphs.js';
 import { planChunks, tailOf, mapPool } from '../src/core/chunk.js';
-import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJson } from '../src/core/prompt.js';
+import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJson, polishProgress } from '../src/core/prompt.js';
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, useLocalPolish, maskSecret, setPath, getPath } from '../src/core/settings.js';
 import { visualSections } from '../src/content/visual.js';
@@ -82,6 +82,19 @@ test('转录或润色进行中可复制已生成的纯文本，尚未就绪时�
 
 test('润色文本不能把嵌套的 segments JSON 当作正文', () => {
   assert.equal(parsePolishResponse('{"segments":[{"id":0,"text":"{\\"segments\\":[{\\"id\\":0,\\"text\\":\\"误入正文\\"}]}"}]}'), null);
+});
+
+test('润色进度按全局段数计：分母是全部段落，已润色的不清零', () => {
+  const events = [
+    ...Array.from({ length: 12 }, (_, i) => ({ start: i, state: 'polished' })),
+    ...Array.from({ length: 20 }, (_, i) => ({ start: 12 + i, state: 'kept' })),
+  ];
+  assert.deepEqual(polishProgress(events), { done: 12, total: 32 });
+  // 下一批开始前语料又转出一段：分母变大，但已润色的不会归零
+  events.push({ start: 32, state: 'kept' });
+  assert.deepEqual(polishProgress(events), { done: 12, total: 33 });
+  assert.deepEqual(polishProgress([]), { done: 0, total: 0 });
+  assert.deepEqual(polishProgress(null), { done: 0, total: 0 });
 });
 
 test('下载版 Markdown 在相应讲述段前引用帧，普通复制版不带图', () => {

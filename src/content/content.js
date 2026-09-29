@@ -9,6 +9,7 @@ import { Panel } from './panel.js';
 import { visualSections, captureSectionImages } from './visual.js';
 import { buildDoc, toMarkdown, toPlainText, fileNameFor } from '../core/format.js';
 import { useLocalPolish, LOCAL_POLISH } from '../core/settings.js';
+import { polishProgress } from '../core/prompt.js';
 import {
   runSubtitlePipeline, runAsrPipeline, polishSegments, finalize, organize,
   eventSectionIndexOf, MissingSourceError, AbortError,
@@ -451,8 +452,9 @@ export class Controller {
       resume,
       // 自备 LLM 三次都失败时，静默换成本机润色
       fallback: useLocal ? undefined : { ensure: () => this.ensureLocalPolish(signal) },
-      onProgress: (done, total) => {
-        this.polishState = { ...this.polishState, running: true, done, total };
+      onProgress: () => {
+        // 分母是全部段落而不是当前批次的队列，批次切换时圆环不再归零回跳
+        this.polishState = { ...this.polishState, running: true, ...polishProgress(segments) };
         this.panel.setState({ polish: this.polishState });
         this.broadcast(false);
       },
@@ -470,7 +472,7 @@ export class Controller {
     if (result.failed && !early) {
       this.built.warnings.push(`润色失败 ${result.failed}/${result.chunks}：${result.firstError || '模型未返回可用文本'}`);
     }
-    this.polishState = { hasResult: true, running: false, done: result.chunks, total: result.chunks };
+    this.polishState = { hasResult: true, running: false, ...polishProgress(segments) };
     if (!early) {
       this.doc = finalize(this.built, this.meta, this.settings);
       await this.saveCache();

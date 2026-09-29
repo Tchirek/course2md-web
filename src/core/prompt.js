@@ -165,3 +165,13 @@ export function resetPolish(segments) {
   }
   return segments;
 }
+
+/**
+ * 润色进度按全局段数计：分母是全部段落，分子是其中已润色的。
+ * 分母不随润色批次重启，圆环才不会每开一批就归零回跳。
+ */
+export function polishProgress(segments) {
+  let done = 0;
+  for (const seg of segments ?? []) if (seg.state === 'polished') done++;
+  return { done, total: segments?.length ?? 0 };
+}
