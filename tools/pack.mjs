@@ -6,7 +6,8 @@
 //!    脚本。纯 Node/Python 实现，同样全平台一份；目录保持 tools/ 前缀，
 //!    安装脚本里的相对路径才能原样工作。
 //!
-//! 打包前先跑清单自检；打完再列一遍条目，确认 zip 内是正斜杠路径
+//! 打包前先跑完整检查（清单、单元测试、布局断言，与 npm run check 相同），任何一项
+//! 不过都不产出发布包；打完再列一遍条目，确认 zip 内是正斜杠路径
 //! （Windows 压缩器爱写反斜杠，部分解压器会认成转义）。
 
 import { cpSync, mkdirSync, rmSync, statSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -46,9 +47,14 @@ const HELPER_FILES = [
 const LEGAL_FILES = ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'];
 const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:uninstall', 'local:check-host', 'check:local-polish'];
 
-// ---------- 0. 清单自检：扩展引用闭包不完整就不许出门 ----------
-const check = spawnSync(process.execPath, [join(ROOT, 'tools', 'check-manifest.mjs')], { stdio: 'inherit' });
-if (check.status !== 0) process.exit(check.status ?? 1);
+// ---------- 0. 完整检查：测试不过就不许出门 ----------
+// 以前只跑清单自检，单元测试和布局断言失败也照样能打出发布包
+const check = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'check'],
+  { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+if (check.status !== 0) {
+  console.error('检查没有全部通过，不打包。');
+  process.exit(check.status || 1);
+}
 
 rmSync(DIST, { recursive: true, force: true });
 
