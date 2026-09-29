@@ -798,24 +798,27 @@ async function send(message) {
  * navigator.clipboard 需要文档处于聚焦状态，YouTube 的某些状态下会拒绝；
  * 所以保留一条 execCommand 的兜底路径。
  */
-async function copyText(text) {
+export async function copyText(text) {
   if (!text) return false;
+  let area;
   try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    /* 走兜底 */
-  }
-  try {
-    const area = document.createElement('textarea');
+    area = document.createElement('textarea');
     area.value = text;
     area.setAttribute('readonly', '');
     area.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0';
     document.body.appendChild(area);
+    area.focus();
     area.select();
     const ok = document.execCommand('copy');
-    area.remove();
-    return ok;
+    if (ok) return true;
+  } catch {
+    /* 尝试扩展剪贴板权限 */
+  } finally {
+    area?.remove();
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
   } catch {
     return false;
   }

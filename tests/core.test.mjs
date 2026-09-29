@@ -35,6 +35,25 @@ test('图片密度分四档；多档至多每十秒取一张候选帧', () => {
   assert.equal(visualSections(sections, 181, 'many').length, 19);
 });
 
+test('复制纯文本先在点击事件内聚焦并复制', async () => {
+  const oldDocument = globalThis.document;
+  const oldWindow = globalThis.window;
+  globalThis.window = { addEventListener() {} };
+  const calls = [];
+  const area = { setAttribute() {}, style: {}, focus() { calls.push('focus'); }, select() { calls.push('select'); }, remove() {} };
+  globalThis.document = {
+    createElement: () => area,
+    body: { appendChild() {} },
+    execCommand: () => { calls.push('copy'); return true; },
+  };
+  try {
+    const { copyText } = await import('../src/content/content.js');
+    assert.equal(await copyText('待复制正文'), true);
+    assert.deepEqual(calls, ['focus', 'select', 'copy']);
+    assert.equal(area.value, '待复制正文');
+  } finally { globalThis.document = oldDocument; globalThis.window = oldWindow; }
+});
+
 test('润色文本不能把嵌套的 segments JSON 当作正文', () => {
   assert.equal(parsePolishResponse('{"segments":[{"id":0,"text":"{\\"segments\\":[{\\"id\\":0,\\"text\\":\\"误入正文\\"}]}"}]}'), null);
 });
