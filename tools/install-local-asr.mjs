@@ -16,12 +16,15 @@ if (probe.status !== 0) {
 const dir = path.join(process.env.LOCALAPPDATA, 'course2md');
 const helper = path.resolve('tools/fast-asr-server.mjs');
 const launcher = path.join(dir, 'start-helper.vbs');
-const nativeLauncher = path.join(dir, 'native-helper.cmd');
+const nativeLauncher = path.join(dir, 'native-helper.exe');
 const nativeManifest = path.join(dir, 'native-helper.json');
 const command = `"${process.execPath}" "${helper}"`;
 await mkdir(dir, { recursive: true });
 await writeFile(launcher, `CreateObject("WScript.Shell").Run "${command.replaceAll('"', '""')}", 0, False\r\n`);
-await writeFile(nativeLauncher, `@echo off\r\n"${process.execPath}" "${path.resolve('tools/native-helper.mjs')}" "${helper}"\r\n`);
+const compiler = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+const build = spawnSync(compiler, ['/nologo', '/target:exe', `/out:${nativeLauncher}`, path.resolve('tools/native-helper.cs')], { encoding: 'utf8' });
+if (build.status !== 0) throw new Error(build.stderr || build.stdout || '无法编译本机消息宿主');
+await writeFile(path.join(dir, 'native-helper.config'), `${process.execPath}\r\n${helper}\r\nhttp://127.0.0.1:8766/health\r\n`);
 const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
 if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('扩展 ID 格式错误');
 await writeFile(nativeManifest, JSON.stringify({

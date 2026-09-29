@@ -12,6 +12,7 @@
     "fast-asr": "node tools/fast-asr-server.mjs",
     "local:install": "node tools/install-local-asr.mjs",
     "local:check": "node tools/check-local-asr.mjs",
+    "local:check-host": "node tools/check-native-helper.mjs",
     "check:layout": "node tools/layout-check.mjs",
     "check:image": "node tools/check-image-density.mjs",
     "check:local-polish": "node tools/check-local-polish.mjs",
