@@ -199,18 +199,36 @@ try {
     if (state === 'ready') {
       const images = await page.evaluate(() => {
         const panel = window.__selftestPanel;
-        const sections = panel.state.sections.map((section, index) => ({ ...section, image: index === 0 ? 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' : '' }));
+        const originalSections = panel.state.sections;
+        const originalSettings = panel.state.settings;
+        const sections = originalSections.map((section, index) => ({ ...section, image: index === 0 ? 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' : '' }));
         panel.setState({ sections });
-        const before = panel.scope.querySelectorAll('.c2md-frame').length;
-        panel.setState({ settings: { ...panel.state.settings, imageLevel: 'none' } });
-        const hidden = panel.scope.querySelectorAll('.c2md-frame').length;
-        panel.setState({ settings: { ...panel.state.settings, imageLevel: 'few' } });
-        const restored = panel.scope.querySelectorAll('.c2md-frame').length;
-        return { before, hidden, restored };
+        const withImage = panel.scope.querySelectorAll('.c2md-frame img').length;
+        const boxes = panel.scope.querySelectorAll('.c2md-frame').length;
+        // 档位切换时正在阅读的段落不应被图片框的增删顶动（视口锚定补偿）。
+        // 目标要滚到正文深处：贴近顶部时补偿需要的 scrollTop 会变负、被钳到 0，
+        // 那是物理上保不住位置的情形，不算扰动。
+        const body = panel.scope.querySelector('.c2md-panel-body');
+        const paras = body.querySelectorAll('.c2md-para');
+        const target = paras[paras.length - 2];
+        target.scrollIntoView({ block: 'center' });
+        const beforeTop = target.getBoundingClientRect().top;
+        panel.setState({ settings: { ...originalSettings, imageLevel: 'none' } });
+        const boxesNone = panel.scope.querySelectorAll('.c2md-frame').length;
+        const noneTop = target.getBoundingClientRect().top;
+        panel.setState({ settings: { ...originalSettings, imageLevel: 'few' } });
+        const boxesFew = panel.scope.querySelectorAll('.c2md-frame').length;
+        const fewTop = target.getBoundingClientRect().top;
+        panel.setState({ sections: originalSections, settings: originalSettings });
+        return {
+          withImage, boxes, sectionsCount: sections.length, boxesNone, boxesFew,
+          driftNone: Math.abs(noneTop - beforeTop), driftFew: Math.abs(fewTop - beforeTop),
+        };
       });
-      images.before === 1 && images.hidden === 0 && images.restored === 1
-        ? pass('panel/ready 图片密度切到无即隐藏、切回即显示')
-        : fail('panel/ready', `图片密度切换未生效：${JSON.stringify(images)}`);
+      images.withImage === 1 && images.boxes === images.sectionsCount && images.boxesNone === 0 &&
+      images.boxesFew >= 1 && images.driftNone <= 2 && images.driftFew <= 2
+        ? pass('panel/ready 图片框恒定占位：切挡即终版版面，阅读位置不顶动')
+        : fail('panel/ready', `图片档位切换扰动版面：${JSON.stringify(images)}`);
       const gate = await page.evaluate(() => {
         const panel = window.__selftestPanel;
         panel.setState({ imagesPending: true });

@@ -203,12 +203,16 @@
 
 .c2md-frame {
   margin: 0 0 var(--s-3);
+  /* 框的尺寸与图片是否解码完成无关：切挡/图片到达时版面即刻就是最终形态，
+     图片只是填进恒定的框里——文本不因图片的增删与解码而上下顶动 */
+  aspect-ratio: 16 / 9;
 }
 
 .c2md-frame img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
   border: var(--hair) solid var(--rule);
 }
 

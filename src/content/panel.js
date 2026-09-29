@@ -400,13 +400,17 @@ export class Panel {
     for (const section of sections) {
       if (!section.segments.some((seg) => seg.raw ?? seg.text)) continue;
       const sec = el('section', 'c2md-section');
-      if (settings?.imageLevel !== 'none' && section.image) {
+      if (settings?.imageLevel !== 'none') {
+        // 有图没图都渲染同一个恒定尺寸的框：切挡时版面即刻是最终形态，
+        // 图片到达只是填框（异步解码不改变高度），文本不会被顶来顶去
         const figure = el('figure', 'c2md-frame');
-        const image = document.createElement('img');
-        image.src = section.image;
-        image.alt = `视频画面 ${fmtTs(section.t)}`;
-        image.loading = 'lazy';
-        figure.appendChild(image);
+        if (section.image) {
+          const image = document.createElement('img');
+          image.src = section.image;
+          image.alt = `视频画面 ${fmtTs(section.t)}`;
+          image.loading = 'lazy';
+          figure.appendChild(image);
+        }
         sec.appendChild(figure);
       }
       if (section.title) {
