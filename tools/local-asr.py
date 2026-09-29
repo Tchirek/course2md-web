@@ -3,12 +3,14 @@
 import io
 import json
 import os
+import shutil
 import sys
 from email.parser import BytesParser
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+from pins import PINS, VerifiedFiles
 from service_lifecycle import IdleWatch, idle_message
 
 
@@ -22,11 +24,28 @@ try:
 
     cache = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache") / "course2md" / "models"
     cache.mkdir(parents=True, exist_ok=True)
+    # 模型取固定提交，逐个文件核对 SHA-256 后才加载（见 runtime-pins.json）
+    pin = PINS["whisper-small"]
+    verified = VerifiedFiles(cache / "verified.json")
+
+    def pinned_model(local_only):
+        return download_model(pin["repo"], cache_dir=str(cache), local_files_only=local_only, revision=pin["revision"])
+
+    def intact(path):
+        return all(verified.matches(Path(path) / name, digest) for name, digest in pin["sha256"].items())
+
     try:
-        model_path = download_model("small", cache_dir=str(cache), local_files_only=True)
+        model_path = pinned_model(True)
     except Exception:
         state("downloading", "本机没有 small 多语言模型，正在下载")
-        model_path = download_model("small", cache_dir=str(cache))
+        model_path = pinned_model(False)
+    if not intact(model_path):
+        # 缓存与固定版本的哈希不符（损坏或被改动）：清掉这份缓存，重新下载一次
+        state("downloading", "本机模型文件校验不通过，正在重新下载")
+        shutil.rmtree(cache / ("models--" + pin["repo"].replace("/", "--")), ignore_errors=True)
+        model_path = pinned_model(False)
+        if not intact(model_path):
+            raise RuntimeError("small 模型文件与固定版本的 SHA-256 不符，已停止加载")
     state("loading", "正在加载 small 多语言模型")
     device = "cpu"
     try:

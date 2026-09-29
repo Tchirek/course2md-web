@@ -30,6 +30,8 @@ const HELPER_FILES = [
   'tools/local-asr.py',
   'tools/local-polish.py',
   'tools/service_lifecycle.py',
+  'tools/pins.py',
+  'tools/runtime-pins.json',
   'tools/install-local-asr.mjs',
   'tools/native-host.mjs',
   'tools/helper-data.mjs',

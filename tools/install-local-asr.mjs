@@ -16,15 +16,17 @@ const isMac = process.platform === 'darwin';
 const home = process.env.HOME ?? '';
 
 const python = process.env.C2MD_PYTHON || (isWin ? 'python' : 'python3');
+// 版本固定在 runtime-pins.json：任何时候安装都是同一个版本。已装的其他版本不动（那是用户自己的环境）
+const fasterWhisper = JSON.parse(readFileSync(path.join(tools, 'runtime-pins.json'), 'utf8'))['faster-whisper'].pip;
 let probe = spawnSync(python, ['-c', 'import faster_whisper'], { stdio: 'ignore' });
 if (probe.status !== 0) {
-  process.stdout.write('正在安装 faster-whisper 运行库…\n');
-  probe = spawnSync(python, ['-m', 'pip', 'install', '--user', 'faster-whisper'], { stdio: 'inherit' });
+  process.stdout.write(`正在安装 ${fasterWhisper} 运行库…\n`);
+  probe = spawnSync(python, ['-m', 'pip', 'install', '--user', fasterWhisper], { stdio: 'inherit' });
   if (probe.status !== 0) {
     // 影響するのはローカル文字起こしだけで、ヘルパー登録は止めない。ホストがなければフレーム取得や音声ダウンロードでもヘルパーを起こせない
     // （新しい Debian/Ubuntu のシステム Python は PEP 668 で保護され、pip --user では入らない）
     process.stdout.write('faster-whisper 未装上（不影响助手安装）。本机转录请先装好 Python 3 和 pip，再手动安装：\n' +
-      `  ${python} -m pip install --user ${isWin ? '' : '--break-system-packages '}faster-whisper\n`);
+      `  ${python} -m pip install --user ${isWin ? '' : '--break-system-packages '}${fasterWhisper}\n`);
   }
 }
 
