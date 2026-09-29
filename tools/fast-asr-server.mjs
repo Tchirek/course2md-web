@@ -279,6 +279,7 @@ async function processJob(input, source, endpoint, job, signal) {
     job.total = files.length;
     if (BUILTIN_ASR.has(endpoint.origin)) await waitForLocalAsr(job, signal);
     const events = job.events;
+    let restarts = 0;
     for (let i = 0; i < files.length; i++) {
       if (signal.aborted) throw new Error('已取消');
       job.message = `正在转写 ${i + 1}/${files.length} 片`;
@@ -298,9 +299,30 @@ async function processJob(input, source, endpoint, job, signal) {
           signal,
         });
       };
-      let reply = await request('verbose_json');
-      if (reply.status === 400 || reply.status === 422) reply = await request('json');
-      if (!reply.ok) throw new Error(`ASR 第 ${i + 1} 片失败：HTTP ${reply.status} ${(await reply.text()).slice(0, 200)}`);
+      const attempt = async () => {
+        let reply = await request('verbose_json');
+        if (reply.status === 400 || reply.status === 422) reply = await request('json');
+        if (reply.ok) return reply;
+        throw new Error(`HTTP ${reply.status} ${errorText(await reply.text())}`);
+      };
+      let reply;
+      try {
+        reply = await attempt();
+      } catch (error) {
+        if (signal.aborted) throw error;
+        // 内蔵 ASR はメモリや CUDA の失敗で使えなくなる（その場合は自ら終了する）。
+        // 新しいプロセスなら CUDA コンテキストも作り直されるので、同じ切片を一度だけやり直す
+        if (!BUILTIN_ASR.has(endpoint.origin) || restarts >= 3) throw new Error(`ASR 第 ${i + 1} 片失败：${error.message}`);
+        restarts++;
+        job.message = `本机转录服务出错（${error.message}），正在重启后重试第 ${i + 1} 片`;
+        await restartLocalAsr(job, signal);
+        try {
+          reply = await attempt();
+        } catch (retryError) {
+          if (signal.aborted) throw retryError;
+          throw new Error(`ASR 第 ${i + 1} 片失败（已重启本机转录服务重试）：${retryError.message}`);
+        }
+      }
       const value = await reply.json();
       const start = i * chunkSeconds;
       if (Array.isArray(value.segments) && value.segments.length) {
@@ -316,6 +338,30 @@ async function processJob(input, source, endpoint, job, signal) {
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** 本機 ASR のプロセスを終わらせてから起動し直し、準備完了まで待つ。 */
+async function restartLocalAsr(job, signal) {
+  const old = asrProcess;
+  if (old && old.exitCode === null && old.signalCode === null) {
+    const exited = new Promise((resolve) => old.once('exit', resolve));
+    old.kill();
+    await exited;
+  }
+  asrProcess = null;
+  asrStatus = { state: 'idle', message: '正在重启本机转录服务' };
+  await startLocalAsr();
+  await waitForLocalAsr(job, signal);
+}
+
+/** ASR の応答本文から人が読めるエラー文を取り出す（JSON の error を優先）。 */
+function errorText(body) {
+  try {
+    const message = JSON.parse(body)?.error;
+    if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 300);
+    if (message?.message) return String(message.message).slice(0, 300);
+  } catch { /* JSON ではない */ }
+  return body.trim().slice(0, 200) || '（服务未给出原因）';
 }
 
 async function waitForLocalAsr(job, signal) {
