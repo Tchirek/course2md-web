@@ -194,6 +194,8 @@
      锚点恒定存活；图片框声明 overflow-anchor:none 退出锚点候选，
      图片的插入与移除由浏览器补偿，文本不动。 */
   scrollbar-gutter: stable;
+  /* 図の高さを本文幅から整数で決めるための基準（下の .c2md-frame img） */
+  container-type: inline-size;
   padding: var(--s-4) var(--s-4) var(--s-6);
   scrollbar-width: thin;
 }
@@ -213,6 +215,12 @@
   width: 100%;
   /* 宽高比写在 img 自身：节点插入瞬间就占定终版尺寸，异步解码不变版面 */
   aspect-ratio: 16 / 9;
+  /* 高さは 4px の倍数に丸める。スクロールアンカーの補正は整数ピクセル単位なので、
+     図の高さ（209.25px など）に端数があると、図が一枚増減するたびに読んでいる行が
+     端数分（最大 0.5px）ずれ、行ごとに画素の丸めが変わって特定の行だけ上下に揺れる。
+     4px の倍数なら 125%・150%・175% の表示倍率でもデバイスピクセルの整数になる。
+     round() 非対応のブラウザでは上の aspect-ratio がそのまま効く。 */
+  height: round(down, 100cqi * 9 / 16, 4px);
   object-fit: cover;
   border: var(--hair) solid var(--rule);
 }

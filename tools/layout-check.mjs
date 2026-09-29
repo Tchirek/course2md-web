@@ -251,6 +251,87 @@ try {
       gate.pending[0] && gate.pending[1] && gate.pending[2] === false
         ? pass('panel/ready 取帧中仅允许复制纯文本')
         : fail('panel/ready', `取帧导出限制错误：${JSON.stringify(gate)}`);
+      // 密度切り替えで読んでいる行が 1px も動かないこと。スクロールアンカーはホイール操作で
+      // 選ばれるので scrollTop の代入ではなく実際にホイールで読み進め、図は一枚ずつ届かせる。
+      // 見るのは視口上端の段落（アンカーになる段落）で、許容は丸め誤差のみ。
+      await page.evaluate(async () => {
+        const { attachFrames } = await import('/src/content/visual.js');
+        const panel = window.__selftestPanel;
+        const text = '我们今天来聊一聊这个问题其实非常有意思因为大家平时可能没有注意到这里面的细节所以我想展开讲一下'.repeat(3);
+        let id = 0;
+        const sections = Array.from({ length: 8 }, (_, s) => ({
+          t: s * 280,
+          title: `第 ${s + 1} 节`,
+          segments: Array.from({ length: 14 }, (_, k) => {
+            const start = s * 280 + k * 20;
+            const say = `${text.slice(0, 18 + ((s * 14 + k) * 37) % 90)}。`;
+            return { id: id++, start, end: start + 19, text: say, raw: say, state: 'kept' };
+          }),
+        }));
+        const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 270 });
+        const images = new Map();
+        for (const segment of sections.flatMap((section) => section.segments)) {
+          const context = canvas.getContext('2d');
+          context.fillStyle = `hsl(${segment.start % 360} 50% 50%)`;
+          context.fillRect(0, 0, 480, 270);
+          images.set(segment.start, canvas.toDataURL('image/jpeg', 0.5));
+        }
+        window.__density = { attachFrames, sections, images, original: { sections: panel.state.sections, settings: panel.state.settings } };
+        panel.setState({ settings: { ...panel.state.settings, imageLevel: 'none' }, sections: attachFrames(sections, 'none') });
+      });
+      const bodyBox = await page.evaluate(() => {
+        const rect = window.__selftestPanel.scope.querySelector('.c2md-panel-body').getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      });
+      await page.mouse.move(bodyBox.x, bodyBox.y);
+      for (let i = 0; i < 16; i++) {
+        await page.mouse.wheel({ deltaY: 173 });
+        await sleep(40);
+      }
+      await sleep(400);
+      const density = await page.evaluate(async () => {
+        const { attachFrames, sections, images, original } = window.__density;
+        const panel = window.__selftestPanel;
+        const body = panel.scope.querySelector('.c2md-panel-body');
+        const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        let movedParas = 0;
+        const observer = new MutationObserver((records) => {
+          for (const record of records) {
+            for (const node of record.removedNodes) if (node.classList?.contains('c2md-para') && node.isConnected) movedParas++;
+          }
+        });
+        observer.observe(body, { childList: true, subtree: true });
+        const top = body.getBoundingClientRect().top;
+        const target = [...body.querySelectorAll('.c2md-para')].find((para) => para.getBoundingClientRect().bottom > top + 1);
+        const origin = target.getBoundingClientRect().top;
+        let worst = { drift: 0, at: '' };
+        const check = (at) => {
+          const drift = target.getBoundingClientRect().top - origin;
+          if (Math.abs(drift) > Math.abs(worst.drift)) worst = { drift: Number(drift.toFixed(3)), at };
+        };
+        for (const level of ['few', 'default', 'many', 'none', 'default']) {
+          panel.setState({ settings: { ...panel.state.settings, imageLevel: level } });
+          await frame();
+          check(`${level}/設定`);
+          const next = attachFrames(sections, level);
+          panel.setState({ sections: next });
+          await frame();
+          check(`${level}/節`);
+          for (const item of next.flatMap((section) => section.frames)) {
+            item.image = images.get(item.t);
+            panel.setState({ sections: next.map((section) => ({ ...section })) });
+            await frame();
+            check(`${level}/図 ${item.t}`);
+          }
+        }
+        observer.disconnect();
+        const scrolled = body.scrollTop;
+        panel.setState(original);
+        return { scrolled, movedParas, worst };
+      });
+      density.scrolled > 0 && density.movedParas === 0 && Math.abs(density.worst.drift) < 0.01
+        ? pass('panel/ready 画像の密度切替でも画像が一枚ずつ届いても、読んでいる行は動かない')
+        : fail('panel/ready', `画像の密度切替で読んでいる行が動いた：${JSON.stringify(density)}`);
       const corner = await page.evaluate(() => {
         const rect = document.getElementById('c2md-panel-host').getBoundingClientRect();
         return { x: rect.right - 4, y: rect.bottom - 4, width: rect.width, height: rect.height };
