@@ -760,6 +760,9 @@ export class Controller {
     try {
       await chrome.storage.session?.set({
         [this.cacheKey()]: {
+          // 记下产出这份笔记的扩展版本：代码更新（修 bug、换数据源）后，
+          // 旧逻辑产出的内容不能冒充新结果，loadCache 靠它作废旧缓存
+          version: chrome.runtime.getManifest().version,
           meta: this.meta,
           sections: this.built.sections,
           previewSections: this.previewSections,
@@ -784,6 +787,8 @@ export class Controller {
       if (!entry) return null;
       // 一小时后过期：视频可能改了，旧笔记容易误导
       if (Date.now() - (entry.savedAt ?? 0) > 3600_000) return null;
+      // 版本不符：旧代码产出的内容（可能带着已修复的 bug）不作数
+      if (entry.version !== chrome.runtime.getManifest().version) return null;
       return entry;
     } catch {
       return null;
