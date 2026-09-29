@@ -10,7 +10,7 @@ import { planChunks, mapPool } from '../core/chunk.js';
 import { buildMessages, parsePolishResponse, applyPolish, resetPolish, instructionFor } from '../core/prompt.js';
 import { buildDoc } from '../core/format.js';
 import { fmtTs } from '../core/time.js';
-import { normalizeChapters } from '../core/subtitles.js';
+import { normalizeChapters, overrunsDuration } from '../core/subtitles.js';
 import { LOCAL_POLISH } from '../core/settings.js';
 import { pickTrack, readTrack, trackLabel } from '../adapters/index.js';
 import { captureAudio } from './capture.js';
@@ -75,13 +75,18 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
     pageLang: meta.language,
   }))) {
     onProgress?.('download', { message: `正在取字幕：${trackLabel(track)}` });
-    try { events = await readTrack(track); } catch (error) { lastError = String(error?.message ?? error); }
+    try { events = await readTrack(track); } catch (error) { lastError = `字幕地址不可用：${error?.message ?? error}`; }
+    // 別動画の字幕を黙って採用しない。時間軸が動画に収まらない字幕は拒否して次の候補へ
+    if (overrunsDuration(events, meta.duration)) {
+      lastError = `「${trackLabel(track)}」的字幕长到 ${fmtTs(events.at(-1).end)}，超出视频时长 ${fmtTs(meta.duration)}，疑似其他视频的字幕，已拒用`;
+      events = [];
+    }
     if (events.length) break;
     remaining.splice(remaining.indexOf(track), 1);
   }
   if (!events.length) {
     throw new MissingSourceError(
-      `${lastError ? `字幕地址不可用：${lastError}。` : '平台没有返回可用字幕。'}可改用本地模型转录。`,
+      `${lastError ? `${lastError}。` : '平台没有返回可用字幕。'}可改用本地模型转录。`,
     );
   }
   if (signal?.aborted) throw new AbortError();

@@ -96,6 +96,18 @@ test('B 站字幕接口携带 aid/cid，字幕文件跨域失败时走扩展后�
   } finally { globalThis.fetch = originalFetch; globalThis.chrome = originalChrome; }
 });
 
+test('時間軸が動画の長さに収まらない字幕は別動画のものとして拒否する', async () => {
+  const { runSubtitlePipeline } = await import('../src/content/pipeline.js');
+  const cues = (end) => [{ start: 0, end: 2, text: '开头' }, { start: end - 2, end, text: '结尾' }];
+  const run = (end) => runSubtitlePipeline({
+    adapter: { id: 'bilibili', tracks: async () => [{ id: 'a', language: 'ai-zh', label: '中文', kind: 'automatic', inlineCues: cues(end) }] },
+    meta: { duration: 607, title: 't', url: 'https://www.bilibili.com/video/BVtest' },
+    settings: { subtitle: { preferLang: 'zh', allowAuto: true } },
+  });
+  await assert.rejects(run(1114), (error) => error instanceof MissingSourceError && error.message.includes('疑似其他视频的字幕'));
+  assert.equal((await run(600)).stats.eventCount, 2);
+});
+
 test('取画面先尝试 B 站备用 CDN，主线路 SSL 失败不再交给 yt-dlp', async () => {
   const originalFetch = globalThis.fetch;
   const dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-video-test-'));

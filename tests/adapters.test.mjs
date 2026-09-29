@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  parseVtt, parseSrt, parseJson3, parseTimedTextXml, parseBilibili,
+  parseVtt, parseSrt, parseJson3, parseTimedTextXml, parseBilibili, overrunsDuration,
   parseSubtitle, dedupeRolling, cleanCueText, parseCueTime, normalizeChapters,
   parseChaptersVtt, languageLabel,
 } from '../src/core/subtitles.js';
@@ -161,6 +161,19 @@ test('parseTimedTextXml 解实体并读取 start/dur', () => {
 });
 
 // ---------- B 站 ----------
+
+test('overrunsDuration は動画の長さを明らかに超える字幕だけを別動画のものとみなす', () => {
+  const until = (end) => [{ start: 0, end: 2 }, { start: end - 3, end }];
+  // 実測で混入した別動画の字幕：607 秒の動画に 1114 秒まで続く字幕
+  assert.equal(overrunsDuration(until(1114), 607), true);
+  assert.equal(overrunsDuration(until(3660), 387), true);
+  // 本物の字幕は長さに収まる。終端の数秒のずれは許す
+  assert.equal(overrunsDuration(until(600), 607), false);
+  assert.equal(overrunsDuration(until(612), 607), false);
+  // 長さ不明（0・ライブ）や空の字幕は判定しない
+  assert.equal(overrunsDuration(until(5000), 0), false);
+  assert.equal(overrunsDuration([], 607), false);
+});
 
 test('parseBilibili 读取 body 的 from/to/content 并排序', () => {
   const json = JSON.stringify({
