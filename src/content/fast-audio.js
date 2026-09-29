@@ -72,7 +72,7 @@ export function wavSlice(audio, start, end) {
   const count = Math.ceil((end - start) * sampleRate);
   const bytes = new ArrayBuffer(44 + count * 2);
   const view = new DataView(bytes);
-  for (const [offset, value] of [[0, 'RIFF'], [8, 'WAVE'], [12, 'fmt '], [36, 'data']]) {
+  for (const [offset, value] of /** @type {[number, string][]} */ ([[0, 'RIFF'], [8, 'WAVE'], [12, 'fmt '], [36, 'data']])) {
     for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i));
   }
   view.setUint32(4, bytes.byteLength - 8, true);

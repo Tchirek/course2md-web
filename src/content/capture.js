@@ -34,7 +34,7 @@ const RESTART_GAP_MS = 40;
  * @param {AbortSignal} [opts.signal]
  * @param {(chunk: AudioChunk, index: number) => Promise<void>|void} opts.onChunk
  * @param {(info: {ratio:number, currentSec:number, totalSec:number}) => void} [opts.onProgress]
- * @returns {Promise<{chunks:number, seconds:number, aborted:boolean}>}
+ * @returns {Promise<{chunks:number, seconds:number, aborted:boolean, mode?:string}>}
  */
 export async function captureAudio(el, opts) {
   if (!el) throw new Error('页面上找不到 video 元素。');

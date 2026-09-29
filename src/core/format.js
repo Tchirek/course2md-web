@@ -83,6 +83,7 @@ export function buildDoc(meta, sections) {
  * @param {boolean} [opts.timestamps] 是否显示讲述时刻
  * @param {boolean} [opts.links]      时刻是否带跳转链接
  * @param {boolean} [opts.frontMatter] 是否写 YAML front matter
+ * @param {boolean} [opts.images]      各節で取れた画面を段落の前に挟むか
  */
 export function toMarkdown(doc, opts = {}) {
   const timestamps = opts.timestamps !== false;
@@ -138,7 +139,7 @@ export function toMarkdown(doc, opts = {}) {
 
 /**
  * 纯文本（贴进聊天窗口、笔记软件时用）。不含任何标记符号。
- * @param {Doc} doc
+ * @param {Pick<Doc, 'meta'|'sections'>} doc meta と sections しか使わない
  * @param {object} [opts] 同 toMarkdown
  */
 export function toPlainText(doc, opts = {}) {

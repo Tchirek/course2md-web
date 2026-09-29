@@ -28,8 +28,8 @@ export function video() {
 
 export async function meta() {
   const el = video();
-  const ogTitle = document.querySelector('meta[property="og:title"]')?.content ?? '';
-  const ogAuthor = document.querySelector('meta[name="author"]')?.content ?? '';
+  const ogTitle = /** @type {HTMLMetaElement|null} */ (document.querySelector('meta[property="og:title"]'))?.content ?? '';
+  const ogAuthor = /** @type {HTMLMetaElement|null} */ (document.querySelector('meta[name="author"]'))?.content ?? '';
   const duration = Number(el?.duration);
   return {
     title: (ogTitle || document.title || '').trim() || '未命名视频',
@@ -70,7 +70,7 @@ export async function tracks() {
       inlineCues: [...cues].map((c) => ({
         start: c.startTime,
         end: c.endTime,
-        text: c.text,
+        text: /** @type {VTTCue} */ (c).text,
       })),
       fetch: null,
     });
@@ -109,7 +109,7 @@ export async function chapters() {
   // 浏览器已解析过就直接用
   const tt = [...(el.textTracks ?? [])].find((t) => t?.kind === 'chapters');
   if (tt?.cues?.length) {
-    return [...tt.cues].map((c) => ({ title: c.text, t: c.startTime }));
+    return [...tt.cues].map((c) => ({ title: /** @type {VTTCue} */ (c).text, t: c.startTime }));
   }
 
   const src = track.getAttribute('src');

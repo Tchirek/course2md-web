@@ -24,9 +24,10 @@ const REQUEST_TIMEOUT_MS = 120_000;
  * @param {string} args.apiKey
  * @param {string} args.model
  * @param {{role:string, content:string}[]} args.messages
+ * @param {(delta: string) => void} [args.onDelta] 渡すとストリーミングになり、断片ごとに届ける
  * @param {AbortSignal} [args.signal]
  * @param {number} [args.timeoutMs] 無応答で打ち切るまでの時間（テスト用に短くできる）
- * @returns {Promise<{ok:true, content:string, usage?:object}|{ok:false, error:string, retryable:boolean}>}
+ * @returns {Promise<{ok:boolean, content?:string, usage?:object, error?:string, retryable?:boolean}>}
  */
 export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, timeoutMs = REQUEST_TIMEOUT_MS }) {
   const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;

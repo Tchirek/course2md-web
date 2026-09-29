@@ -12,7 +12,13 @@ export class Panel {
    * @param {object} handlers
    * @param {(patch:object) => void} handlers.onSettings
    * @param {(seconds:number) => void} handlers.onSeek
-   * @param {'copy'|'copyText'|'download'|'rerun'|'repolish'|'options'|'close'} handlers …各动作
+   * @param {() => void} [handlers.onCopy]
+   * @param {() => void} [handlers.onCopyText]
+   * @param {() => void} [handlers.onDownload]
+   * @param {() => void} [handlers.onRerun]
+   * @param {() => void} [handlers.onRepolish]
+   * @param {(section?:string) => void} [handlers.onOptions]
+   * @param {() => void} [handlers.onClose]
    */
   constructor(handlers) {
     this.handlers = handlers;
@@ -139,7 +145,7 @@ export class Panel {
 
     if (!this.scope) return;
     if (progressOnly) {
-      const ring = this.scope.querySelector('.c2md-source .c2md-ring');
+      const ring = one(this.scope, '.c2md-source .c2md-ring');
       if (Boolean(ring) !== Number.isFinite(this.state.stageRatio)) {
         this.render();
         return;
@@ -153,7 +159,7 @@ export class Panel {
       return;
     }
     if (polishOnly) {
-      const ring = this.scope.querySelector('.c2md-panel-toggles .c2md-ring');
+      const ring = one(this.scope, '.c2md-panel-toggles .c2md-ring');
       if (ring) {
         const { done, total } = this.state.polish;
         ring.style.setProperty('--progress', `${total > 0 ? Math.min(100, 100 * done / total) : 0}%`);
@@ -179,7 +185,7 @@ export class Panel {
     this.scope.dataset.theme = settings.theme ?? 'auto';
 
     const polished = Boolean(settings.polish && this.state.polish?.hasResult);
-    for (const el of this.scope.querySelectorAll('.c2md-say')) {
+    for (const el of all(this.scope, '.c2md-say')) {
       const next = polished && el.dataset.polished ? el.dataset.polished : el.dataset.raw;
       if (el.textContent !== next) {
         el.textContent = next;
@@ -192,9 +198,9 @@ export class Panel {
         }
       }
     }
-    for (const section of this.scope.querySelectorAll('.c2md-section')) {
+    for (const section of all(this.scope, '.c2md-section')) {
       let visible = false;
-      for (const para of section.querySelectorAll('.c2md-para')) {
+      for (const para of all(section, '.c2md-para')) {
         para.style.display = polished && para.dataset.state === 'skipped' ? 'none' : '';
         if (para.style.display !== 'none') visible = true;
       }
@@ -203,9 +209,9 @@ export class Panel {
   }
 
   updateSegment(seg) {
-    const p = this.scope?.querySelector(`.c2md-para[data-id="${seg.id}"]`);
+    const p = one(this.scope, `.c2md-para[data-id="${seg.id}"]`);
     if (!p) return;
-    const say = p.querySelector('.c2md-say');
+    const say = one(p, '.c2md-say');
     say.dataset.raw = seg.raw ?? seg.text;
     if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
     else delete say.dataset.polished;
@@ -536,6 +542,16 @@ export class Panel {
 
     return foot;
   }
+}
+
+/** 浮窓には HTML 要素しか置かないので、セレクタで一つ取る（無ければ null）。型検査はこれで絞り込む。 */
+function one(root, selector) {
+  return /** @type {HTMLElement|null} */ (root?.querySelector(selector) ?? null);
+}
+
+/** セレクタに合うものをすべて配列で返す。 */
+function all(root, selector) {
+  return /** @type {HTMLElement[]} */ ([...(root?.querySelectorAll(selector) ?? [])]);
 }
 
 function el(tag, className) {

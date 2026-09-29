@@ -46,7 +46,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const handlers = {
   /** YouTube 的播放器响应：字幕轨、章节、标题作者时长都在里面。 */
   'yt.playerResponse'() {
-    const player = document.querySelector('#movie_player');
+    const player = /** @type {YouTubePlayerElement|null} */ (document.querySelector('#movie_player'));
     if (!player || typeof player.getPlayerResponse !== 'function') return null;
     try {
       return player.getPlayerResponse();
@@ -57,7 +57,7 @@ const handlers = {
 
   /** 用播放器自己的 API 跳转，比直接改 video.currentTime 更稳。 */
   'yt.seek'([seconds]) {
-    const player = document.querySelector('#movie_player');
+    const player = /** @type {YouTubePlayerElement|null} */ (document.querySelector('#movie_player'));
     if (!player || typeof player.seekTo !== 'function') return false;
     try {
       player.seekTo(Number(seconds), true);
@@ -73,7 +73,7 @@ const handlers = {
    */
   async 'yt.captionToken'([videoId, languageCode, kind]) {
     if (captionTokens.has(videoId)) return captionTokens.get(videoId);
-    const player = document.querySelector('#movie_player');
+    const player = /** @type {YouTubePlayerElement|null} */ (document.querySelector('#movie_player'));
     if (typeof player?.getPlayerResponse !== 'function' || typeof player.setOption !== 'function') return null;
     // トークンは動画に束縛される（別動画のトークンでは空応答）。広告の再生中は本編の
     // 字幕をプレーヤーが取りに行かないので、広告が終わるまで待つ。広告は連続することが
@@ -112,12 +112,12 @@ const handlers = {
 
   /** 広告の再生中か（字幕トークンの取得が広告終了待ちになるかの判断に使う）。 */
   'yt.adShowing'() {
-    const player = document.querySelector('#movie_player');
+    const player = /** @type {YouTubePlayerElement|null} */ (document.querySelector('#movie_player'));
     return Boolean(player?.classList.contains('ad-showing') || player?.classList.contains('ad-interrupting'));
   },
 
   'yt.currentTime'() {
-    const player = document.querySelector('#movie_player');
+    const player = /** @type {YouTubePlayerElement|null} */ (document.querySelector('#movie_player'));
     if (!player || typeof player.getCurrentTime !== 'function') return null;
     try {
       return player.getCurrentTime();

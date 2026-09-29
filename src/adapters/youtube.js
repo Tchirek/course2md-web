@@ -75,6 +75,10 @@ export async function meta() {
  * yt-dlp も同じ印で PO トークンの要否を判断している。トークンはページ側のブリッジが
  * プレーヤーの要求から拾い、同じ動画の全字幕に付ける。
  */
+/**
+ * @param {unknown} [_info]
+ * @param {{onProgress?: (message: string) => void}} [options] 広告待ちなど時間のかかる段階の進捗表示
+ */
 export async function tracks(_info, { onProgress } = {}) {
   const pr = await playerResponse();
   const list = pr?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
@@ -144,8 +148,9 @@ export async function chapters() {
 }
 
 /** 当前页面上的 video 元素。 */
+/** @returns {HTMLVideoElement|null} */
 export function video() {
-  return document.querySelector('video.html5-main-video') ?? document.querySelector('video');
+  return /** @type {HTMLVideoElement|null} */ (document.querySelector('video.html5-main-video')) ?? document.querySelector('video');
 }
 
 /** 跳转到指定秒。优先用播放器 API，失败则退回 video.currentTime。 */

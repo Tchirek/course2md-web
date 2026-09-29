@@ -12,7 +12,7 @@ const el = {
   source: document.getElementById('source-control'),
   toggles: document.getElementById('toggles'),
   status: document.getElementById('status'),
-  run: document.getElementById('run'),
+  run: /** @type {HTMLButtonElement} */ (document.getElementById('run')),
   secondary: document.getElementById('secondary'),
   options: document.getElementById('open-options'),
 };

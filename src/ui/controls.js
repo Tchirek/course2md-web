@@ -36,6 +36,7 @@ export const DISPLAY_TOGGLES = [
  * @param {boolean} [args.needsSetup] 未配置时在行尾给一个去设置的入口
  * @param {() => void} [args.onSetup]
  * @param {(checked:boolean) => void} args.onChange
+ * @param {Node} [args.trailing] 行末に添える要素（整形の進捗リングなど）
  * @returns {HTMLLabelElement}
  */
 export function checkboxRow({
@@ -174,7 +175,7 @@ export function note({ title, body, tone = 'default', actions = [] } = {}) {
 /**
  * 图标按钮。
  * @param {object} args
- * @param {string} args.iconName
+ * @param {Parameters<typeof icon>[0]} args.iconName
  * @param {string} args.label 无障碍名与 tooltip
  * @param {() => void} args.onClick
  */
@@ -211,8 +212,10 @@ export function applyTheme(settings, root = document.body) {
  * @param {object} args.settings
  * @param {(patch:object) => void} args.onChange 用户改动后回调（只需处理持久化）
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
+ * @param {boolean} [args.showPolishLevel] 整形の強さの選択を出す
  * @param {boolean} [args.showPolishEngine] 显示润色方式（本机/自备）选择
  * @param {boolean} [args.polishLevelWhenChecked] 只在勾选润色时显示润色强度/方式
+ * @param {{running?:boolean, done?:number, total?:number}|null} [args.polishProgress] 整形の進捗（あれば整形の行末に進捗リングを描く）
  * @returns {DocumentFragment}
  */
 export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, showPolishEngine = false, polishLevelWhenChecked = false, polishProgress = null }) {

@@ -4,7 +4,7 @@
 //! ——尤其是 LLM / ASR 报回来的原话，用户改配置时需要看到它。
 
 /**
- * @param {unknown} error
+ * @param {any} error 投げられた任意の値（Error、文字列、actionable 付きの領域エラー）
  * @returns {{title:string, body:string, options?:string, detail?:string}}
  */
 export function toErrorState(error) {

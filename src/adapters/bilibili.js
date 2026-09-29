@@ -160,8 +160,9 @@ export async function chapters(info) {
     .filter(Boolean);
 }
 
+/** @returns {HTMLVideoElement|null} */
 export function video() {
-  return (
+  return /** @type {HTMLVideoElement|null} */ (
     document.querySelector('.bpx-player-video-wrap video') ??
     document.querySelector('#bilibili-player video') ??
     document.querySelector('video')

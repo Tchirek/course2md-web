@@ -20,6 +20,7 @@ export const SOURCE = {
  * @property {number} end   结束秒
  * @property {string} text  展示文本（润色后）；未润色时与 raw 相同
  * @property {string} [raw] ASR/字幕原文（provenance）；润色后保留
+ * @property {'polished'|'kept'|'skipped'} [state] 整形の状態（整形結果を書き戻した後にだけある）
  */
 
 /**
@@ -30,11 +31,12 @@ export const SOURCE = {
  * @property {string} text
  * @property {string} [raw]
  * @property {'polished'|'kept'|'skipped'} [state] 润色状态
+ * @property {number} [id] 全体の平坦な段落一覧での添字（整形はこれで対応づける）
  */
 
 /**
  * 校验并规范化一条转写事件。缺字段、时间倒置、空文本都会被修正或拒绝。
- * @param {unknown} e
+ * @param {any} e 任意の入力（字幕、ASR、キャッシュから）
  * @returns {TranscriptEvent|null}
  */
 export function normalizeEvent(e) {
@@ -44,6 +46,7 @@ export function normalizeEvent(e) {
   const text = typeof e.text === 'string' ? e.text : '';
   if (!Number.isFinite(start)) return null;
   const safeEnd = Number.isFinite(end) && end >= start ? end : start;
+  /** @type {TranscriptEvent} */
   const out = { start: Math.max(0, start), end: Math.max(0, safeEnd), text };
   if (typeof e.raw === 'string' && e.raw.length > 0) out.raw = e.raw;
   if (typeof e.state === 'string' && e.state) out.state = e.state;
@@ -56,7 +59,7 @@ export function normalizeEvent(e) {
  */
 export function sortEvents(events) {
   return events
-    .map((e, i) => [e, i])
+    .map((e, i) => /** @type {[TranscriptEvent, number]} */ ([e, i]))
     .sort((a, b) => a[0].start - b[0].start || a[1] - b[1])
     .map(([e]) => e);
 }

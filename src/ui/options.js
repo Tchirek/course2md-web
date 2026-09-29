@@ -33,6 +33,11 @@ const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8081/v1/audio/transcriptions';
 
 init();
 
+/** フォームの部品（input / select）。型検査に value と checked があると伝える。 */
+function input(id) {
+  return /** @type {HTMLInputElement} */ (document.getElementById(id));
+}
+
 async function init() {
   settings = withDefaults(await load());
   applyTheme(settings);
@@ -84,7 +89,7 @@ function renderPolishEngine() {
 
 function fillFields() {
   for (const [id, path, kind] of FIELDS) {
-    const node = document.getElementById(id);
+    const node = input(id);
     // 正在编辑的字段不要被覆盖，否则边打字边落盘时会跳字
     if (!node || document.activeElement === node) continue;
     const value = getByPath(settings, path);
@@ -111,6 +116,7 @@ function renderDisplay() {
   // 这个区块的勾选直接生效，不需要「去设置」按钮
   for (const btn of rows.querySelectorAll('.c2md-check-setup')) btn.remove();
   for (const row of rows.querySelectorAll('.c2md-check')) {
+    if (!(row instanceof HTMLElement)) continue;
     row.style.borderBottom = '';
   }
 }
@@ -146,7 +152,7 @@ function renderTheme() {
 
 function bindActions() {
   for (const [id, path, kind] of FIELDS) {
-    const node = document.getElementById(id);
+    const node = input(id);
     if (!node) continue;
     const handler = () => {
       const value =
@@ -183,7 +189,7 @@ function bindActions() {
 }
 
 async function startLocalAsr() {
-  const button = document.getElementById('asr-start');
+  const button = /** @type {HTMLButtonElement} */ (document.getElementById('asr-start'));
   button.disabled = true;
   flash('asr-result', '正在启动本机转录服务…', null);
   try {
@@ -200,7 +206,7 @@ async function startLocalAsr() {
 }
 
 async function startLocalPolish() {
-  const button = document.getElementById('llm-local-start');
+  const button = /** @type {HTMLButtonElement} */ (document.getElementById('llm-local-start'));
   button.disabled = true;
   try {
     await commit('polishEngine', 'local');
@@ -214,7 +220,7 @@ async function startLocalPolish() {
 
 function showLocalPolishStatus(status) {
   const running = ['starting', 'installing', 'downloading', 'loading'].includes(status.state);
-  const button = document.getElementById('llm-local-start');
+  const button = /** @type {HTMLButtonElement} */ (document.getElementById('llm-local-start'));
   button.disabled = running;
   button.textContent = status.state === 'ready' ? '本机润色已就绪' : '启用本机润色';
   if (status.state !== 'idle') flash('llm-local-result', status.message, status.state === 'ready' ? true : status.state === 'error' ? false : null);
@@ -231,7 +237,7 @@ function showLocalPolishStatus(status) {
 
 function showLocalAsrStatus(status) {
   const running = ['starting', 'downloading', 'loading'].includes(status.state);
-  const button = document.getElementById('asr-start');
+  const button = /** @type {HTMLButtonElement} */ (document.getElementById('asr-start'));
   const configured = settings.asr.endpoint === LOCAL_ASR_ENDPOINT && settings.asr.model === 'small';
   button.disabled = running;
   button.textContent = status.state === 'ready' ? configured ? '本机服务已启动 · 检查' : '使用本机转录服务' : '启动本机转录服务';
@@ -252,7 +258,7 @@ function showLocalAsrStatus(status) {
  * 必须由用户点击触发——浏览器只允许在用户手势里申请权限。
  */
 async function grantFor(inputId, resultId) {
-  const raw = document.getElementById(inputId).value.trim();
+  const raw = input(inputId).value.trim();
   if (!raw) {
     flash(resultId, '先填地址，再点授权。', false);
     return;
@@ -283,9 +289,9 @@ async function test(which) {
 
   if (which === 'llm') {
     const payload = {
-      baseUrl: document.getElementById('llm-url').value.trim(),
-      apiKey: document.getElementById('llm-key').value,
-      model: document.getElementById('llm-model').value.trim(),
+      baseUrl: input('llm-url').value.trim(),
+      apiKey: input('llm-key').value,
+      model: input('llm-model').value.trim(),
     };
     if (!payload.baseUrl) {
       flash(resultId, '先填服务地址。', false);
@@ -300,9 +306,9 @@ async function test(which) {
   }
 
   const payload = {
-    endpoint: document.getElementById('asr-endpoint').value.trim(),
-    apiKey: document.getElementById('asr-key').value,
-    model: document.getElementById('asr-model').value.trim(),
+    endpoint: input('asr-endpoint').value.trim(),
+    apiKey: input('asr-key').value,
+    model: input('asr-model').value.trim(),
   };
   const reply = await send({ type: 'asr.test', payload }).catch((error) => ({
     ok: false,
@@ -313,7 +319,7 @@ async function test(which) {
 
 /** 就地显示一条结果。`ok` 为 null 表示进行中。 */
 function flash(id, text, ok) {
-  const node = document.getElementById(id);
+  const node = input(id);
   if (!node) return;
   node.textContent = text ?? '';
   if (ok === null || ok === undefined) node.removeAttribute('data-ok');

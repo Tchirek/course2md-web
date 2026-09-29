@@ -22,13 +22,14 @@ const REQUEST_TIMEOUT_MS = 300_000;
  * @param {string} args.endpoint
  * @param {string} [args.apiKey]
  * @param {string} args.model
+ * @param {string} [args.prompt] プロンプト（動画タイトルなど）。固有名詞の認識を助ける
  * @param {string} [args.language]
  * @param {ArrayBuffer|Uint8Array} args.audio
  * @param {string} [args.mimeType]
  * @param {string} [args.fileName]
  * @param {AbortSignal} [args.signal]
  * @param {number} [args.timeoutMs] 打ち切るまでの時間（テスト用に短くできる）
- * @returns {Promise<{ok:true, data:object}|{ok:false, error:string, hint?:string}>}
+ * @returns {Promise<{ok:boolean, data?:any, error?:string, hint?:string}>}
  */
 export async function transcribe({
   endpoint,
@@ -52,22 +53,21 @@ export async function transcribe({
 
   const attempt = async (responseFormat) => {
     const form = new FormData();
-    form.append('file', new Blob([bytes], { type: mimeType }), fileName);
+    form.append('file', new Blob([/** @type {BlobPart} */ (bytes)], { type: mimeType }), fileName);
     form.append('model', model || 'whisper-1');
     form.append('response_format', responseFormat);
     form.append('temperature', '0');
     if (prompt) form.append('prompt', String(prompt).slice(0, 200));
     if (language) form.append('language', language);
 
+    /** @type {Record<string, string>} */
     const headers = {};
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     return timedRequest(url, { method: 'POST', headers, body: form, signal }, timeoutMs, async (res) => {
       if (!res.ok) {
         const detail = await readError(res);
-        const err = new Error(`HTTP ${res.status}${detail ? ` — ${detail}` : ''}`);
-        err.status = res.status;
-        throw err;
+        throw Object.assign(new Error(`HTTP ${res.status}${detail ? ` — ${detail}` : ''}`), { status: res.status });
       }
       return res.json();
     });

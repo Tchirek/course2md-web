@@ -18,9 +18,11 @@ import { decodeMediaAudio, FastAudioUnavailable } from './fast-audio.js';
 
 /**
  * @typedef {object} PipelineResult
- * @property {object} doc        结构化文档（buildDoc 的产物）
+ * @property {object} [doc]      構造化文書（finalize の後にだけある）
  * @property {object[]} sections 直接用于渲染面板的分节
  * @property {object[]} segments 平坦段落列表（与 sections 里的对象是同一批引用）
+ * @property {number[]} sectionIndexOf 段落の添字 -> 節の添字
+ * @property {object[]} [chapters] プラットフォームの章
  * @property {object} stats      来源、轨、耗时、润色结果等
  * @property {string[]} warnings 需要如实告诉用户的问题
  */
@@ -115,6 +117,7 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
  * @param {(stage:string, info?:object)=>void} [args.onProgress]
  * @param {AbortSignal} [args.signal]
  * @param {(seconds:number)=>void} [args.seek]
+ * @param {(events:object[])=>void} [args.onPartial] 文字起こしの途中で、得られたイベントを順次渡す
  * @returns {Promise<PipelineResult>}
  */
 export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPartial, signal }) {
@@ -377,6 +380,8 @@ function punctuate(text) {
  * @param {object} args.meta
  * @param {object} args.settings
  * @param {(done:number,total:number)=>void} [args.onProgress]
+ * @param {(id:number)=>void} [args.onSegment] 段落の整形結果を書き戻したらすぐ知らせる（浮窓を段落ごとに更新）
+ * @param {()=>void} [args.onReset] 整形の状態を初期化したとき、または続きから整形を始めるときに知らせる
  * @param {AbortSignal} [args.signal]
  * @param {{ensure:()=>Promise<object>}} [args.fallback] 自备 LLM 三次失败后的本地回落；ensure 返回本机模型的 LLM 配置
  * @param {boolean} [args.resume] 续润：跳过已润色的段落，只处理剩下的
@@ -396,7 +401,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
     onlyUnpolished: resume,
   });
   if (!chunks.length) {
-    return { chunks: 0, polished: 0, failed: 0, removed: 0, errors: [] };
+    return { chunks: 0, polished: 0, failed: 0, removed: 0, errors: [], firstError: '' };
   }
   onProgress?.(0, chunks.length);
 
@@ -504,7 +509,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
         const fallbackLlm = await ensureFallback();
         if (fallbackLlm) {
           const task = fallbackQueue.then(() => attemptChunk(chunk, fallbackLlm));
-          fallbackQueue = task.catch(() => {});
+          fallbackQueue = task.then(() => {}, () => {});
           return task;
         }
         if (fallbackEnsureError) throw new Error(`本机润色未启动：${String(fallbackEnsureError?.message ?? fallbackEnsureError)}`);
@@ -512,7 +517,10 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
       throw lastError;
     },
     (done, total, outcome) => {
-      if (outcome?.error && !firstError) firstError = String(outcome.error?.message ?? outcome.error);
+      if (outcome && 'error' in outcome && !firstError) {
+        const error = /** @type {any} */ (outcome.error);
+        firstError = String(error?.message ?? error);
+      }
       onProgress?.(done, total);
     },
   );

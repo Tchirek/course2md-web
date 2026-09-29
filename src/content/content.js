@@ -34,6 +34,7 @@ export class Controller {
     this.stageRatio = null;
     this.abort = null;
     this.imageAbort = null;
+    /** @type {Promise<unknown>} */
     this.imagePromise = Promise.resolve(0);
     this.imageQueue = new Map();
     this.imageInFlight = new Set();
@@ -92,7 +93,7 @@ export class Controller {
     // 设置变了（用户在弹窗或设置页改的）就即时反映到面板
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes.settings) return;
-      const next = changes.settings.newValue;
+      const next = /** @type {any} */ (changes.settings.newValue);
       if (!next) return;
       const old = this.settings;
       const configChanged = next.polishLevel !== old.polishLevel ||
@@ -545,6 +546,10 @@ export class Controller {
     return this.localPolishLlm();
   }
 
+  /**
+   * @param {AbortSignal} [signal]
+   * @param {(message:string) => void} [onState]
+   */
   async waitLocalPolish(signal, onState = () => {}) {
     const started = await send({ type: 'polish.local.start' });
     if (started.state === 'error') throw new Error(started.message);
@@ -604,10 +609,10 @@ export class Controller {
     // 短暂标一下当前段落，用户回到页面时知道跳到哪了
     if (this.panel.isMounted) {
       for (const p of this.panel.scope.querySelectorAll('.c2md-para[data-active]')) {
-        delete p.dataset.active;
+        if (p instanceof HTMLElement) delete p.dataset.active;
       }
-      const target = this.panel.scope.querySelector(`.c2md-para[data-start="${Math.floor(seconds)}"]`)
-        ?? null;
+      const target = /** @type {HTMLElement|null} */ (
+        this.panel.scope.querySelector(`.c2md-para[data-start="${Math.floor(seconds)}"]`));
       if (target) {
         target.dataset.active = 'true';
         setTimeout(() => delete target.dataset.active, 1600);
@@ -797,11 +802,12 @@ export class Controller {
     }
   }
 
+  /** @returns {Promise<any>} キャッシュの項目（sections、stats、images など）。無ければ null */
   async loadCache() {
     try {
       const key = this.cacheKey();
       const stored = await chrome.storage.session?.get(key);
-      const entry = stored?.[key];
+      const entry = /** @type {any} */ (stored?.[key]);
       if (!entry) return null;
       // 一小时后过期：视频可能改了，旧笔记容易误导
       if (Date.now() - (entry.savedAt ?? 0) > 3600_000) return null;

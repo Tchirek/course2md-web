@@ -34,6 +34,7 @@ export const CHUNK_CONTEXT_CHARS = 160;
  * @param {number} [opts.maxItems]
  * @param {number} [opts.maxChars]
  * @param {number} [opts.contextChars]
+ * @param {boolean} [opts.onlyUnpolished] 続きから整形：整形済みの段落を飛ばす
  * @param {(i:number)=>number} [opts.sectionOf] 段落下标 -> 章节下标；
  *        同一块不跨章节（章节内语言/话题一致，块内上下文更干净）
  * @returns {Chunk[]}
@@ -113,7 +114,8 @@ export function tailOf(text, n) {
  * @param {T[]} items
  * @param {number} limit
  * @param {(item:T, index:number)=>Promise<R>} worker
- * @param {(done:number, total:number, result:R)=>void} [onProgress]
+ * @param {(done:number, total:number, result:R|{error:unknown, index:number})=>void} [onProgress]
+ *   worker が例外を投げたとき、第 3 引数は {error, index}
  * @returns {Promise<R[]>} 与 items 等长、顺序一致；worker 抛错时该位置为 null
  */
 export async function mapPool(items, limit, worker, onProgress) {
