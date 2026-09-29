@@ -164,22 +164,37 @@ try {
       plainGate.withText === false && plainGate.withoutText === true && plainGate.restored === false
         ? pass('panel/running 转录中可复制已生成的纯文本')
         : fail('panel/running', `运行中复制纯文本按钮状态错误：${JSON.stringify(plainGate)}`);
-      const scrollStable = await page.evaluate(() => {
+      const anchorStable = await page.evaluate(() => {
         const panel = window.__selftestPanel;
         const sections = panel.state.sections;
-        // 先让正文高过视口，才谈得上滚动位置
-        panel.setState({ sections: [...sections, ...sections] });
         const body = panel.scope.querySelector('.c2md-panel-body');
-        body.scrollTop = 120;
-        panel.setState({ sections: [...sections, ...sections, ...sections] });
-        const after = panel.scope.querySelector('.c2md-panel-body');
-        const result = { same: body === after, scrollTop: after.scrollTop, scrollable: after.scrollHeight > after.clientHeight };
+        body.scrollTop = 300;
+        const paras = body.querySelectorAll('.c2md-para');
+        const target = paras[Math.min(3, paras.length - 1)];
+        const before = target.getBoundingClientRect().top;
+        // 第一节新增图片（模拟取帧到达）：正在阅读的段落视口位置应保持不变
+        const withImage = sections.map((section, index) => index === 0
+          ? { ...section, image: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' } : section);
+        panel.setState({ sections: withImage });
+        const withFigure = target.getBoundingClientRect().top;
+        // 再取消图片（模拟取消点选）：同样不应移动正文
         panel.setState({ sections });
-        return result;
+        const afterRemoval = target.getBoundingClientRect().top;
+        // 滚到顶时不加补偿：新图片自然出现，绝不自己滚动
+        body.scrollTop = 0;
+        panel.setState({ sections: withImage });
+        const atTop = panel.scope.querySelector('.c2md-panel-body').scrollTop;
+        panel.setState({ sections });
+        return {
+          sameNode: panel.scope.querySelector('.c2md-panel-body') === body,
+          driftAdd: Math.abs(withFigure - before),
+          driftRemove: Math.abs(afterRemoval - before),
+          atTop,
+        };
       });
-      scrollStable.same && scrollStable.scrollable && scrollStable.scrollTop === 120
-        ? pass('panel/running 内容更新不换滚动容器、不自动滚动')
-        : fail('panel/running', `滚动容器或位置被改动：${JSON.stringify(scrollStable)}`);
+      anchorStable.sameNode && anchorStable.driftAdd <= 2 && anchorStable.driftRemove <= 2 && anchorStable.atTop === 0
+        ? pass('panel/running 图片增删不移动正在阅读的正文，顶部不自动滚')
+        : fail('panel/running', `图片增删扰动了阅读位置：${JSON.stringify(anchorStable)}`);
     }
     if (state === 'ready') {
       const images = await page.evaluate(() => {

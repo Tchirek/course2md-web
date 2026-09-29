@@ -224,25 +224,66 @@ export class Panel {
 
   render() {
     if (!this.scope) return;
-    // scope.replaceChildren 会把正文连根拔起重插，节点脱离文档的瞬间 scrollTop
-    // 会被清零；这里只恢复用户自己滚到的位置——不吸附底部、不自动跟滚，
-    // 滚不滚、滚到哪，全由用户自己决定。
-    const keep = this.bodyEl?.isConnected ? this.bodyEl.scrollTop : 0;
+    // 更新前先记录视口锚点：用户正读到的段落。图片插入/移除、密度切换、
+    // 新文段到达都会改变排版，锚定保证「正在阅读的那段字」停在原视口位置。
+    const anchor = this.captureAnchor();
 
     const reuseToggles = this.controlsSettings === this.state.settings &&
       this.controlsPolishRunning === Boolean(this.state.polish?.running);
     const toggles = reuseToggles ? this.scope.querySelector('.c2md-panel-toggles') : null;
     this.controlsSettings = this.state.settings;
     this.controlsPolishRunning = Boolean(this.state.polish?.running);
-    this.scope.replaceChildren(
+
+    // 槽位同步：正文原地更新（绝不脱离文档），头部/状态/底部按槽位替换兄弟节点。
+    // 此前用 replaceChildren 整体重挂，正文连根拔起——脱离文档瞬间 scrollTop
+    // 被清零，滚轮手势也会被打断，这就是图片到达时短暂滚不动、阅读位置漂移的根源。
+    const slots = [
       this.renderHead(),
       toggles ?? this.renderToggles(),
       this.renderStatus(),
       this.renderBody(),
       this.renderFoot(),
-    );
-    if (keep > 0) this.bodyEl.scrollTop = keep;
+    ];
+    const current = [...this.scope.children];
+    slots.forEach((node, index) => {
+      if (current[index] === node) return;
+      if (current[index]) current[index].replaceWith(node);
+      else this.scope.append(node);
+    });
+    for (const extra of current.slice(slots.length)) extra.remove();
+
+    this.restoreAnchor(anchor);
     this.applyDisplayMode();
+  }
+
+  /**
+   * 记录视口顶缘第一个可见段落及其在视口内的偏移。
+   * 只在已滚动时生效：滚到顶时新图片应当自然出现在眼前、内容自然下推，
+   * 这时不加补偿，绝不自己滚动。
+   */
+  captureAnchor() {
+    const body = this.bodyEl;
+    if (!body?.isConnected || body.scrollTop <= 0) return null;
+    const bodyTop = body.getBoundingClientRect().top;
+    for (const p of body.querySelectorAll('.c2md-para')) {
+      const rect = p.getBoundingClientRect();
+      if (rect.height > 0 && rect.bottom > bodyTop) {
+        return { id: p.dataset.id, offset: rect.top - bodyTop };
+      }
+    }
+    return null;
+  }
+
+  /** 把锚定段落放回更新前的视口位置；锚不在了（被隐藏/移除）就维持现状。 */
+  restoreAnchor(anchor) {
+    if (!anchor) return;
+    const body = this.bodyEl;
+    const p = body?.querySelector(`.c2md-para[data-id="${anchor.id}"]`);
+    if (!p) return;
+    const rect = p.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    const delta = rect.top - body.getBoundingClientRect().top - anchor.offset;
+    if (Math.abs(delta) > 1) body.scrollTop += delta;
   }
 
   // ---------- 头部 ----------
@@ -326,83 +367,116 @@ export class Panel {
   // ---------- 正文 ----------
   renderBody() {
     // 滚动容器复用同一个节点，不随重建更换：换节点会打断进行中的滚轮手势
-    // （图片批量到达时正好滚一半就被锁住）。内容先在文档外备齐，再「先加新、
-    // 后删旧」整体换入：滚动高度不经历塌陷，位置由浏览器滚动锚定原样保留。
-    // 不能用 replaceChildren——全新内容会让锚点丢失，滚动位置被钳回 0。
+    // （图片批量到达时正好滚一半就被锁住）。
+    // 内容按段落 reconcile：已有段落原节点就地更新（文本节点不重建，锚定才有
+    // 依靠），新段落追加、消失的移除，只有图片和标题是全新节点。
     const body = this.bodyEl?.isConnected ? this.bodyEl : el('div', 'c2md-panel-body');
     this.bodyEl = body;
-    const next = el('div');
-
     const { status, sections, settings } = this.state;
+
     if ((status === 'loading' || status === 'running') && !sections?.length) {
-      const empty = el('div', 'c2md-empty');
-      empty.appendChild(progress({ ratio: null, label: '正在取文字' }));
-      next.appendChild(empty);
-    } else if (!sections?.length) {
-      if (status !== 'error') {
+      if (!body.querySelector('.c2md-empty')) {
+        const empty = el('div', 'c2md-empty');
+        empty.appendChild(progress({ ratio: null, label: '正在取文字' }));
+        body.replaceChildren(empty);
+      }
+      return body;
+    }
+    if (!sections?.length) {
+      if (status !== 'error' && !body.querySelector('.c2md-empty')) {
         const empty = el('div', 'c2md-empty');
         empty.textContent = '暂无笔记';
-        next.appendChild(empty);
+        body.replaceChildren(empty);
       }
-    } else {
-      const polished = Boolean(settings?.polish && this.state.polish?.hasResult);
-
-      for (const section of sections) {
-        const visible = section.segments.filter((seg) => seg.raw ?? seg.text);
-        if (!visible.length) continue;
-
-        const sec = el('section', 'c2md-section');
-        if (settings?.imageLevel !== 'none' && section.image) {
-          const figure = el('figure', 'c2md-frame');
-          const image = document.createElement('img');
-          image.src = section.image;
-          image.alt = `视频画面 ${fmtTs(section.t)}`;
-          image.loading = 'lazy';
-          figure.appendChild(image);
-          sec.appendChild(figure);
-        }
-        if (section.title) {
-          const h = el('h3', 'c2md-section-title');
-          h.textContent = section.title;
-          sec.appendChild(h);
-        }
-
-        for (const seg of section.segments) {
-          const raw = seg.raw ?? seg.text;
-          const shown = polished ? seg.text : raw;
-          if (!shown && !raw) continue;
-
-          const p = el('p', 'c2md-para');
-          p.dataset.id = String(seg.id);
-          p.dataset.state = seg.state ?? 'kept';
-          p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
-          p.dataset.start = String(seg.start);
-
-          const sec0 = Number(seg.start);
-          const stamp = document.createElement('button');
-          stamp.type = 'button';
-          stamp.className = 'c2md-ts c2md-num';
-          stamp.dataset.start = String(sec0);
-          stamp.textContent = fmtTs(sec0);
-          stamp.title = `跳转到 ${fmtTs(sec0)}`;
-          stamp.addEventListener('click', () => this.handlers.onSeek?.(sec0));
-          p.appendChild(stamp);
-
-          const say = el('span', 'c2md-say');
-          say.dataset.raw = raw;
-          if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
-          say.textContent = shown;
-          p.appendChild(say);
-
-          sec.appendChild(p);
-        }
-        next.appendChild(sec);
-      }
+      return body;
     }
+
+    const reusable = new Map();
+    for (const p of body.querySelectorAll('.c2md-para')) reusable.set(p.dataset.id, p);
+    const reused = new Set();
+    const next = el('div');
+    const polished = Boolean(settings?.polish && this.state.polish?.hasResult);
+
+    for (const section of sections) {
+      if (!section.segments.some((seg) => seg.raw ?? seg.text)) continue;
+      const sec = el('section', 'c2md-section');
+      if (settings?.imageLevel !== 'none' && section.image) {
+        const figure = el('figure', 'c2md-frame');
+        const image = document.createElement('img');
+        image.src = section.image;
+        image.alt = `视频画面 ${fmtTs(section.t)}`;
+        image.loading = 'lazy';
+        figure.appendChild(image);
+        sec.appendChild(figure);
+      }
+      if (section.title) {
+        const h = el('h3', 'c2md-section-title');
+        h.textContent = section.title;
+        sec.appendChild(h);
+      }
+
+      for (const seg of section.segments) {
+        const raw = seg.raw ?? seg.text;
+        const shown = polished ? seg.text : raw;
+        if (!shown && !raw) continue;
+        const id = String(seg.id);
+        const existing = !reused.has(id) ? reusable.get(id) : undefined;
+        reused.add(id);
+        if (existing) {
+          // 就地更新：状态、显隐、文本，有变化才动 DOM，避免无谓的布局抖动
+          const say = existing.querySelector('.c2md-say');
+          const state = seg.state ?? 'kept';
+          if (existing.dataset.state !== state) existing.dataset.state = state;
+          const display = polished && seg.state === 'skipped' ? 'none' : '';
+          if (existing.style.display !== display) existing.style.display = display;
+          if (say.dataset.raw !== raw) say.dataset.raw = raw;
+          if (seg.raw && seg.text && seg.raw !== seg.text) {
+            if (say.dataset.polished !== seg.text) say.dataset.polished = seg.text;
+          } else if (say.dataset.polished !== undefined) {
+            delete say.dataset.polished;
+          }
+          const target = polished && say.dataset.polished ? say.dataset.polished : say.dataset.raw;
+          if (say.textContent !== target) say.textContent = target;
+          sec.append(existing);
+        } else {
+          sec.append(this.buildPara(seg, polished));
+        }
+      }
+      next.append(sec);
+    }
+
+    // 先加新、后删旧：滚动高度不经历塌陷，浏览器不需要中途钳位
     const stale = [...body.childNodes];
     body.append(...next.childNodes);
     for (const node of stale) node.remove();
     return body;
+  }
+
+  buildPara(seg, polished) {
+    const raw = seg.raw ?? seg.text;
+    const shown = polished ? seg.text : raw;
+    const p = el('p', 'c2md-para');
+    p.dataset.id = String(seg.id);
+    p.dataset.state = seg.state ?? 'kept';
+    p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
+    p.dataset.start = String(seg.start);
+
+    const sec0 = Number(seg.start);
+    const stamp = document.createElement('button');
+    stamp.type = 'button';
+    stamp.className = 'c2md-ts c2md-num';
+    stamp.dataset.start = String(sec0);
+    stamp.textContent = fmtTs(sec0);
+    stamp.title = `跳转到 ${fmtTs(sec0)}`;
+    stamp.addEventListener('click', () => this.handlers.onSeek?.(sec0));
+    p.appendChild(stamp);
+
+    const say = el('span', 'c2md-say');
+    say.dataset.raw = raw;
+    if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
+    say.textContent = shown;
+    p.appendChild(say);
+    return p;
   }
 
   // ---------- 底部 ----------

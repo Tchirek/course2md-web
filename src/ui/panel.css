@@ -190,6 +190,9 @@
 .c2md-panel-body {
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 原生滚动锚定关掉：面板用自己的视口锚定（captureAnchor/restoreAnchor），
+     两套同时开会对同一处位移补偿两次。 */
+  overflow-anchor: none;
   padding: var(--s-4) var(--s-4) var(--s-6);
   scrollbar-width: thin;
 }
