@@ -113,12 +113,24 @@ def extract_archive(archive, target):
                     raise RuntimeError('运行库压缩包路径异常')
             source.extractall(target)
     else:
+        # macOS / Linux の配布物は共有ライブラリの相対リンク（libllama.so -> libllama.so.0 など）を
+        # 含む。リンクを一律に拒むと展開できないので、展開先の中で完結するものだけを許す
         with tarfile.open(archive) as source:
+            if hasattr(tarfile, 'data_filter'):
+                # 'data' フィルタ：絶対パス、展開先の外へ出るパスやリンク、デバイスファイルを拒む
+                source.extractall(target, filter='data')
+                return
+            root = Path(target).resolve()
             for member in source.getmembers():
-                if member.name.startswith('/') or '..' in Path(member.name).parts:
+                destination = (root / member.name).resolve()
+                if root != destination and root not in destination.parents:
                     raise RuntimeError('运行库压缩包路径异常')
-                if member.issym() or member.islnk():
-                    raise RuntimeError('运行库压缩包含链接，拒收')
+                if member.issym():
+                    link = (destination.parent / member.linkname).resolve()
+                    if root not in link.parents:
+                        raise RuntimeError('运行库压缩包的链接指向目录之外，拒收')
+                elif member.islnk() or member.isdev():
+                    raise RuntimeError('运行库压缩包含硬链接或设备文件，拒收')
             source.extractall(target)
 
 
