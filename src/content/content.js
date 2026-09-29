@@ -691,6 +691,11 @@ class Controller {
   refreshImages() {
     const sections = this.built?.sections ?? this.liveSections;
     if (!sections || !this.meta) return this.imagePromise;
+    if (this.imageLevel !== this.settings.imageLevel) {
+      this.imageAbort?.abort();
+      this.imageQueue.clear();
+      this.imageInFlight.clear();
+    }
     if (!this.imageAbort || this.imageAbort.signal.aborted) this.imageAbort = new AbortController();
     if (this.imageLevel !== this.settings.imageLevel) this.imageError = null;
     this.imageLevel = this.settings.imageLevel;

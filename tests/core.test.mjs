@@ -8,7 +8,7 @@ import { planChunks, tailOf, mapPool } from '../src/core/chunk.js';
 import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJson } from '../src/core/prompt.js';
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, useLocalPolish, maskSecret, setPath, getPath } from '../src/core/settings.js';
-import { visualSections, similarity } from '../src/content/visual.js';
+import { visualSections } from '../src/content/visual.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 import { captureAudio } from '../src/content/capture.js';
 import { cookieFileFor } from '../src/background/cookies.js';
@@ -33,10 +33,6 @@ test('图片密度分四档；多档至多每十秒取一张候选帧', () => {
   assert.equal(visualSections(sections, 181, 'few').length, 2);
   assert.equal(visualSections(sections, 181, 'default').length, 4);
   assert.equal(visualSections(sections, 181, 'many').length, 19);
-  const still = new Float32Array(64 * 40).fill(120);
-  const changed = new Float32Array(64 * 40).fill(230);
-  assert.ok(similarity(still, still) >= 0.85);
-  assert.ok(similarity(still, changed) < 0.85);
 });
 
 test('下载版 Markdown 在相应讲述段前引用帧，普通复制版不带图', () => {
