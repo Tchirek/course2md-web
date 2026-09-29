@@ -24,7 +24,7 @@
           <div class="row">
             <label for="sub-lang">
               首选语言
-              <span class="c2md-meta">语言代码，如 zh-Hans、en。留空则跟随页面。</span>
+              <span class="c2md-meta">如 zh-Hans、en；留空自动选择</span>
             </label>
             <input id="sub-lang" type="text" placeholder="跟随页面" spellcheck="false" />
           </div>
@@ -39,15 +39,11 @@
 
       <section class="block" id="block-asr">
         <h2>本地模型转录</h2>
-        <p class="c2md-meta">
-          首次运行 npm run local:install；下方按钮启动服务，缺少 small 模型时自动下载。
-        </p>
-
         <div class="rows">
           <div class="row">
             <label for="asr-endpoint">
               服务地址
-              <span class="c2md-meta">内置服务 8081 · whisper.cpp 默认 8080</span>
+              <span class="c2md-meta">内置 8081 · whisper.cpp 8080</span>
             </label>
             <input id="asr-endpoint" type="text" spellcheck="false" />
           </div>
@@ -76,7 +72,7 @@
           <div class="row">
             <label for="asr-chunk">
               切片长度（秒）
-              <span class="c2md-meta">默认 30；越短时间戳越准。</span>
+              <span class="c2md-meta">默认 30</span>
             </label>
             <input id="asr-chunk" type="number" min="5" max="120" step="5" />
           </div>
@@ -84,7 +80,7 @@
           <div class="row">
             <label for="asr-rate">
               录制倍率
-              <span class="c2md-meta">仅录音回退有效；加速会变调。</span>
+              <span class="c2md-meta">仅录音时有效</span>
             </label>
             <input id="asr-rate" type="number" min="1" max="16" step="1" />
           </div>
@@ -102,7 +98,6 @@
         <h2>润色</h2>
         <div class="rows">
           <div class="row"><span class="row-label">润色方式</span><div id="llm-engine"></div></div>
-          <p class="c2md-meta">本机：内置 FireRedPunc + Qwen3.5-2B，免费在本机运行；自备 API：使用你自己配置的 OpenAI 兼容 LLM。</p>
         </div>
         <div class="block-actions"><button type="button" class="c2md-button" id="llm-local-start">启用本机润色</button><span class="c2md-meta" id="llm-local-result"></span></div>
 
@@ -110,7 +105,7 @@
           <div class="row">
             <label for="llm-url">
               服务地址
-              <span class="c2md-meta">到 /v1 为止，例如 https://api.deepseek.com/v1</span>
+              <span class="c2md-meta">OpenAI 兼容地址，止于 /v1</span>
             </label>
             <input id="llm-url" type="text" spellcheck="false" />
           </div>
@@ -169,10 +164,9 @@
       </section>
 
       <section class="block block--quiet">
-        <h2>回到初始状态</h2>
-        <p class="c2md-meta">会清空密钥与自定义内容。</p>
+        <h2>重置</h2>
         <div class="block-actions">
-          <button type="button" class="c2md-button" id="reset">恢复默认设置</button>
+          <button type="button" class="c2md-button" id="reset">恢复默认设置并清空密钥</button>
           <span class="c2md-meta" id="reset-result"></span>
         </div>
       </section>

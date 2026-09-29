@@ -227,9 +227,14 @@ export class Panel {
     const scrollTop = this.bodyEl?.scrollTop ?? 0;
     const atBottom = this.bodyEl && this.bodyEl.scrollHeight - this.bodyEl.clientHeight - scrollTop < 80;
 
+    const reuseToggles = this.controlsSettings === this.state.settings &&
+      this.controlsPolishRunning === Boolean(this.state.polish?.running);
+    const toggles = reuseToggles ? this.scope.querySelector('.c2md-panel-toggles') : null;
+    this.controlsSettings = this.state.settings;
+    this.controlsPolishRunning = Boolean(this.state.polish?.running);
     this.scope.replaceChildren(
       this.renderHead(),
-      this.renderToggles(),
+      toggles ?? this.renderToggles(),
       this.renderStatus(),
       this.renderBody(),
       this.renderFoot(),
@@ -397,7 +402,7 @@ export class Panel {
   // ---------- 底部 ----------
   renderFoot() {
     const foot = el('div', 'c2md-panel-foot');
-    const { status, settings, polish } = this.state;
+    const { status, settings } = this.state;
     const ready = status === 'ready';
     const exportReady = ready && (!this.state.imagesPending || settings?.imageLevel === 'none');
 
@@ -407,13 +412,6 @@ export class Panel {
     save.disabled = !exportReady;
 
     foot.append(copy, save);
-
-    // 勾了润色但还没跑过：把「开始润色」放在最容易看到的位置
-    if (settings?.polish && !polish?.hasResult && status === 'ready') {
-      const run = button(polish?.running ? '润色中' : '开始润色', () => this.handlers.onRepolish?.());
-      run.disabled = Boolean(polish?.running);
-      foot.appendChild(run);
-    }
 
     const spacer = el('div', 'c2md-actions-spacer');
     foot.appendChild(spacer);

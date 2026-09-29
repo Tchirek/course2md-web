@@ -141,6 +141,13 @@ try {
     }
 
     if (state === 'running') {
+      const stable = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const before = panel.scope.querySelector('.c2md-panel-toggles');
+        panel.setState({ sections: [...panel.state.sections] });
+        return before === panel.scope.querySelector('.c2md-panel-toggles');
+      });
+      stable ? pass('panel/running 正文更新不重建悬停中的选项') : fail('panel/running', '正文更新重建了选项');
       const count = await page.evaluate(() => document.getElementById('c2md-panel-host')?.shadowRoot.querySelectorAll('.c2md-para').length ?? 0);
       count > 0 ? pass('panel/running 已完成的文本可见') : fail('panel/running', '运行中仍隐藏已完成的文本');
     }
@@ -221,6 +228,11 @@ try {
       counts.before === 'none' && counts.after !== 'none' && counts.original
         ? pass('panel/polished 可切回完整原版转录')
         : fail('panel/polished', `原版切换失败：${JSON.stringify(counts)}`);
+    }
+    if (state === 'ready' || state === 'polished') {
+      const extra = await page.evaluate(() => [...window.__selftestPanel.scope.querySelectorAll('.c2md-panel-foot button')]
+        .some((button) => /开始润色|润色中/.test(button.textContent)));
+      !extra ? pass(`panel/${state} 无多余润色按钮`) : fail(`panel/${state}`, '仍有开始润色按钮');
     }
 
     await page.close();
