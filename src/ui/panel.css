@@ -193,6 +193,8 @@
   /* 原生滚动锚定关掉：面板用自己的视口锚定（captureAnchor/restoreAnchor），
      两套同时开会对同一处位移补偿两次。 */
   overflow-anchor: none;
+  /* 滚动条出现/消失不改变文本宽度：短内容下进出滚动状态不重排 */
+  scrollbar-gutter: stable;
   padding: var(--s-4) var(--s-4) var(--s-6);
   scrollbar-width: thin;
 }
@@ -272,13 +274,13 @@ button.c2md-ts:hover {
   color: var(--ink-3);
 }
 
-/* 正在跳过的段落：短暂高亮，让用户知道点到了哪一段 */
+/* 正在跳过的段落：短暂高亮，让用户知道点到了哪一段。
+   用外扩的阴影而不是 padding——高亮的出现与消退不允许改变版面高度，
+   否则点一次时间戳，下面的文本就沉降再回弹一次。 */
 .c2md-para[data-active='true'] {
   background: var(--mark-soft);
   border-radius: var(--radius-sm);
-  margin-left: calc(var(--s-2) * -1);
-  margin-right: calc(var(--s-2) * -1);
-  padding: var(--s-2);
+  box-shadow: 0 0 0 var(--s-2) var(--mark-soft);
 }
 
 /* ---------- 底部 ---------- */

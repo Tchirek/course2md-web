@@ -188,6 +188,8 @@ export class Panel {
           el.classList.remove('c2md-say--fresh');
           void el.offsetWidth;
           el.classList.add('c2md-say--fresh');
+          // 脉冲放完就摘类：残留的完成态动画一旦节点被移动可能重放（深绿闪）
+          el.addEventListener('animationend', () => el.classList.remove('c2md-say--fresh'), { once: true });
         }
       }
     }
@@ -218,6 +220,8 @@ export class Panel {
         say.classList.remove('c2md-say--fresh');
         void say.offsetWidth;
         say.classList.add('c2md-say--fresh');
+        // 脉冲放完就摘类，避免残留动画随后续重排重放
+        say.addEventListener('animationend', () => say.classList.remove('c2md-say--fresh'), { once: true });
       }
     }
   }
@@ -429,6 +433,8 @@ export class Panel {
         if (existing) {
           // 就地更新：状态、显隐、文本，有变化才动 DOM，避免无谓的布局抖动
           const say = existing.querySelector('.c2md-say');
+          // 段落要在小节间挪窝：摘掉残留的润色脉冲，别让旧动画跟着重放
+          say.classList.remove('c2md-say--fresh');
           const state = seg.state ?? 'kept';
           if (existing.dataset.state !== state) existing.dataset.state = state;
           const display = polished && seg.state === 'skipped' ? 'none' : '';
