@@ -6,6 +6,7 @@
 //! 约束（host_permissions），完全绕开页面策略。
 
 import { timedRequest } from './net.js';
+import { plaintextKeyProblem } from '../core/endpoint.js';
 
 /** 与 course2md 一致：校对任务不需要创造性，温度取 0。 */
 const TEMPERATURE = 0;
@@ -35,6 +36,9 @@ export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, 
     temperature: TEMPERATURE,
     stream: Boolean(onDelta),
   };
+
+  const unsafe = plaintextKeyProblem(endpoint, apiKey);
+  if (unsafe) return { ok: false, error: unsafe, retryable: false };
 
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
@@ -152,6 +156,9 @@ function backoff(attempt) {
  */
 export async function testConnection({ baseUrl, apiKey, model }) {
   const base = String(baseUrl).replace(/\/+$/, '');
+  // /models の探りにも key が付くので、送る前に止める
+  const unsafe = plaintextKeyProblem(base, apiKey);
+  if (unsafe) return { ok: false, message: unsafe };
   try {
     const json = await timedRequest(`${base}/models`, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} }, 15_000,
       async (res) => (res.ok ? res.json() : null));

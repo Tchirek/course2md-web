@@ -107,3 +107,31 @@ test('ASR の期限切れは「已取消」ではなく超時として返す', a
     globalThis.fetch = original;
   }
 });
+
+test('API key を平文 http で機械の外へは送らない（回環アドレスは可）', async () => {
+  const { isLoopbackUrl, plaintextKeyProblem } = await import('../src/core/endpoint.js');
+  assert.equal(isLoopbackUrl('http://127.0.0.1:8082/v1'), true);
+  assert.equal(isLoopbackUrl('http://localhost:11434/v1'), true);
+  assert.equal(isLoopbackUrl('http://[::1]:8080/v1'), true);
+  assert.equal(isLoopbackUrl('http://192.168.1.5:8080/v1'), false);
+  assert.equal(isLoopbackUrl('http://127.0.0.1.example.com/v1'), false);
+  assert.equal(plaintextKeyProblem('http://192.168.1.5/v1', ''), '', 'key が無ければ http でも構わない');
+  assert.equal(plaintextKeyProblem('https://api.example.com/v1', 'sk-x'), '');
+
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return okReply(); };
+  try {
+    const remote = await chat({ baseUrl: 'http://api.example.com/v1', apiKey: 'sk-secret', model: 'm', messages: [] });
+    assert.equal(remote.ok, false);
+    assert.match(remote.error, /https/);
+    const asr = await transcribe({ endpoint: 'http://10.0.0.2/v1/audio/transcriptions', apiKey: 'k', model: 's', audio: new Uint8Array([1]) });
+    assert.equal(asr.ok, false);
+    assert.equal(calls, 0, '要求そのものを出してはならない');
+    const local = await chat({ baseUrl: 'http://127.0.0.1:8082/v1', apiKey: 'sk-local', model: 'm', messages: [] });
+    assert.equal(local.ok, true);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

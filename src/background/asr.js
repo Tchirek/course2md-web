@@ -7,6 +7,7 @@
 //! 端点地址、模型名、可选的 API key 都由用户自己填，插件不预设任何云服务。
 
 import { timedRequest } from './net.js';
+import { plaintextKeyProblem } from '../core/endpoint.js';
 
 const REQUEST_TIMEOUT_MS = 300_000;
 
@@ -43,6 +44,8 @@ export async function transcribe({
 }) {
   const url = String(endpoint ?? '').trim();
   if (!url) return { ok: false, error: '还没填写本机 ASR 端点地址。' };
+  const unsafe = plaintextKeyProblem(url, apiKey);
+  if (unsafe) return { ok: false, error: unsafe };
 
   const bytes = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
   if (!bytes.byteLength) return { ok: false, error: '音频切片是空的。' };
@@ -111,6 +114,8 @@ export function parseAsrResponse(data) {
 export async function testEndpoint({ endpoint, apiKey, model }) {
   const url = String(endpoint ?? '').trim();
   if (!url) return { ok: false, message: '还没填写端点地址。' };
+  const unsafe = plaintextKeyProblem(url, apiKey);
+  if (unsafe) return { ok: false, message: unsafe };
 
   // 先试着读模型列表；读不到不算错，直接发 0.3 秒的静音去实测
   try {
