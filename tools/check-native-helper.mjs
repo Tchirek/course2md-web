@@ -1,31 +1,94 @@
 // Verify the installed native host can launch an HTTP helper from a cold state.
-// Windows 的 .exe 宿主和跨平台的 Node 宿主（macOS/Linux 实际使用的那个）跑同一套
-// 冷启动流程：各自放进隔离目录、指向一个一次性 fixture 服务，从零拉起再应答。
-import { spawn } from 'node:child_process';
+// まずブラウザがホストを探すのと同じ経路で実際の登録を確かめる（レジストリ/マニフェスト →
+// ホスト本体 → 許可された拡張 ID → 設定内の Node とヘルパースクリプト）。続いて Windows の
+// .exe ホストとクロスプラットフォームの Node ホスト（macOS/Linux で実際に使う方）に同じ
+// コールドスタート手順を踏ませる：それぞれ隔離ディレクトリに置き、使い捨ての fixture
+// サービスを指させて、ゼロから起動して応答させる。
+// 使い方：node tools/check-native-helper.mjs [拡張ID]
+import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const HOST_NAME = 'com.course2md.helper';
+const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
+
+let failed = false;
+const problems = registrationProblems();
+for (const problem of problems) console.error(`注册：${problem}`);
+if (problems.length) failed = true;
+else console.log(`注册：浏览器能找到宿主，且允许扩展 ${extensionId} 调用`);
+
 const hosts = [];
 if (process.platform === 'win32') {
   const exe = join(process.env.LOCALAPPDATA, 'course2md', 'native-helper.exe');
   if (existsSync(exe)) hosts.push({ label: '.exe 宿主', command: exe, configEol: '\r\n' });
-  else console.log('.exe 宿主未安装（运行 npm run local:install 后可查）；跳过');
 }
 hosts.push({ label: 'Node 宿主', command: process.execPath, scriptSource: join(HERE, 'native-host.mjs'), configEol: '\n' });
 
-let failed = false;
 for (const host of hosts) {
   try { await checkHost(host); } catch (error) {
     failed = true;
     console.error(`${host.label}：${error.message}`);
   }
 }
+if (failed) console.error('修复：在项目目录运行 npm run local:install（扩展 ID 不是默认值时：node tools/install-local-asr.mjs <扩展ID>）');
 process.exit(failed ? 1 : 0);
+
+/** ブラウザごとに参照先が異なる。どこか一箇所が完全なら使えるので、残りの欠落は注意表示に留める。全滅なら各箇所の断点を返す。 */
+function registrationProblems() {
+  const found = [];
+  for (const { where, manifestPath } of manifestLocations()) {
+    const issue = manifestPath ? manifestProblem(manifestPath) : '未注册';
+    found.push({ where, issue });
+  }
+  if (found.some(({ issue }) => !issue)) {
+    for (const { where, issue } of found) if (issue) console.log(`注册（提示）：${where} ${issue}`);
+    return [];
+  }
+  return found.map(({ where, issue }) => `${where} ${issue}`);
+}
+
+function manifestLocations() {
+  if (process.platform === 'win32') {
+    return ['Microsoft\\Edge', 'Google\\Chrome'].map((browser) => {
+      const where = `HKCU\\Software\\${browser}\\NativeMessagingHosts\\${HOST_NAME}`;
+      const query = spawnSync('reg.exe', ['query', where, '/ve'], { encoding: 'utf8' });
+      const manifestPath = query.status === 0 ? query.stdout.match(/REG_SZ\s+(.+?)\s*$/m)?.[1] ?? null : null;
+      return { where, manifestPath };
+    });
+  }
+  const roots = process.platform === 'darwin'
+    ? ['Microsoft Edge', 'Google/Chrome', 'Chromium'].map((name) => join(homedir(), 'Library', 'Application Support', name))
+    : ['microsoft-edge', 'google-chrome', 'chromium'].map((name) => join(homedir(), '.config', name));
+  return roots.map((root) => {
+    const where = join(root, 'NativeMessagingHosts', `${HOST_NAME}.json`);
+    return { where, manifestPath: existsSync(where) ? where : null };
+  });
+}
+
+function manifestProblem(manifestPath) {
+  if (!existsSync(manifestPath)) return `→ 清单文件不存在：${manifestPath}`;
+  let manifest;
+  try { manifest = JSON.parse(readFileSync(manifestPath, 'utf8')); } catch (error) {
+    return `→ 清单无法解析：${manifestPath}（${error.message}）`;
+  }
+  if (manifest.name !== HOST_NAME) return `→ 清单 name 应为 ${HOST_NAME}`;
+  if (!manifest.path || !existsSync(manifest.path)) return `→ 宿主程序不存在：${manifest.path}`;
+  if (!manifest.allowed_origins?.includes(`chrome-extension://${extensionId}/`)) {
+    return `→ 未允许扩展 ${extensionId}（只允许 ${manifest.allowed_origins?.join('、') || '无'}）`;
+  }
+  const configPath = join(dirname(manifest.path), 'native-helper.config');
+  if (!existsSync(configPath)) return `→ 宿主配置不存在：${configPath}`;
+  const [nodePath, helperPath] = readFileSync(configPath, 'utf8').split(/\r?\n/).filter((line) => line.trim() !== '');
+  if (!nodePath || !existsSync(nodePath)) return `→ 配置里的 Node 不存在：${nodePath}`;
+  if (!helperPath || !existsSync(helperPath)) return `→ 配置里的助手脚本不存在：${helperPath}`;
+  return null;
+}
 
 async function checkHost({ label, command, scriptSource = null, configEol }) {
   const dir = await mkdtemp(join(tmpdir(), 'c2md-native-'));
@@ -46,7 +109,10 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
     }
     await writeFile(join(dir, 'fixture.mjs'), `import http from 'node:http';\nconst server=http.createServer((req,res)=>{res.end('ok');if(req.url==='/shutdown')server.close()});server.listen(${port},'127.0.0.1');\n`);
     await writeFile(join(dir, 'native-helper.config'), `${process.execPath}${configEol}${join(dir, 'fixture.mjs')}${configEol}${health}${configEol}`);
-    const child = spawn(command, scriptSource ? [hostPath] : [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    // .exe ホストは自身の置き場所から設定を探すので、隔離ディレクトリ内のコピーを実行しないと実インストールの設定を読んでしまう
+    const child = scriptSource
+      ? spawn(command, [hostPath], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+      : spawn(hostPath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     const body = Buffer.from('{"action":"start"}');
     const size = Buffer.alloc(4);
     size.writeUInt32LE(body.length);
