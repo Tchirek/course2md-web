@@ -1,6 +1,6 @@
 {
   "name": "course2md-web",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "浏览器插件：把视频页面变成带时间戳、可跳转、可润色的 Markdown 笔记",
   "type": "module",
