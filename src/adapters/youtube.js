@@ -90,7 +90,7 @@ export async function tracks(_info, { onProgress } = {}) {
     // ページ側は広告が再生され続ける限り終了を待ち（最長 10 分）、その後プレーヤーに字幕を読ませる
     token = await callPage('yt.captionToken', [videoId, first.languageCode, first.kind], { timeoutMs: 630_000 });
     if (!token?.pot) {
-      throw new MissingSourceError('没有取到 YouTube 字幕的访问凭证（广告被暂停或播放器尚未就绪）。');
+      throw new MissingSourceError('没有取到 YouTube 字幕的访问凭证（广告被暂停或播放器尚未就绪）。', { brief: '没有取到 YouTube 字幕' });
     }
   }
 

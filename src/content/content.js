@@ -66,7 +66,6 @@ export class Controller {
       onRepolish: () => this.repolish(),
       onOptions: (section) => this.openOptions(section),
       onClose: () => this.closePanel(),
-      onSwitchToAsr: () => this.switchToAsr(),
     });
   }
 
@@ -261,7 +260,8 @@ export class Controller {
       segmented: this.built ? this.built.segments.length : 0,
       polish: { ...this.polishState },
       error: this.error,
-      warnings: this.built?.warnings ?? [],
+      // 自動切り替えの知らせは、文字起こしの途中や失敗時にも見えるようにする（完成後は built.warnings にある）
+      warnings: this.built?.warnings ?? (this.fallbackNotice ? [this.fallbackNotice] : []),
       stageLabel: this.stageLabel,
       stageRatio: this.stageRatio,
       imagesPending: this.imagesPending,
@@ -313,6 +313,7 @@ export class Controller {
     this.stageRatio = null;
     this.error = null;
     this.imageError = null;
+    this.fallbackNotice = null;
     this.built = null;
     this.previewSections = [];
     this.doc = null;
@@ -358,9 +359,22 @@ export class Controller {
         },
       };
 
-      const built = this.settings.source === 'asr'
-        ? await runAsrPipeline(common)
-        : await runSubtitlePipeline(common);
+      let built;
+      if (this.settings.source === 'asr') {
+        built = await runAsrPipeline(common);
+      } else {
+        try {
+          built = await runSubtitlePipeline(common);
+        } catch (error) {
+          if (!(error instanceof MissingSourceError) || runAbort.signal.aborted) throw error;
+          // 平台字幕が使えなければ、この回だけ本機の文字起こしへ自動で切り替える。
+          // 設定は変えない：次の動画に字幕があればそのまま字幕を使う
+          this.fallbackNotice = `${error.brief ?? '没有可用的平台字幕'}，已自动改用本地模型转录`;
+          this.broadcast();
+          built = await runAsrPipeline(common);
+          built.warnings.unshift(this.fallbackNotice);
+        }
+      }
 
       if (runAbort.signal.aborted) throw new AbortError();
       this.meta = meta;
@@ -405,9 +419,6 @@ export class Controller {
       } else {
         this.status = 'error';
         this.error = toErrorState(error);
-        if (error instanceof MissingSourceError && this.settings.source === 'subtitle') {
-          this.error.switchToAsr = true;
-        }
       }
       this.stageLabel = '';
     }
@@ -583,12 +594,6 @@ export class Controller {
     this.doc = null;
     this.broadcast();
     return { cancelled: true };
-  }
-
-  async switchToAsr() {
-    await this.patchSettings({ source: 'asr' });
-    this.settings.source = 'asr';
-    return this.run();
   }
 
   // ---------- 动作 ----------

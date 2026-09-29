@@ -117,7 +117,7 @@ async function subtitleTracks(info) {
     json = await biliFetch(`https://api.bilibili.com/x/player/wbi/v2?${query}`);
   } catch (error) {
     // 「字幕なし」と混同させない。代わりの取得元はないので理由をそのまま伝える
-    throw new MissingSourceError(`B 站字幕接口暂时不可用（${error?.message ?? error}）。稍后重新生成，或改用「本地模型转录」。`);
+    throw new MissingSourceError(`B 站字幕接口暂时不可用（${error?.message ?? error}）。`, { brief: 'B 站字幕接口暂时不可用' });
   }
   const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
   return { tracks: Array.isArray(tracks) ? tracks : [], needLogin: Boolean(json?.data?.need_login_subtitle) };
@@ -131,9 +131,7 @@ export async function tracks(info) {
 
   // 字幕元数据要登录；明确告诉用户下一步，而不是让他们对着空结果猜
   if (!list.length && needLogin) {
-    throw new MissingSourceError(
-      'B 站字幕要登录后才能获取。登录 B 站后重新生成；不想登录就改用「本地模型转录」从音频转写。',
-    );
+    throw new MissingSourceError('B 站字幕要登录后才能获取。', { brief: 'B 站字幕需登录后获取' });
   }
 
   return list

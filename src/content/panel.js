@@ -12,7 +12,7 @@ export class Panel {
    * @param {object} handlers
    * @param {(patch:object) => void} handlers.onSettings
    * @param {(seconds:number) => void} handlers.onSeek
-   * @param {'copy'|'copyText'|'download'|'rerun'|'repolish'|'options'|'close'|'switchToAsr'} handlers …各动作
+   * @param {'copy'|'copyText'|'download'|'rerun'|'repolish'|'options'|'close'} handlers …各动作
    */
   constructor(handlers) {
     this.handlers = handlers;
@@ -310,11 +310,6 @@ export class Panel {
     const { error, warnings } = this.state;
     if (error) {
       const actions = [];
-      if (error.switchToAsr) {
-        actions.push(
-          button('改用本地模型转录', () => this.handlers.onSwitchToAsr?.(), 'primary'),
-        );
-      }
       if (error.options) {
         actions.push(button('打开设置', () => this.handlers.onOptions?.(error.options)));
       }

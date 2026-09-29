@@ -3,13 +3,9 @@
 //! 原则：区分「你没配置」和「它坏了」。前者要给下一步按钮，后者要给真实原因
 //! ——尤其是 LLM / ASR 报回来的原话，用户改配置时需要看到它。
 
-/** 取不到平台字幕时的通用说明。 */
-export const MISSING_SOURCE_HINT =
-  '可以在「文字来源」里改成「本地模型转录」，用本机模型从音频转写。';
-
 /**
  * @param {unknown} error
- * @returns {{title:string, body:string, options?:string, switchToAsr?:boolean, detail?:string}}
+ * @returns {{title:string, body:string, options?:string, detail?:string}}
  */
 export function toErrorState(error) {
   const message = String(error?.message ?? error ?? '未知错误').trim();

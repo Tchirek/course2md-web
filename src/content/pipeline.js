@@ -60,15 +60,14 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
 
   const tracks = await adapter.tracks(meta, { onProgress: (message) => onProgress?.('tracks', { message }) });
   if (!tracks.length) {
-    throw new MissingSourceError(
-      '这个页面没有可用的字幕。可以在「文字来源」里改成「本地模型转录」，用本机模型从音频转写。',
-    );
+    throw new MissingSourceError('这个页面没有可用的字幕。', { brief: '这个视频没有平台字幕' });
   }
 
   const remaining = [...tracks];
   let track;
   let events = [];
   let lastError = '';
+  let mismatched = false;
   while ((track = pickTrack(remaining, {
     preferLang: settings.subtitle.preferLang,
     allowAuto: settings.subtitle.allowAuto,
@@ -80,14 +79,15 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
     if (overrunsDuration(events, meta.duration)) {
       lastError = `「${trackLabel(track)}」的字幕长到 ${fmtTs(events.at(-1).end)}，超出视频时长 ${fmtTs(meta.duration)}，疑似其他视频的字幕，已拒用`;
       events = [];
+      mismatched = true;
     }
     if (events.length) break;
     remaining.splice(remaining.indexOf(track), 1);
   }
   if (!events.length) {
-    throw new MissingSourceError(
-      `${lastError ? `${lastError}。` : '平台没有返回可用字幕。'}可改用本地模型转录。`,
-    );
+    throw new MissingSourceError(lastError ? `${lastError}。` : '平台没有返回可用字幕。', {
+      brief: mismatched ? '平台字幕与视频不符' : '平台字幕读取失败',
+    });
   }
   if (signal?.aborted) throw new AbortError();
 

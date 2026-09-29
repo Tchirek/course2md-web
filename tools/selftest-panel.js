@@ -41,7 +41,6 @@ const panel = new Panel({
   onRepolish: () => {},
   onOptions: () => {},
   onClose: () => panel.unmount(),
-  onSwitchToAsr: () => {},
 });
 
 // 用真实管线把假事件组织成分节与段落——不是手摆的 DOM
@@ -91,8 +90,8 @@ if (scenario === 'running') {
     status: 'error',
     error: {
       title: '取不到文字',
-      body: '这个页面没有可用的字幕。可以在「文字来源」里改成「本地模型转录」，用本机模型从音频转写。',
-      switchToAsr: true,
+      body: '本机音轨提取失败：ASR 第 1 片失败：HTTP 503 内存不足：系统可用内存（含虚拟内存）已耗尽',
+      options: 'asr',
     },
   });
 } else if (scenario === 'empty') {
