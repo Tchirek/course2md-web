@@ -1,8 +1,11 @@
 //! B 站适配器：元信息、字幕轨、章节（看点）、跳转。
 //!
-//! 字幕只认播放器 JSON 接口（/x/player/v2，按 aid+cid 严格对应本视频）。
-//! 曾经的 Protobuf 回落接口（/x/v2/subtitle/web/view）返回的是加密分发地址，
-//! 内容归属无法验证，实测会给 A 视频返回 B 视频的字幕，已弃用。
+//! 字幕は /x/player/wbi/v2 だけから取る（yutto と同じ）。字幕 JSON には動画を示す
+//! 情報がなく、内容の帰属は取得元の API でしか担保できない。
+//! /x/player/v2 はログイン中でも字幕 URL の auth_key が他動画の字幕を指すことが多く
+//! （実測で正しいのは約 3 分の 1。パスは本動画の aid+cid のままで、見分けがつかない）、
+//! 字幕には使わない。Protobuf の /x/v2/subtitle/web/view も暗号化された配信先で
+//! 帰属を検証できないため使わない。
 //! 请求从 B 站页面的内容脚本发出，保留浏览器登录态。
 
 import { MissingSourceError } from '../core/errors.js';
@@ -108,41 +111,32 @@ async function subtitleInfo(info) {
 }
 
 async function subtitleTracks(info) {
-  const query = new URLSearchParams({ bvid: info.videoId, aid: String(info.aid), cid: String(info.cid) });
-  let needLogin = false;
-  for (const endpoint of ['/x/player/v2', '/x/player/wbi/v2']) {
-    try {
-      const json = await biliFetch(`https://api.bilibili.com${endpoint}?${query}`);
-      const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
-      needLogin = needLogin || Boolean(json?.data?.need_login_subtitle);
-      if (Array.isArray(tracks) && tracks.length) return { tracks, needLogin };
-    } catch { /* 尝试下一种接口 */ }
+  const query = new URLSearchParams({ aid: String(info.aid), bvid: info.videoId, cid: String(info.cid) });
+  let json;
+  try {
+    json = await biliFetch(`https://api.bilibili.com/x/player/wbi/v2?${query}`);
+  } catch (error) {
+    // 「字幕なし」と混同させない。代わりの取得元はないので理由をそのまま伝える
+    throw new MissingSourceError(`B 站字幕接口暂时不可用（${error?.message ?? error}）。稍后重新生成，或改用「本地模型转录」。`);
   }
-  return { tracks: [], needLogin };
+  const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
+  return { tracks: Array.isArray(tracks) ? tracks : [], needLogin: Boolean(json?.data?.need_login_subtitle) };
 }
 
 export async function tracks(info) {
   const current = await subtitleInfo(info ?? {});
+  // ページのリソース一覧にある字幕 URL は使わない。プレーヤー自身は暗号化パスで取得するため、
+  // aid+cid を含む URL はこちらの取得の残りでしかなく、パスが正しくても中身は保証されない
   const { tracks: list, needLogin } = await subtitleTracks(current);
-  const loaded = (performance.getEntriesByType?.('resource') ?? [])
-    .map((entry) => entry.name)
-    .filter((name) => {
-      try {
-        const url = new URL(name);
-        return current.cid > 0 && ['aisubtitle.hdslb.com', 'subtitle.bilibili.com'].includes(url.hostname) &&
-          url.pathname.includes(String(current.cid)) && url.protocol === 'https:';
-      } catch { return false; }
-    })
-    .map((subtitle_url) => ({ subtitle_url, lan: 'ai-zh', lan_doc: '中文 AI', ai_type: 1 }));
 
   // 字幕元数据要登录；明确告诉用户下一步，而不是让他们对着空结果猜
-  if (!list.length && !loaded.length && needLogin) {
+  if (!list.length && needLogin) {
     throw new MissingSourceError(
       'B 站字幕要登录后才能获取。登录 B 站后重新生成；不想登录就改用「本地模型转录」从音频转写。',
     );
   }
 
-  return [...list, ...loaded]
+  return list
     .filter((t) => t && typeof t.subtitle_url === 'string' && t.subtitle_url)
     .map((t, i) => ({
       id: String(t.id ?? t.lan ?? i),
