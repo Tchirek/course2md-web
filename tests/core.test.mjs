@@ -84,17 +84,26 @@ test('润色文本不能把嵌套的 segments JSON 当作正文', () => {
   assert.equal(parsePolishResponse('{"segments":[{"id":0,"text":"{\\"segments\\":[{\\"id\\":0,\\"text\\":\\"误入正文\\"}]}"}]}'), null);
 });
 
-test('润色进度按全局段数计：分母是全部段落，已润色的不清零', () => {
+test('润色进度按时间线计：分母是视频总时长，恒定不回跳', () => {
   const events = [
-    ...Array.from({ length: 12 }, (_, i) => ({ start: i, state: 'polished' })),
-    ...Array.from({ length: 20 }, (_, i) => ({ start: 12 + i, state: 'kept' })),
+    { start: 0, end: 10, state: 'polished' },
+    { start: 10, end: 30, state: 'polished' },
+    { start: 30, end: 50, state: 'kept' },
   ];
-  assert.deepEqual(polishProgress(events), { done: 12, total: 32 });
-  // 下一批开始前语料又转出一段：分母变大，但已润色的不会归零
-  events.push({ start: 32, state: 'kept' });
-  assert.deepEqual(polishProgress(events), { done: 12, total: 33 });
-  assert.deepEqual(polishProgress([]), { done: 0, total: 0 });
-  assert.deepEqual(polishProgress(null), { done: 0, total: 0 });
+  assert.deepEqual(polishProgress(events, 100), { done: 30, total: 100 });
+  // 事件合并成段落后时间守恒，口径切换不重定基
+  const paragraphs = [
+    { start: 0, end: 30, state: 'polished' },
+    { start: 30, end: 50, state: 'kept' },
+  ];
+  assert.deepEqual(polishProgress(paragraphs, 100), { done: 30, total: 100 });
+  // 新转出的内容只可能落在分母之内，分母不动
+  assert.deepEqual(polishProgress([...events, { start: 50, end: 60, state: 'kept' }], 100), { done: 30, total: 100 });
+  // skipped 的段落会被续润重试，不算已润色
+  assert.deepEqual(polishProgress([{ start: 0, end: 10, state: 'skipped' }], 100), { done: 0, total: 100 });
+  // 没有时长元数据时退回按已见时间线计
+  assert.deepEqual(polishProgress(events), { done: 30, total: 50 });
+  assert.deepEqual(polishProgress(null, 100), { done: 0, total: 100 });
 });
 
 test('下载版 Markdown 在相应讲述段前引用帧，普通复制版不带图', () => {

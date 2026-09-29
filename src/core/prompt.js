@@ -167,11 +167,20 @@ export function resetPolish(segments) {
 }
 
 /**
- * 润色进度按全局段数计：分母是全部段落，分子是其中已润色的。
- * 分母不随润色批次重启，圆环才不会每开一批就归零回跳。
+ * 润色进度按时间线计：分母是视频总时长——一开始就已知，从此恒定不变，
+ * 不随批次切换或新转出的内容而变；分子是已润色段落的时长和。
+ * 事件合并成段落时时间守恒，所以口径切换也不会重定基。
+ * 拿不到时长元数据时退回按已见时间线计（分母随内容增长，属降级）。
  */
-export function polishProgress(segments) {
+export function polishProgress(segments, duration = 0) {
   let done = 0;
-  for (const seg of segments ?? []) if (seg.state === 'polished') done++;
-  return { done, total: segments?.length ?? 0 };
+  let seen = 0;
+  for (const seg of segments ?? []) {
+    const start = Number(seg?.start) || 0;
+    const end = Number(seg?.end) || 0;
+    if (end > seen) seen = end;
+    if (seg?.state === 'polished') done += Math.max(0, end - start);
+  }
+  const total = Number(duration) > 0 ? Number(duration) : seen;
+  return { done: Math.round(done), total: Math.round(total) };
 }

@@ -453,8 +453,8 @@ export class Controller {
       // 自备 LLM 三次都失败时，静默换成本机润色
       fallback: useLocal ? undefined : { ensure: () => this.ensureLocalPolish(signal) },
       onProgress: () => {
-        // 分母是全部段落而不是当前批次的队列，批次切换时圆环不再归零回跳
-        this.polishState = { ...this.polishState, running: true, ...polishProgress(segments) };
+        // 分母是视频总时长，恒定不变；分子是已润色内容的时长，圆环只进不退
+        this.polishState = { ...this.polishState, running: true, ...polishProgress(segments, this.meta?.duration) };
         this.panel.setState({ polish: this.polishState });
         this.broadcast(false);
       },
@@ -472,7 +472,7 @@ export class Controller {
     if (result.failed && !early) {
       this.built.warnings.push(`润色失败 ${result.failed}/${result.chunks}：${result.firstError || '模型未返回可用文本'}`);
     }
-    this.polishState = { hasResult: true, running: false, ...polishProgress(segments) };
+    this.polishState = { hasResult: true, running: false, ...polishProgress(segments, this.meta?.duration) };
     if (!early) {
       this.doc = finalize(this.built, this.meta, this.settings);
       await this.saveCache();
