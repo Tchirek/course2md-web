@@ -107,7 +107,7 @@ test('润色进度按时间线计：分母是视频总时长，恒定不回跳',
 });
 
 test('下载版 Markdown 在相应讲述段前引用帧，普通复制版不带图', () => {
-  const section = { t: 10, title: '片段', image: 'frames/slide_0001.jpg', segments: [{ start: 10, end: 12, text: '讲述。' }] };
+  const section = { t: 10, title: '片段', frames: [{ t: 10, image: 'frames/slide_0001.jpg' }], segments: [{ start: 10, end: 12, text: '讲述。' }] };
   const doc = { meta: { title: '课程', source: 'subtitle', url: 'https://example.com/watch' }, sections: [section] };
   assert.match(toMarkdown(doc, { images: true }), /!\[视频 00:10 的截图\]\(frames\/slide_0001\.jpg\)/);
   assert.doesNotMatch(toMarkdown(doc), /!\[/);
