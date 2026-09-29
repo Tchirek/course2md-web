@@ -1,8 +1,11 @@
 """Local punctuation first, Qwen3.5-2B for hard sentences, OpenAI-style stream."""
+import hashlib
 import json
 import os
 import platform
 import re
+import shutil
+import subprocess
 import sys
 import tarfile
 import threading
@@ -12,10 +15,13 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from pins import PINS, VerifiedFiles
 from service_lifecycle import IdleWatch, idle_message, popen_bound
 
 ROOT = Path(os.environ['C2MD_POLISH_HOME'])
 ROOT.mkdir(parents=True, exist_ok=True)
+# ダウンロードするものはすべて runtime-pins.json の版と SHA-256 に固定し、確かめてから使う
+VERIFIED = VerifiedFiles(ROOT / 'verified.json')
 # Xet 下载后端在大文件上内存波动大，低内存机器会直接崩；走普通 HTTP 分块下载。
 os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
 os.environ.setdefault('HF_HUB_ENABLE_HF_TRANSFER', '0')
@@ -26,39 +32,41 @@ def state(name, message):
 
 
 def prepare_punc():
+    source = PINS['fireredpunc-source']
     package = ROOT / 'fireredasr2s' / 'fireredpunc'
-    if not (package / 'punc.py').exists():
+    if not all(VERIFIED.matches(package / name, digest) for name, digest in source['sha256'].items()):
         state('downloading', '正在取得 FireRedPunc 程序')
         archive = ROOT / 'firered.tar.gz'
-        urllib.request.urlretrieve('https://github.com/FireRedTeam/FireRedASR2S/archive/refs/heads/main.tar.gz', archive)
-        with tarfile.open(archive) as source:
-            for member in source:
-                marker = '/fireredasr2s/fireredpunc/'
+        # ブランチではなく固定したコミットの tarball。清単にあるファイルだけを、ハッシュを確かめてから書き出す
+        urllib.request.urlretrieve(f'https://github.com/{source["repo"]}/archive/{source["commit"]}.tar.gz', archive)
+        marker = f'/{source["path"]}/'
+        with tarfile.open(archive) as tar:
+            for member in tar:
                 if marker not in member.name or not member.isfile():
                     continue
                 relative = member.name.split(marker, 1)[1]
+                if relative not in source['sha256']:
+                    continue
+                data = tar.extractfile(member).read()
+                if hashlib.sha256(data).hexdigest() != source['sha256'][relative]:
+                    raise RuntimeError(f'FireRedPunc 程序文件 {relative} 与固定版本不符，已拒收')
                 target = package / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(source.extractfile(member).read())
+                target.write_bytes(data)
         archive.unlink()
-        (ROOT / 'fireredasr2s' / '__init__.py').write_text('')
+        missing = [name for name, digest in source['sha256'].items() if not VERIFIED.matches(package / name, digest)]
+        if missing:
+            raise RuntimeError(f'FireRedPunc 程序缺少文件：{"、".join(missing)}')
+    (ROOT / 'fireredasr2s' / '__init__.py').touch()
     sys.path.insert(0, str(ROOT))
     from fireredasr2s.fireredpunc.punc import FireRedPunc, FireRedPuncConfig
+    # 固定したリビジョンから必要なファイルだけを取る（tf_model.h5 は TensorFlow の重みで使わない）。
+    # huggingface_hub のダウンローダーは本機で繰り返し落ちたので使わない
+    model = PINS['fireredpunc-model']
     model_dir = ROOT / 'FireRedPunc'
-    # 对照远端清单下载全部需要的文件（tf_model.h5 是 TensorFlow 权重，用不到）。
-    # 不用 huggingface_hub 的下载器：它在本机反复崩溃，robust_download 更稳。
-    with urllib.request.urlopen('https://huggingface.co/api/models/FireRedTeam/FireRedPunc/tree/main?recursive=true', timeout=30) as response:
-        manifest = json.load(response)
-    for item in manifest:
-        if item.get('type') != 'file' or item['path'].startswith('.git') or item['path'].startswith('.cache'):
-            continue
-        if item['path'].endswith(('.h5', '.msgpack', '.ckpt.index')):
-            continue
-        target = model_dir / item['path']
-        if target.exists() and target.stat().st_size == item['size']:
-            continue
-        state('downloading', f'正在下载 {item["path"]}')
-        robust_download(f'https://huggingface.co/FireRedTeam/FireRedPunc/resolve/main/{item["path"]}', target, item['path'])
+    for name, digest in model['sha256'].items():
+        pinned_download(f'https://huggingface.co/{model["repo"]}/resolve/{model["revision"]}/{name}',
+                        model_dir / name, digest, f'正在下载 {name}')
     state('loading', '正在加载 FireRedPunc')
     return FireRedPunc.from_pretrained(str(model_dir), FireRedPuncConfig(use_gpu=False))
 
@@ -90,19 +98,74 @@ def robust_download(url, target, message):
     return target
 
 
-def llama_spec():
-    """各系统要下载的 llama.cpp 运行库：资产名后缀、期望条数、GPU 卸载层数。
+def pinned_download(url, target, digest, message):
+    """固定版のファイルを取り、SHA-256 を確かめる。合わなければ消して止め、未検証のものは残さない。"""
+    if VERIFIED.matches(target, digest):
+        return target
+    state('downloading', message)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # 大きさが同じで中身の違う古いファイルを「取得済み」と見なさないよう、先に消す
+    target.unlink(missing_ok=True)
+    robust_download(url, target, message)
+    if not VERIFIED.matches(target, digest):
+        target.unlink(missing_ok=True)
+        raise RuntimeError(f'{target.name} 与固定版本的 SHA-256 不符，已删除；请检查网络后重试')
+    return target
 
-    Windows 走 CUDA 12.4（主包 + cudart 运行时各一个 zip）；macOS 走官方
-    Metal 包；Linux 默认 CPU 包（NVIDIA 用户可改用 ubuntu-cuda 包，此处保守）。
+
+def llama_platform():
+    """runtime-pins.json の llama.cpp 資産の鍵（win32-x64、darwin-arm64、linux-x64 など）。
+
+    Windows は CUDA 12.4（本体と cudart の 2 つの zip）、macOS は公式の Metal 版、
+    Linux は既定で CPU 版（NVIDIA 向けの ubuntu-cuda 版もあるが、ここでは控えめに）。
     """
     machine = platform.machine().lower()
-    if sys.platform == 'win32':
-        return {'suffix': 'win-cuda-12.4-x64.zip', 'count': 2, 'ngl': 99}
-    if sys.platform == 'darwin':
-        return {'suffix': f'bin-macos-{"arm64" if "arm" in machine else "x64"}.tar.gz', 'count': 1, 'ngl': 99}
-    return {'suffix': 'bin-ubuntu-x64.tar.gz' if 'x86' in machine or 'amd64' in machine else f'bin-ubuntu-{machine}.tar.gz',
-            'count': 1, 'ngl': 0}
+    arch = 'arm64' if machine in ('arm64', 'aarch64') else 'x64' if machine in ('x86_64', 'amd64', 'x64') else machine
+    system = 'win32' if sys.platform == 'win32' else 'darwin' if sys.platform == 'darwin' else 'linux'
+    return f'{system}-{arch}'
+
+
+def built_from(binary, tag):
+    """既存の llama-server が固定版（build 番号）そのものか。"""
+    try:
+        result = subprocess.run([str(binary), '--version'], capture_output=True, text=True, timeout=30)
+    except Exception:
+        return False
+    return f'build {tag.lstrip("b")},' in result.stdout + result.stderr
+
+
+def prepare_llama():
+    pin = PINS['llama.cpp']
+    key = llama_platform()
+    assets = pin['assets'].get(key)
+    if not assets:
+        raise RuntimeError(f'没有适用于 {key} 的 llama.cpp 运行库')
+    binary_name = 'llama-server.exe' if sys.platform == 'win32' else 'llama-server'
+    target = ROOT / 'llama'
+    stamp = target / '.pinned-tag'
+    binary = next(target.rglob(binary_name), None) if target.exists() else None
+    current = stamp.read_text().strip() if stamp.exists() else ''
+    if binary is not None and not current and built_from(binary, pin['tag']):
+        # 以前「最新版」として入れたものが固定版そのものなら印を付けるだけにし、数百 MB を取り直さない
+        stamp.write_text(pin['tag'])
+        current = pin['tag']
+    if binary is None or current != pin['tag']:
+        shutil.rmtree(target, ignore_errors=True)
+        target.mkdir(parents=True, exist_ok=True)
+        for asset in assets:
+            archive = ROOT / asset['name']
+            pinned_download(f'https://github.com/{pin["repo"]}/releases/download/{pin["tag"]}/{asset["name"]}',
+                            archive, asset['sha256'], '正在准备 Qwen3.5-2B 运行库')
+            extract_archive(archive, target)
+            archive.unlink()
+        binary = next(target.rglob(binary_name), None)
+        if binary is None:
+            raise RuntimeError(f'运行库缺少 {binary_name}')
+        if sys.platform != 'win32':
+            # zip/tar の展開では実行ビットが保たれるとは限らない
+            binary.chmod(0o755)
+        stamp.write_text(pin['tag'])
+    return binary, pin['gpu_layers'].get(key, 0)
 
 
 def extract_archive(archive, target):
@@ -135,43 +198,14 @@ def extract_archive(archive, target):
 
 
 def start_qwen():
-    state('downloading', '正在下载 Qwen3.5-2B')
-    spec = llama_spec()
-    binary_name = 'llama-server.exe' if sys.platform == 'win32' else 'llama-server'
-    model = robust_download(
-        'https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
-        ROOT / 'qwen' / 'Qwen3.5-2B-Q4_K_M.gguf', '正在下载 Qwen3.5-2B')
-    binary = next((ROOT / 'llama').rglob(binary_name), None)
-    if binary is None:
-        state('downloading', '正在准备 Qwen3.5-2B 运行库')
-        request = urllib.request.Request('https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10',
-                                         headers={'User-Agent': 'course2md'})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            releases = json.load(response)
-        assets = []
-        for release in releases:
-            assets = [asset for asset in release['assets'] if asset['name'].endswith(spec['suffix'])]
-            if len(assets) == spec['count']:
-                break
-        if len(assets) != spec['count']:
-            raise RuntimeError(f'未找到本机运行库（{spec["suffix"]}）')
-        target = ROOT / 'llama'
-        target.mkdir(exist_ok=True)
-        for asset in assets:
-            archive = ROOT / asset['name']
-            urllib.request.urlretrieve(asset['browser_download_url'], archive)
-            extract_archive(archive, target)
-            archive.unlink()
-        binary = next(target.rglob(binary_name), None)
-        if binary is None:
-            raise RuntimeError(f'运行库缺少 {binary_name}')
-        if sys.platform != 'win32':
-            # zip/tar 解包不保证可执行位，补一个再拉起
-            binary.chmod(0o755)
+    qwen = PINS['qwen']
+    model = pinned_download(f'https://huggingface.co/{qwen["repo"]}/resolve/{qwen["revision"]}/{qwen["file"]}',
+                            ROOT / 'qwen' / qwen['file'], qwen['sha256'], '正在下载 Qwen3.5-2B')
+    binary, gpu_layers = prepare_llama()
     state('loading', '正在加载 Qwen3.5-2B')
     # llama-server は数 GB を抱えるので、このプロセスが強制終了されても道連れにする
     process = popen_bound([str(binary), '-m', str(model), '--alias', 'Qwen/Qwen3.5-2B',
-                     '--host', '127.0.0.1', '--port', '8083', '-ngl', str(spec['ngl']), '-c', '4096', '--parallel', '1'])
+                     '--host', '127.0.0.1', '--port', '8083', '-ngl', str(gpu_layers), '-c', '4096', '--parallel', '1'])
     for _ in range(120):
         if process.poll() is not None:
             raise RuntimeError('Qwen3.5-2B 服务启动失败')
