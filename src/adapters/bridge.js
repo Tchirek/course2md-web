@@ -48,16 +48,17 @@ function whenReady(timeoutMs = 2000) {
  *
  * @param {string} method
  * @param {unknown[]} [args]
+ * @param {{timeoutMs?: number}} [options] プレーヤーの応答を待つ handler は長めに取る
  * @returns {Promise<any|null>}
  */
-export async function callPage(method, args = []) {
+export async function callPage(method, args = [], { timeoutMs = REPLY_TIMEOUT_MS } = {}) {
   if (!(await whenReady())) return null;
   const id = `c2md-${++seq}`;
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(id);
       resolve(null);
-    }, REPLY_TIMEOUT_MS);
+    }, timeoutMs);
     pending.set(id, { resolve, timer });
     window.postMessage({ channel: CHANNEL, dir: 'req', id, method, args }, '*');
   });

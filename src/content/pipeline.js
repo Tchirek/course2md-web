@@ -58,7 +58,7 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
   const warnings = [];
   onProgress?.('tracks', { message: '正在查找字幕轨' });
 
-  const tracks = await adapter.tracks(meta);
+  const tracks = await adapter.tracks(meta, { onProgress: (message) => onProgress?.('tracks', { message }) });
   if (!tracks.length) {
     throw new MissingSourceError(
       '这个页面没有可用的字幕。可以在「文字来源」里改成「本地模型转录」，用本机模型从音频转写。',

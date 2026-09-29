@@ -1,5 +1,6 @@
 //! YouTube 适配器：元信息、字幕轨、章节、跳转。
 
+import { MissingSourceError } from '../core/errors.js';
 import { readInlineJson } from '../core/json.js';
 import { callPage } from './bridge.js';
 
@@ -69,14 +70,31 @@ export async function meta() {
  *
  * 取字幕用内容脚本自己的 fetch（同源、带 cookie），不走后台：
  * 页面就在 youtube.com，timedtext 是同源请求，不需要额外 host 权限。
+ *
+ * URL に exp=xpe がある字幕は pot トークンなしでは空で返る（Cookie では足りない）。
+ * yt-dlp も同じ印で PO トークンの要否を判断している。トークンはページ側のブリッジが
+ * プレーヤーの要求から拾い、同じ動画の全字幕に付ける。
  */
-export async function tracks() {
+export async function tracks(_info, { onProgress } = {}) {
   const pr = await playerResponse();
   const list = pr?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!Array.isArray(list)) return [];
+  const usable = list.filter((t) => t && typeof t.baseUrl === 'string');
+  if (!usable.length) return [];
 
-  return list
-    .filter((t) => t && typeof t.baseUrl === 'string')
+  let token = null;
+  if (usable.some(needsToken)) {
+    const videoId = String(pr?.videoDetails?.videoId ?? videoIdFrom(location));
+    const first = usable[0];
+    if (await callPage('yt.adShowing')) onProgress?.('正在等广告播完，再读取字幕（可跳过广告）');
+    // ページ側は広告が再生され続ける限り終了を待ち（最長 10 分）、その後プレーヤーに字幕を読ませる
+    token = await callPage('yt.captionToken', [videoId, first.languageCode, first.kind], { timeoutMs: 630_000 });
+    if (!token?.pot) {
+      throw new MissingSourceError('没有取到 YouTube 字幕的访问凭证（广告被暂停或播放器尚未就绪）。');
+    }
+  }
+
+  return usable
     .map((t, i) => {
       const language = String(t.languageCode ?? '');
       const automatic = t.kind === 'asr';
@@ -86,14 +104,23 @@ export async function tracks() {
         language,
         label: name || language,
         kind: automatic ? 'automatic' : 'manual',
-        fetch: { url: withJson3(t.baseUrl), as: 'text' },
+        fetch: { url: timedTextUrl(t.baseUrl, token), as: 'text' },
       };
     });
 }
 
-function withJson3(baseUrl) {
+function needsToken(track) {
+  try {
+    return (new URL(track.baseUrl).searchParams.get('exp') ?? '').split(',').includes('xpe');
+  } catch {
+    return false;
+  }
+}
+
+function timedTextUrl(baseUrl, token) {
   const url = new URL(baseUrl);
   url.searchParams.set('fmt', 'json3');
+  for (const [key, value] of Object.entries(token ?? {})) url.searchParams.set(key, String(value));
   return url.toString();
 }
 
