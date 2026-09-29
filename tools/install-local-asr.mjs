@@ -4,6 +4,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// パスはスクリプトの位置から解決する。別ディレクトリから実行しても、ホスト設定には正しいヘルパーのパスが書かれる
+const tools = path.dirname(fileURLToPath(import.meta.url));
 
 const isWin = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
@@ -15,15 +19,15 @@ if (probe.status !== 0) {
   process.stdout.write('正在安装 faster-whisper 运行库…\n');
   probe = spawnSync(python, ['-m', 'pip', 'install', '--user', 'faster-whisper'], { stdio: 'inherit' });
   if (probe.status !== 0) {
-    // 新版 Debian/Ubuntu 的系统 Python 受 PEP 668 保护，pip --user 装不进去；这只影响 GPU 转录，不挡助手注册
-    if (!isWin) process.stdout.write('faster-whisper 未装上（不影响助手安装）。GPU 转录请手动安装：\n' +
-      `  ${python} -m pip install --user --break-system-packages faster-whisper\n`);
-    else throw new Error('无法安装 faster-whisper；请先安装 Python 3 和 pip');
+    // 影響するのはローカル文字起こしだけで、ヘルパー登録は止めない。ホストがなければフレーム取得や音声ダウンロードでもヘルパーを起こせない
+    // （新しい Debian/Ubuntu のシステム Python は PEP 668 で保護され、pip --user では入らない）
+    process.stdout.write('faster-whisper 未装上（不影响助手安装）。本机转录请先装好 Python 3 和 pip，再手动安装：\n' +
+      `  ${python} -m pip install --user ${isWin ? '' : '--break-system-packages '}faster-whisper\n`);
   }
 }
 
-const helper = path.resolve('tools/fast-asr-server.mjs');
-const hostSource = path.resolve('tools/native-host.mjs');
+const helper = path.join(tools, 'fast-asr-server.mjs');
+const hostSource = path.join(tools, 'native-host.mjs');
 const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
 if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('扩展 ID 格式错误');
 
@@ -32,14 +36,16 @@ const dir = isWin ? path.join(process.env.LOCALAPPDATA, 'course2md')
   : path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'course2md');
 mkdirSync(dir, { recursive: true });
 
+let host;
 if (isWin) {
   const launcher = path.join(dir, 'start-helper.vbs');
   const nativeLauncher = path.join(dir, 'native-helper.exe');
   const nativeManifest = path.join(dir, 'native-helper.json');
+  host = nativeLauncher;
   const command = `"${process.execPath}" "${helper}"`;
   writeFileSync(launcher, `CreateObject("WScript.Shell").Run "${command.replaceAll('"', '""')}", 0, False\r\n`);
   const compiler = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
-  const build = spawnSync(compiler, ['/nologo', '/target:exe', `/out:${nativeLauncher}`, path.resolve('tools/native-helper.cs')], { encoding: 'utf8' });
+  const build = spawnSync(compiler, ['/nologo', '/target:exe', `/out:${nativeLauncher}`, path.join(tools, 'native-helper.cs')], { encoding: 'utf8' });
   if (build.status !== 0) throw new Error(build.stderr || build.stdout || '无法编译本机消息宿主');
   writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\r\n${helper}\r\nhttp://127.0.0.1:8766/health\r\n`);
   writeFileSync(nativeManifest, JSON.stringify({
@@ -60,6 +66,7 @@ if (isWin) {
 } else {
   // 宿主必须是可执行脚本且行尾为 LF：CRLF 会让 shebang 认不到解释器
   const hostPath = path.join(dir, 'native-host.mjs');
+  host = hostPath;
   writeFileSync(hostPath, readFileSync(hostSource, 'utf8').replaceAll('\r\n', '\n'));
   chmodSync(hostPath, 0o755);
   writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\n${helper}\nhttp://127.0.0.1:8766/health\n`);
@@ -107,12 +114,35 @@ if (isWin) {
   }
 }
 
-try {
-  await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
-} catch {
-  spawn(process.execPath, [helper], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
-}
+// ヘルパーを直接起動せず、ブラウザと同じく登録したてのホスト経由で起こす。ホストの不具合は
+// 再起動後に拡張が起こせなくなって初めて気づくのではなく、今ここで報告される
+const reply = await wakeThroughHost(host);
+if (!reply.ok) throw new Error(`本机宿主已注册，但未能拉起助手：${reply.error}`);
 process.stdout.write('本机助手已安装并设置为登录后运行。生成笔记时会自动启动转录模型。\n');
 if (!isWin && extensionId === 'icceajppndlehndkedbflgimdbinmjcf') {
   process.stdout.write('注意：这里用的是默认扩展 ID。若这台机器上扩展 ID 不同（edge://extensions 开发人员模式页可见），\n请带 ID 重新运行：node tools/install-local-asr.mjs <扩展ID>\n');
+}
+
+/** ネイティブメッセージングの形式（4 バイトのリトルエンディアン長 + JSON）でホストに start を送り、応答を読み取る。 */
+function wakeThroughHost(command) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'inherit'] });
+    const timer = setTimeout(() => { child.kill(); reject(new Error('本机宿主 15 秒未应答')); }, 15000);
+    let bytes = Buffer.alloc(0);
+    child.stdout.on('data', (chunk) => {
+      bytes = Buffer.concat([bytes, chunk]);
+      if (bytes.length < 4 || bytes.length < 4 + bytes.readUInt32LE(0)) return;
+      clearTimeout(timer);
+      resolve(JSON.parse(bytes.subarray(4, 4 + bytes.readUInt32LE(0))));
+    });
+    child.on('error', (error) => { clearTimeout(timer); reject(new Error(`无法运行本机宿主 ${command}：${error.message}`)); });
+    // exit ではなく close を使う：exit は stdout に残った応答を読み切る前に来ることがある
+    child.on('close', (code) => {
+      if (bytes.length < 4) { clearTimeout(timer); reject(new Error(`本机宿主未应答就退出（代码 ${code}）`)); }
+    });
+    const body = Buffer.from('{"action":"start"}');
+    const size = Buffer.alloc(4);
+    size.writeUInt32LE(body.length);
+    child.stdin.end(Buffer.concat([size, body]));
+  });
 }
