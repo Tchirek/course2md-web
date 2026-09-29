@@ -208,7 +208,9 @@
   };
 
   /** 只暴露给自测页用，方便在控制台里改设置看效果。 */
-  chromeMock.__mock = { store, settingsStatus, changeListeners };
+  chromeMock.__mock = { store, settingsStatus, changeListeners,
+    emitState: (payload) => messageListeners.forEach((fn) => fn({ type: 'c2md.state', payload })),
+  };
 
   window.chrome = chromeMock;
 

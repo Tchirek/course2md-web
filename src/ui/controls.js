@@ -213,10 +213,9 @@ export function applyTheme(settings, root = document.body) {
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
  * @param {boolean} [args.showPolishEngine] 显示润色方式（本机/自备）选择
  * @param {boolean} [args.polishLevelWhenChecked] 只在勾选润色时显示润色强度/方式
- * @param {boolean} [args.animatePolish] 润色强度/方式行出现时播放入场动画
  * @returns {DocumentFragment}
  */
-export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, showPolishEngine = false, polishLevelWhenChecked = false, animatePolish = false, polishProgress = null }) {
+export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, showPolishEngine = false, polishLevelWhenChecked = false, polishProgress = null }) {
   const frag = document.createDocumentFragment();
 
   for (const toggle of DISPLAY_TOGGLES) {
@@ -257,7 +256,6 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
     if (toggle.key === 'polish' && showPolishLevel && (!polishLevelWhenChecked || settings.polish)) {
       const row = document.createElement('div');
       row.className = 'c2md-image-choice';
-      if (animatePolish) row.classList.add('c2md-row-enter');
       const label = document.createElement('span');
       label.textContent = '润色强度';
       row.append(label, segmented({
@@ -271,7 +269,6 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
   if (showPolishEngine && (!polishLevelWhenChecked || settings.polish)) {
     const row = document.createElement('div');
     row.className = 'c2md-image-choice';
-    if (animatePolish) row.classList.add('c2md-row-enter');
     const label = document.createElement('span');
     label.textContent = '润色方式';
     row.append(label, polishEngineRow(settings, onChange));

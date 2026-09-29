@@ -201,7 +201,7 @@ class Controller {
       siteLabel: siteLabel(this.adapter.id),
       hasVideo: Boolean(this.adapter.video()),
       status: this.status,
-      busy: this.status === 'running' || this.finalizingPolish,
+      busy: this.status === 'running',
     }),
 
     'c2md.status': async () => {
@@ -242,7 +242,7 @@ class Controller {
   summaryState() {
     return {
       status: this.status,
-      busy: this.status === 'running' || this.finalizingPolish,
+      busy: this.status === 'running',
       site: this.adapter.id,
       siteLabel: siteLabel(this.adapter.id),
       settings: this.settings,

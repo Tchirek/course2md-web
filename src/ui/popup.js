@@ -30,12 +30,15 @@ async function init() {
   el.options.appendChild(icon('settings', { size: 16 }));
   el.options.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
-  const reply = await send({ type: 'settings.load' }).catch(() => null);
+  const [reply, activeTabs] = await Promise.all([
+    send({ type: 'settings.load' }).catch(() => null),
+    chrome.tabs.query({ active: true, currentWindow: true }),
+  ]);
   const { withDefaults } = await import('../core/settings.js');
   settings = withDefaults(reply ?? {});
   applyTheme(settings);
 
-  [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  [tab] = activeTabs;
   renderPage();
   renderSource();
   renderToggles();
@@ -81,14 +84,13 @@ function renderSource() {
 
 }
 
-function renderToggles({ animatePolish = false } = {}) {
+function renderToggles() {
   el.toggles.replaceChildren(
     displayToggleRows({
       settings,
       showPolishLevel: true,
       showPolishEngine: true,
       polishLevelWhenChecked: true,
-      animatePolish,
       onChange: (patchObject) => patch(patchObject),
       onSetup: () => chrome.runtime.openOptionsPage(),
     }),
@@ -102,17 +104,18 @@ function renderToggles({ animatePolish = false } = {}) {
 
 function renderStatus() {
   if (!state) return;
-  const running = Boolean(state.busy ?? (state.status === 'running' || state.polish?.running));
+  const running = state.status === 'running';
   el.run.disabled = running;
-  el.run.textContent = running ? '生成中' : state.status === 'ready' ? '重新生成' : '生成笔记';
+  const label = running ? '生成中' : state.status === 'ready' ? '重新生成' : '生成笔记';
+  if (el.run.textContent !== label) el.run.textContent = label;
 
   const hasContent = running || state.status === 'ready' || Boolean(state.error);
   el.secondary.hidden = !hasContent;
-  el.secondary.textContent = '在页面打开';
+  if (el.secondary.textContent !== '在页面打开') el.secondary.textContent = '在页面打开';
 
   el.status.dataset.tone = 'default';
-  el.status.replaceChildren();
-  if (running) el.status.appendChild(progress({ ratio: state.stageRatio ?? null }));
+  if (running) el.status.replaceChildren(progress({ ratio: state.stageRatio ?? null }));
+  else if (el.status.childNodes.length) el.status.replaceChildren();
 }
 
 // ---------- 行为 ----------
@@ -130,8 +133,7 @@ async function patch(patchObject) {
 
   applyTheme(settings);
   renderSource();
-  // 勾选润色的那一下，强度/方式行带入场动画出现
-  renderToggles({ animatePolish: patchObject.polish === true });
+  renderToggles();
   if (reply?.notes?.length) {
     el.status.dataset.tone = 'default';
     el.status.replaceChildren();

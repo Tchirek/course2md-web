@@ -265,19 +265,27 @@ try {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);
     } else pass(`${name} 分段选择选中项数正确（${expectedSegments}）`);
     if (name === 'popup') {
-      // 勾选「润色文本」后，强度与方式两行应以动画出现
+      // 勾选「润色文本」后，强度与方式两行直接出现
       const after = await page.evaluate(() => new Promise((resolve) => {
         const polish = [...document.querySelectorAll('.c2md-check')]
           .find((node) => node.textContent.includes('润色文本'));
         polish?.click();
         setTimeout(() => resolve({
           pressed: document.querySelectorAll('.c2md-segmented button[aria-pressed="true"]').length,
-          animated: Boolean(document.querySelector('.c2md-row-enter')),
+          stable: !document.querySelector('.c2md-row-enter'),
         }), 250);
       }));
-      after.pressed === 4 && after.animated
-        ? pass('popup 勾选润色后强度与方式行动画出现')
+      after.pressed === 4 && after.stable
+        ? pass('popup 勾选润色后强度与方式行直接出现')
         : fail('popup', `润色行出现检查失败：${JSON.stringify(after)}`);
+      const steady = await page.evaluate(() => {
+        const state = { ...window.chrome.__mock.settingsStatus, status: 'ready', busy: true,
+          polish: { running: true, done: 1, total: 3 } };
+        window.chrome.__mock.emitState(state);
+        return document.getElementById('run').textContent;
+      });
+      steady === '重新生成' ? pass('popup 润色进行时主按钮保持重新生成')
+        : fail('popup', `润色状态误改主按钮：${steady}`);
     }
     if (name === 'popup' && (!m.primaryBg || m.primaryBg === 'rgba(0, 0, 0, 0)')) {
       fail(name, '主按钮没有底色');
