@@ -207,9 +207,10 @@ async function helperFetch(route, init = {}) {
   if (response.status !== 401) return response;
   helperToken = null;
   await chrome.storage.session.remove('helperToken').catch(() => {});
-  await wakeLocalHelper();
+  // 升级后第一次唤醒的可能还是旧宿主（不交令牌）；新助手启动时已把注册修好，再唤醒一次即可
+  for (let attempt = 0; attempt < 2 && !await knownHelperToken(); attempt++) await wakeLocalHelper();
   if (!await knownHelperToken()) {
-    throw new Error(`本机宿主没有提供访问令牌（宿主是旧版本）。请在项目目录重新运行 ${installCommand()}。`);
+    throw new Error(`本机宿主没有提供访问令牌。请在项目目录重新运行 ${installCommand()}。`);
   }
   response = await send();
   if (response.status === 401) throw new Error(`本机助手不认可宿主给出的访问令牌。请在项目目录重新运行 ${installCommand()}。`);

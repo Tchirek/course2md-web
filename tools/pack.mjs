@@ -36,6 +36,7 @@ const HELPER_FILES = [
   'tools/native-host.mjs',
   'tools/helper-data.mjs',
   'tools/extension-ids.mjs',
+  'tools/host-registration.mjs',
   'tools/native-helper.cs',
   'tools/check-native-helper.mjs',
   'tools/check-local-polish.mjs',

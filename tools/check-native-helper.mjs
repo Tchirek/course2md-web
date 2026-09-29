@@ -14,6 +14,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectExtensionIds } from './extension-ids.mjs';
+import { dataDir } from './helper-data.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOST_NAME = 'com.course2md.helper';
@@ -29,8 +30,10 @@ else console.log(`注册：浏览器能找到宿主，且允许扩展 ${extensio
 
 const hosts = [];
 if (process.platform === 'win32') {
-  const exe = join(process.env.LOCALAPPDATA, 'course2md', 'native-helper.exe');
-  if (existsSync(exe)) hosts.push({ label: '.exe 宿主', command: exe, configEol: '\r\n' });
+  // exe 按源码哈希命名，以清单里登记的路径为准
+  let exe = '';
+  try { exe = JSON.parse(readFileSync(join(dataDir(), 'native-helper.json'), 'utf8')).path ?? ''; } catch { /* 未安装 */ }
+  if (exe && existsSync(exe)) hosts.push({ label: '.exe 宿主', command: exe, configEol: '\r\n' });
 }
 hosts.push({ label: 'Node 宿主', command: process.execPath, scriptSource: join(HERE, 'native-host.mjs'), configEol: '\n' });
 

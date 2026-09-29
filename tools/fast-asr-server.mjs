@@ -15,6 +15,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
 import { ensureHelperToken, tokenPath } from './helper-data.mjs';
+import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
 const ASR_PORT = 8081;
@@ -29,6 +30,18 @@ let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
 let polishProcess = null;
 let polishStatus = { state: 'idle', message: '本机润色尚未启动' };
 ensureHelperToken();
+// 升级代码后，宿主注册可能过时（旧宿主不交令牌等）。在开始监听前静默修复：拉起本助手的
+// 旧宿主要等健康检查通过才应答，扩展随后再唤醒一次就会用上新宿主，用户无须重跑安装命令
+try {
+  const reason = registrationOutdated();
+  if (reason) {
+    registerHost();
+    process.stdout.write(`已自动更新本机宿主注册（${reason}）\n`);
+  }
+  cleanStaleHosts();
+} catch (error) {
+  process.stderr.write(`自动更新本机宿主注册失败：${error?.message ?? error}\n`);
+}
 let token = { value: '', mtimeMs: -1 };
 
 /** 当前令牌。文件被改写就重新读取，被删除就重新生成。 */
