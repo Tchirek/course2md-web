@@ -32,6 +32,7 @@ const HELPER_FILES = [
   'tools/service_lifecycle.py',
   'tools/install-local-asr.mjs',
   'tools/native-host.mjs',
+  'tools/helper-data.mjs',
   'tools/native-helper.cs',
   'tools/check-native-helper.mjs',
   'tools/check-local-polish.mjs',

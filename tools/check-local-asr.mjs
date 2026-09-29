@@ -1,6 +1,7 @@
 import { transcribe, silentWav } from '../src/background/asr.js';
+import { readHelperToken } from './helper-data.mjs';
 
-const status = await (await fetch('http://127.0.0.1:8766/asr/status')).json();
+const status = await (await fetch('http://127.0.0.1:8766/asr/status', { headers: { 'x-c2md-token': readHelperToken() } })).json();
 if (status.state !== 'ready') throw new Error(status.message);
 const probe = await transcribe({
   endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',

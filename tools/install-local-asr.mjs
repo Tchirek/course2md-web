@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataDir, ensureHelperToken, tokenPath } from './helper-data.mjs';
 
 // パスはスクリプトの位置から解決する。別ディレクトリから実行しても、ホスト設定には正しいヘルパーのパスが書かれる
 const tools = path.dirname(fileURLToPath(import.meta.url));
@@ -31,10 +32,10 @@ const hostSource = path.join(tools, 'native-host.mjs');
 const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
 if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('扩展 ID 格式错误');
 
-const dir = isWin ? path.join(process.env.LOCALAPPDATA, 'course2md')
-  : isMac ? path.join(home, 'Library', 'Application Support', 'course2md')
-  : path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'course2md');
+const dir = dataDir();
 mkdirSync(dir, { recursive: true });
+// 助手的访问令牌：宿主确认助手已启动后，把它放进应答交给扩展（配置第 4 行是它的路径）
+const token = ensureHelperToken(dir);
 
 let host;
 if (isWin) {
@@ -47,7 +48,7 @@ if (isWin) {
   const compiler = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
   const build = spawnSync(compiler, ['/nologo', '/target:exe', `/out:${nativeLauncher}`, path.join(tools, 'native-helper.cs')], { encoding: 'utf8' });
   if (build.status !== 0) throw new Error(build.stderr || build.stdout || '无法编译本机消息宿主');
-  writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\r\n${helper}\r\nhttp://127.0.0.1:8766/health\r\n`);
+  writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\r\n${helper}\r\nhttp://127.0.0.1:8766/health\r\n${tokenPath(dir)}\r\n`);
   writeFileSync(nativeManifest, JSON.stringify({
     name: 'com.course2md.helper', description: 'course2md local helper launcher',
     path: nativeLauncher, type: 'stdio', allowed_origins: [`chrome-extension://${extensionId}/`],
@@ -69,7 +70,7 @@ if (isWin) {
   host = hostPath;
   writeFileSync(hostPath, readFileSync(hostSource, 'utf8').replaceAll('\r\n', '\n'));
   chmodSync(hostPath, 0o755);
-  writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\n${helper}\nhttp://127.0.0.1:8766/health\n`);
+  writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\n${helper}\nhttp://127.0.0.1:8766/health\n${tokenPath(dir)}\n`);
   const manifestPath = path.join(dir, 'native-helper.json');
   writeFileSync(manifestPath, JSON.stringify({
     name: 'com.course2md.helper', description: 'course2md local helper launcher',
@@ -118,6 +119,7 @@ if (isWin) {
 // 再起動後に拡張が起こせなくなって初めて気づくのではなく、今ここで報告される
 const reply = await wakeThroughHost(host);
 if (!reply.ok) throw new Error(`本机宿主已注册，但未能拉起助手：${reply.error}`);
+if (reply.token !== token) throw new Error('本机宿主没有交出正确的访问令牌；扩展将无法使用本机助手');
 process.stdout.write('本机助手已安装并设置为登录后运行。生成笔记时会自动启动转录模型。\n');
 if (!isWin && extensionId === 'icceajppndlehndkedbflgimdbinmjcf') {
   process.stdout.write('注意：这里用的是默认扩展 ID。若这台机器上扩展 ID 不同（edge://extensions 开发人员模式页可见），\n请带 ID 重新运行：node tools/install-local-asr.mjs <扩展ID>\n');

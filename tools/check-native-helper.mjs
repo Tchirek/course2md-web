@@ -6,6 +6,7 @@
 // サービスを指させて、ゼロから起動して応答させる。
 // 使い方：node tools/check-native-helper.mjs [拡張ID]
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -108,7 +109,10 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
       await copyFile(command, hostPath);
     }
     await writeFile(join(dir, 'fixture.mjs'), `import http from 'node:http';\nconst server=http.createServer((req,res)=>{res.end('ok');if(req.url==='/shutdown')server.close()});server.listen(${port},'127.0.0.1');\n`);
-    await writeFile(join(dir, 'native-helper.config'), `${process.execPath}${configEol}${join(dir, 'fixture.mjs')}${configEol}${health}${configEol}`);
+    // 宿主确认启动后要把配置第 4 行指向的访问令牌交出来
+    const token = randomBytes(32).toString('hex');
+    await writeFile(join(dir, 'helper-token'), token);
+    await writeFile(join(dir, 'native-helper.config'), `${process.execPath}${configEol}${join(dir, 'fixture.mjs')}${configEol}${health}${configEol}${join(dir, 'helper-token')}${configEol}`);
     // .exe ホストは自身の置き場所から設定を探すので、隔離ディレクトリ内のコピーを実行しないと実インストールの設定を読んでしまう
     const child = scriptSource
       ? spawn(command, [hostPath], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -132,6 +136,7 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
     ]);
     clearTimeout(timeout);
     if (!reply.ok) throw new Error(reply.error || '本机宿主未启动服务');
+    if (reply.token !== token) throw new Error('本机宿主没有交出访问令牌（宿主是旧版本？重新运行 npm run local:install）');
     console.log(`${label}可自动拉起服务`);
     await fetch(`http://127.0.0.1:${port}/shutdown`);
   } finally {

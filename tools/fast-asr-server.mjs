@@ -1,13 +1,20 @@
 // 可选本机桥：yt-dlp 下载音轨，ffmpeg 快速切片，再交给现有 OpenAI 兼容 ASR。
 // node tools/fast-asr-server.mjs；只监听 127.0.0.1。
+//
+// 除 GET /health 外，所有请求都必须带访问令牌（x-c2md-token）。这个助手能读本机文件
+// （file: URL）、带 Cookie 下载、启动外部程序；只看 Origin 是否以 chrome-extension://
+// 开头，别的扩展也能进来。令牌只经原生消息交给本扩展——那条通道由 allowed_origins
+// 限定到本扩展的 ID。
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { statSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
+import { ensureHelperToken, tokenPath } from './helper-data.mjs';
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
 const ASR_PORT = 8081;
@@ -21,6 +28,32 @@ let asrProcess = null;
 let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
 let polishProcess = null;
 let polishStatus = { state: 'idle', message: '本机润色尚未启动' };
+ensureHelperToken();
+let token = { value: '', mtimeMs: -1 };
+
+/** 当前令牌。文件被改写就重新读取，被删除就重新生成。 */
+function currentToken() {
+  let mtimeMs;
+  try {
+    ({ mtimeMs } = statSync(tokenPath()));
+  } catch {
+    ensureHelperToken();
+    ({ mtimeMs } = statSync(tokenPath()));
+  }
+  if (mtimeMs !== token.mtimeMs) token = { value: ensureHelperToken(), mtimeMs };
+  return token.value;
+}
+
+function authorized(req) {
+  const given = Buffer.from(String(req.headers['x-c2md-token'] ?? ''));
+  let expected;
+  try {
+    expected = Buffer.from(currentToken());
+  } catch {
+    return false;
+  }
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
 fetch(ASR_HEALTH, { signal: AbortSignal.timeout(1000) })
   .then(async (reply) => { if (reply.ok) asrStatus = readyStatus(await reply.json()); })
   .catch(() => {});
@@ -36,6 +69,10 @@ http.createServer(async (req, res) => {
     return res.end('{"error":"仅接受扩展请求"}');
   }
   if (req.method === 'GET' && req.url === '/health') return res.end('{"ok":true}');
+  if (!authorized(req)) {
+    res.writeHead(401);
+    return res.end('{"error":"缺少或错误的访问令牌"}');
+  }
   if (req.method === 'GET' && req.url === '/asr/status') return res.end(JSON.stringify(asrStatus));
   if (req.method === 'GET' && req.url === '/polish/status') return res.end(JSON.stringify(polishStatus));
   if (req.method === 'POST' && req.url === '/polish/start') {

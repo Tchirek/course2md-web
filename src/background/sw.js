@@ -89,7 +89,7 @@ const HANDLERS = {
         cookieFile = cookieFileFor(url.href, await chrome.cookies.getAll({ url: url.href }));
       }
     } catch { /* 未登录或站点权限尚未生效，仍尝试公开媒体 */ }
-    const result = await fetch('http://127.0.0.1:8766/transcribe', {
+    const result = await helperFetch('/transcribe', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...payload, cookieFile }),
@@ -99,13 +99,13 @@ const HANDLERS = {
     return value;
   },
   'asr.fast.status': async ({ id, after = 0 }) => {
-    const result = await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}?after=${Math.max(0, Number(after) || 0)}`);
+    const result = await helperFetch(`/jobs/${encodeURIComponent(id)}?after=${Math.max(0, Number(after) || 0)}`);
     const value = await result.json();
     if (!result.ok) throw new Error(value.error ?? '本机任务查询失败');
     return value;
   },
   'asr.fast.cancel': async ({ id }) => {
-    await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await helperFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
     return { cancelled: true };
   },
   'frame.start': async (payload) => {
@@ -117,7 +117,7 @@ const HANDLERS = {
         cookieFile = cookieFileFor(url.href, await chrome.cookies.getAll({ url: url.href }));
       }
     } catch { /* 公开视频可直接尝试 */ }
-    const response = await fetch('http://127.0.0.1:8766/frames', {
+    const response = await helperFetch('/frames', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...payload, cookieFile }),
     });
@@ -126,13 +126,13 @@ const HANDLERS = {
     return value;
   },
   'frame.status': async ({ id, after = 0 }) => {
-    const response = await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}?imageAfter=${Math.max(0, Number(after) || 0)}`);
+    const response = await helperFetch(`/jobs/${encodeURIComponent(id)}?imageAfter=${Math.max(0, Number(after) || 0)}`);
     const value = await response.json();
     if (!response.ok) throw new Error(value.error ?? '取帧任务失败');
     return value;
   },
   'frame.cancel': async ({ id }) => {
-    await fetch(`http://127.0.0.1:8766/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await helperFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
     return { cancelled: true };
   },
 
@@ -161,20 +161,59 @@ function localPolish(action) {
 
 /** ヘルパーが動いていなければホスト経由で一度だけ起こして再試行する。それでも失敗するなら「未起動」ではないので、そのまま報告し起動を繰り返さない。 */
 async function localHelperRequest(route, method, timeout) {
-  const request = () => fetch(`http://127.0.0.1:8766${route}`, { method, signal: AbortSignal.timeout(timeout) });
+  await ensureLocalHelper();
   let response;
   try {
-    response = await request();
-  } catch {
-    await ensureLocalHelper();
-    try {
-      response = await request();
-    } catch (error) {
-      throw new Error(`本机助手已在运行，但 ${route} 没有应答：${error?.message ?? error}`);
-    }
+    response = await helperFetch(route, { method, signal: AbortSignal.timeout(timeout) });
+  } catch (error) {
+    // 令牌之类有明确原因的错误原样抛出；超时与连接失败才说成「没有应答」
+    if (error?.name !== 'TimeoutError' && error?.name !== 'TypeError') throw error;
+    throw new Error(`本机助手已在运行，但 ${route} 没有应答：${error?.message ?? error}`);
   }
   if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
   return response.json();
+}
+
+const HELPER = 'http://127.0.0.1:8766';
+let helperToken = null;
+
+/**
+ * 已知的访问令牌：先看内存，再看 chrome.storage.session。session 存储在 SW 被回收后
+ * 仍然保留，但只在内存里、不落盘，默认也不对内容脚本开放。
+ */
+async function knownHelperToken() {
+  if (helperToken) return helperToken;
+  try {
+    helperToken = (await chrome.storage.session.get('helperToken')).helperToken ?? null;
+  } catch { /* 读不到就当没有 */ }
+  return helperToken;
+}
+
+async function rememberHelperToken(token) {
+  helperToken = token;
+  await chrome.storage.session.set({ helperToken: token }).catch(() => {});
+}
+
+/**
+ * 发往本机助手的请求（/health 以外）：带上访问令牌。令牌对不上（例如重装后换了）
+ * 就经原生宿主取新令牌，只重试一次。
+ */
+async function helperFetch(route, init = {}) {
+  const send = async () => fetch(`${HELPER}${route}`, {
+    ...init,
+    headers: { ...init.headers, 'x-c2md-token': (await knownHelperToken()) ?? '' },
+  });
+  let response = await send();
+  if (response.status !== 401) return response;
+  helperToken = null;
+  await chrome.storage.session.remove('helperToken').catch(() => {});
+  await wakeLocalHelper();
+  if (!await knownHelperToken()) {
+    throw new Error(`本机宿主没有提供访问令牌（宿主是旧版本）。请在项目目录重新运行 ${installCommand()}。`);
+  }
+  response = await send();
+  if (response.status === 401) throw new Error(`本机助手不认可宿主给出的访问令牌。请在项目目录重新运行 ${installCommand()}。`);
+  return response;
 }
 
 const HELPER_HOST = 'com.course2md.helper';
@@ -187,7 +226,9 @@ function helperHealthy(timeout) {
 }
 
 async function ensureLocalHelper() {
-  if (!await helperHealthy(700)) await wakeLocalHelper();
+  // 助手在跑、令牌也已知，就不必惊动宿主；否则经宿主唤醒助手并取得令牌
+  if (await helperHealthy(700) && await knownHelperToken()) return;
+  await wakeLocalHelper();
 }
 
 let wakingHelper;
@@ -200,9 +241,11 @@ function wakeLocalHelper() {
       if (!reply?.ok) {
         return reject(new Error(`本机助手未能启动：${reply?.error || '宿主没有应答'}。请在项目目录重新运行 ${installCommand()}。`));
       }
-      resolve();
+      resolve(reply.token);
     });
-  }).then(async () => {
+  }).then(async (token) => {
+    // 旧版宿主不带令牌；此时照旧继续，旧版助手也不要求令牌
+    if (/^[0-9a-f]{64}$/.test(token ?? '')) await rememberHelperToken(token);
     // ホストは起動を確認済みだが、拡張側からも確かめる。ポートを別のプログラムが握っている場合もここで分かる
     if (!await helperHealthy(2000)) throw new Error('本机宿主报告助手已启动，但扩展访问不到 127.0.0.1:8766。');
   }).finally(() => { wakingHelper = null; });

@@ -15,14 +15,27 @@ class NativeHelper {
         } catch { return false; }
     }
 
-    static void Reply(bool ok, string error) {
-        var json = ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"" + error.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}";
+    static void Reply(bool ok, string error, string token = null) {
+        var json = !ok ? "{\"ok\":false,\"error\":\"" + error.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}"
+            : token == null ? "{\"ok\":true}" : "{\"ok\":true,\"token\":\"" + token + "\"}";
         var bytes = Encoding.UTF8.GetBytes(json);
         var output = Console.OpenStandardOutput();
         var size = BitConverter.GetBytes(bytes.Length);
         output.Write(size, 0, size.Length);
         output.Write(bytes, 0, bytes.Length);
         output.Flush();
+    }
+
+    // 读取配置第 4 行指向的助手访问令牌。这个应答只会送到 allowed_origins 里的扩展，
+    // 所以令牌只交给本扩展。文件缺失或损坏（例如旧版助手）就不附带
+    static string ReadToken(string[] config) {
+        try {
+            if (config.Length < 4) return null;
+            var token = File.ReadAllText(config[3]).Trim();
+            if (token.Length != 64) return null;
+            foreach (var c in token) if (!Uri.IsHexDigit(c) || char.IsUpper(c)) return null;
+            return token;
+        } catch { return null; }
     }
 
     // パイプの読み取りは分割して届くことがあるので、長さプレフィックスも本文も読み切る。途中で終わったら false
@@ -67,7 +80,8 @@ class NativeHelper {
                     Thread.Sleep(200);
                 }
             }
-            Reply(Healthy(), "助手进程 10 秒内未在 " + healthUrl + " 应答");
+            if (!Healthy()) Reply(false, "助手进程 10 秒内未在 " + healthUrl + " 应答");
+            else Reply(true, "", ReadToken(config));
         } catch (Exception error) { Reply(false, error.Message); }
     }
 }

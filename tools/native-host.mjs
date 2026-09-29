@@ -5,6 +5,9 @@
 //! macOS/Linux 允许带 shebang 的脚本直接作宿主，所以这一个 Node 脚本在两类
 //! 系统上行为一致。两者读同一份 `native-helper.config`（自己目录下的三行：
 //! node 路径、助手脚本路径、健康检查 URL），协议也一致：4 字节小端长度 + JSON。
+//!
+//! 配置第 4 行是助手访问令牌的文件路径。确认助手已启动后把令牌放进应答；这条通道
+//! 只对 allowed_origins 里的扩展开放，所以令牌只会交给本扩展。
 
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -41,7 +44,7 @@ async function main() {
   // config 读取放进 main：文件缺失或损坏也要给浏览器一个应答，而不是静默退出让它干等
   const configPath = join(dirname(fileURLToPath(import.meta.url)), 'native-helper.config');
   const config = readFileSync(configPath, 'utf8').split(/\r?\n/).filter((line) => line.trim() !== '');
-  const [nodePath, helperPath, configuredUrl] = config;
+  const [nodePath, helperPath, configuredUrl, tokenFile] = config;
   if (configuredUrl) healthUrl = configuredUrl;
 
   const size = await readExact(4);
@@ -67,15 +70,26 @@ async function main() {
       await sleep(200);
     }
   }
-  reply(await healthy(), `助手进程 10 秒内未在 ${healthUrl} 应答`);
+  if (!(await healthy())) return reply(false, `助手进程 10 秒内未在 ${healthUrl} 应答`);
+  reply(true, '', readToken(tokenFile));
+}
+
+/** 读取令牌文件；缺失或损坏（例如旧版助手）就不附带令牌。 */
+function readToken(file) {
+  try {
+    const token = readFileSync(file, 'utf8').trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function healthy() {
   return fetch(healthUrl, { signal: AbortSignal.timeout(500) }).then((response) => response.ok).catch(() => false);
 }
 
-function reply(ok, error) {
-  const body = Buffer.from(ok ? '{"ok":true}' : `{"ok":false,"error":"${String(error).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"}`, 'utf8');
+function reply(ok, error, token) {
+  const body = Buffer.from(JSON.stringify(ok ? { ok: true, token } : { ok: false, error: String(error) }), 'utf8');
   const size = Buffer.alloc(4);
   size.writeUInt32LE(body.length);
   process.stdout.write(Buffer.concat([size, body]));
