@@ -20,7 +20,6 @@ export class Panel {
     this.host = null;
     this.scope = null;
     this.bodyEl = null;
-    this.warnedOnce = new Set();
     this.layout = null;
   }
 
@@ -325,11 +324,13 @@ export class Panel {
     }
 
     const pending = (warnings ?? []).filter(Boolean);
+    // 同じ提醒は一度の描画の中でだけ重複を除く。描画をまたいで記憶すると、提醒は
+    // 最初の描画にしか出ず、次の再描画（進捗や図の到着）で消えてしまう
+    const shown = new Set();
     for (const text of pending) {
-      // 同一个提醒不重复堆叠
       const key = String(text).slice(0, 40);
-      if (this.warnedOnce.has(key)) continue;
-      this.warnedOnce.add(key);
+      if (shown.has(key)) continue;
+      shown.add(key);
       const line = el('div', 'c2md-meta');
       line.textContent = String(text);
       wrap.appendChild(line);

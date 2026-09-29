@@ -251,6 +251,20 @@ try {
       gate.pending[0] && gate.pending[1] && gate.pending[2] === false
         ? pass('panel/ready 取帧中仅允许复制纯文本')
         : fail('panel/ready', `取帧导出限制错误：${JSON.stringify(gate)}`);
+      const warning = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const count = () => [...panel.scope.querySelectorAll('.c2md-panel-status .c2md-meta')]
+          .filter((node) => node.textContent === '测试提醒').length;
+        panel.setState({ warnings: ['测试提醒', '测试提醒'] });
+        const first = count();
+        panel.setState({ imagesPending: false }); // 提醒と無関係な再描画
+        const second = count();
+        panel.setState({ warnings: [] });
+        return { first, second };
+      });
+      warning.first === 1 && warning.second === 1
+        ? pass('panel/ready 提醒は重複せず、再描画をまたいで表示され続ける')
+        : fail('panel/ready', `提醒の表示が不正：${JSON.stringify(warning)}`);
       // 密度切り替えで読んでいる行が 1px も動かないこと。スクロールアンカーはホイール操作で
       // 選ばれるので scrollTop の代入ではなく実際にホイールで読み進め、図は一枚ずつ届かせる。
       // 見るのは視口上端の段落（アンカーになる段落）で、許容は丸め誤差のみ。
