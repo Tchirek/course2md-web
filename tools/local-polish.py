@@ -79,8 +79,11 @@ def robust_download(url, target, message):
         total = int(response.headers.get('Content-Length') or 0)
     if target.exists() and total and target.stat().st_size == total:
         return target
-    while not (total and part.exists() and part.stat().st_size >= total):
+    failures = 0
+    while True:
         done = part.stat().st_size if part.exists() else 0
+        if total and done >= total:
+            break
         headers = {'Range': f'bytes={done}-'} if done else {}
         request = urllib.request.Request(url, headers=headers)
         try:
@@ -90,7 +93,13 @@ def robust_download(url, target, message):
                     if not block:
                         break
                     sink.write(block)
+            if not total:
+                break  # 長さが分からなければ、ストリームの終わりまで読めた時点で完了
         except Exception:
+            # 進んでいる限り再開を続け、まったく進まない失敗（回線断、URL 失効）が続いたら諦める
+            failures = 0 if part.exists() and part.stat().st_size > done else failures + 1
+            if failures >= 10:
+                raise RuntimeError(f'{message}失败：连续 {failures} 次没有进展，请检查网络后重试')
             time.sleep(2)
     if total and part.stat().st_size != total:
         raise RuntimeError(f'下载不完整：{part.stat().st_size}/{total}')
