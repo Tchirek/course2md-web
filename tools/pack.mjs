@@ -29,6 +29,7 @@ const HELPER_FILES = [
   'tools/launch-local-polish.mjs',
   'tools/local-asr.py',
   'tools/local-polish.py',
+  'tools/service_lifecycle.py',
   'tools/install-local-asr.mjs',
   'tools/native-host.mjs',
   'tools/native-helper.cs',

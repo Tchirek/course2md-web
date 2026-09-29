@@ -11,7 +11,8 @@ import urllib.request
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from subprocess import Popen
+
+from service_lifecycle import popen_bound
 
 ROOT = Path(os.environ['C2MD_POLISH_HOME'])
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -156,7 +157,8 @@ def start_qwen():
             # zip/tar 解包不保证可执行位，补一个再拉起
             binary.chmod(0o755)
     state('loading', '正在加载 Qwen3.5-2B')
-    process = Popen([str(binary), '-m', str(model), '--alias', 'Qwen/Qwen3.5-2B',
+    # llama-server は数 GB を抱えるので、このプロセスが強制終了されても道連れにする
+    process = popen_bound([str(binary), '-m', str(model), '--alias', 'Qwen/Qwen3.5-2B',
                      '--host', '127.0.0.1', '--port', '8083', '-ngl', str(spec['ngl']), '-c', '4096', '--parallel', '1'])
     for _ in range(120):
         if process.poll() is not None:
@@ -298,3 +300,7 @@ except Exception as error:
 finally:
     if 'QWEN' in globals():
         QWEN.terminate()
+        try:
+            QWEN.wait(timeout=15)
+        except Exception:
+            QWEN.kill()
