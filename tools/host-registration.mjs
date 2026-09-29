@@ -173,3 +173,48 @@ function registerAutostart(dir) {
       `[Desktop Entry]\nType=Application\nName=course2md local helper\nExec=${quote(process.execPath)} ${quote(helper)}\nX-GNOME-Autostart-enabled=true\n`);
   }
 }
+
+/**
+ * Undo everything registerHost() did: browser registrations, autostart and the host files.
+ * Returns what was removed so the uninstaller can report it.
+ */
+export function unregisterHost() {
+  const removed = [];
+  const home = os.homedir();
+  for (const location of manifestLocations()) {
+    if (isWin) {
+      if (spawnSync('reg.exe', ['delete', location, '/f'], { stdio: 'ignore' }).status === 0) removed.push(location);
+    } else if (existsSync(location)) {
+      unlinkSync(location);
+      removed.push(location);
+    }
+  }
+  if (isWin) {
+    const run = spawnSync('reg.exe', ['delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', '/v', 'course2md-local-asr', '/f'], { stdio: 'ignore' });
+    if (run.status === 0) removed.push('开机启动项 course2md-local-asr');
+  } else if (isMac) {
+    const plist = path.join(home, 'Library', 'LaunchAgents', `${HOST_NAME}.plist`);
+    if (existsSync(plist)) {
+      spawnSync('launchctl', ['unload', plist], { stdio: 'ignore' });
+      unlinkSync(plist);
+      removed.push(plist);
+    }
+  } else {
+    const desktop = path.join(home, '.config', 'autostart', 'course2md-helper.desktop');
+    if (existsSync(desktop)) {
+      unlinkSync(desktop);
+      removed.push(desktop);
+    }
+  }
+  const dir = dataDir();
+  if (existsSync(dir)) {
+    for (const name of readdirSync(dir)) {
+      if (!/^(native-helper.*|native-host\.mjs|start-helper\.vbs|helper-token|host-fingerprint)$/.test(name)) continue;
+      try {
+        unlinkSync(path.join(dir, name));
+        removed.push(path.join(dir, name));
+      } catch { /* still running; the uninstaller stops services first */ }
+    }
+  }
+  return removed;
+}

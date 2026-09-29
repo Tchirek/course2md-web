@@ -12,6 +12,7 @@
     "pack": "node tools/pack.mjs",
     "fast-asr": "node tools/fast-asr-server.mjs",
     "local:install": "node tools/install-local-asr.mjs",
+    "local:uninstall": "node tools/uninstall-local-asr.mjs",
     "local:check": "node tools/check-local-asr.mjs",
     "local:check-host": "node tools/check-native-helper.mjs",
     "check:layout": "node tools/layout-check.mjs",

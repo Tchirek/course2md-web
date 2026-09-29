@@ -33,6 +33,7 @@ const HELPER_FILES = [
   'tools/pins.py',
   'tools/runtime-pins.json',
   'tools/install-local-asr.mjs',
+  'tools/uninstall-local-asr.mjs',
   'tools/native-host.mjs',
   'tools/helper-data.mjs',
   'tools/extension-ids.mjs',
@@ -41,7 +42,7 @@ const HELPER_FILES = [
   'tools/check-native-helper.mjs',
   'tools/check-local-polish.mjs',
 ];
-const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:check-host', 'check:local-polish'];
+const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:uninstall', 'local:check-host', 'check:local-polish'];
 
 // ---------- 0. 清单自检：扩展引用闭包不完整就不许出门 ----------
 const check = spawnSync(process.execPath, [join(ROOT, 'tools', 'check-manifest.mjs')], { stdio: 'inherit' });
