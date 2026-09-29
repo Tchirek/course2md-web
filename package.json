@@ -22,7 +22,8 @@
     "icons": "node tools/make-icons.mjs",
     "check": "node tools/check-manifest.mjs && tsc -p tsconfig.json && node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs && node tools/layout-check.mjs",
     "check:manifest": "node tools/check-manifest.mjs",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "check:sites": "node tools/check-sites.mjs"
   },
   "engines": {
     "node": ">=22"
