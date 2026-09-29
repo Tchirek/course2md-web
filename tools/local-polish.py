@@ -12,7 +12,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from service_lifecycle import popen_bound
+from service_lifecycle import IdleWatch, idle_message, popen_bound
 
 ROOT = Path(os.environ['C2MD_POLISH_HOME'])
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -214,6 +214,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        with WATCH:
+            self.polish()
+
+    def polish(self):
         if self.path != '/v1/chat/completions':
             self.send_error(404)
             return
@@ -292,8 +296,11 @@ try:
     PUNC = prepare_punc()
     PUNC_LOCK = threading.Lock()
     QWEN = start_qwen()
+    server = ThreadingHTTPServer(('127.0.0.1', 8082), Handler)
+    WATCH = IdleWatch(server.shutdown)
     state('ready', '本机润色已就绪')
-    ThreadingHTTPServer(('127.0.0.1', 8082), Handler).serve_forever()
+    server.serve_forever()
+    state('idle', idle_message('本机润色模型'))
 except Exception as error:
     state('error', str(error))
     sys.exit(1)

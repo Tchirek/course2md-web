@@ -1,10 +1,56 @@
 """本機サービス（文字起こし・整形）共通の寿命管理。
 
+- IdleWatch：仕事がないまま一定時間（既定 10 分）経ったらサーバーを止める。モデルは
+  数 GB のメモリを確保し続けるので、使っていない間は手放し、次に使うとき助手が起動し直す。
 - popen_bound：子プロセスをこのプロセスの寿命に縛って起動する。親が強制終了されても
   子（llama-server など）が数 GB を抱えたまま居残らないようにする。
 """
+import os
 import subprocess
 import sys
+import threading
+import time
+
+IDLE_SECONDS = float(os.environ.get("C2MD_IDLE_SECONDS", "600"))
+
+
+class IdleWatch:
+    """仕事（POST 要求）の出入りを数え、仕事がないまま IDLE_SECONDS 経ったら on_idle を一度呼ぶ。
+
+    /health などの問い合わせは数えない。状態確認のたびに寿命が延び、永遠に居座るため。
+    """
+
+    def __init__(self, on_idle):
+        self.on_idle = on_idle
+        self.lock = threading.Lock()
+        self.busy = 0
+        self.last = time.monotonic()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def __enter__(self):
+        with self.lock:
+            self.busy += 1
+        return self
+
+    def __exit__(self, *_exc):
+        with self.lock:
+            self.busy -= 1
+            self.last = time.monotonic()
+        return False
+
+    def _run(self):
+        while True:
+            time.sleep(max(0.2, min(30.0, IDLE_SECONDS / 10)))
+            with self.lock:
+                idle = self.busy == 0 and time.monotonic() - self.last >= IDLE_SECONDS
+            if idle:
+                self.on_idle()
+                return
+
+
+def idle_message(what):
+    span = f"{IDLE_SECONDS / 60:g} 分钟" if IDLE_SECONDS >= 60 else f"{IDLE_SECONDS:g} 秒"
+    return f"{span}未使用，已释放{what}；下次使用时会自动重新加载"
 
 
 _jobs = []

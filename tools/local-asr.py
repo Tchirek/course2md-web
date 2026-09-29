@@ -9,6 +9,8 @@ from email.policy import default
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+from service_lifecycle import IdleWatch, idle_message
+
 
 def state(name, message=""):
     print(json.dumps({"state": name, "message": message}), flush=True)
@@ -81,6 +83,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
+        with WATCH:
+            self.transcribe()
+
+    def transcribe(self):
         if self.path != "/v1/audio/transcriptions":
             return self.send_json(404, {"error": "not found"})
         origin = self.headers.get("Origin", "")
@@ -127,8 +133,10 @@ class Handler(BaseHTTPRequestHandler):
 
 try:
     server = HTTPServer(("127.0.0.1", int(os.environ.get("C2MD_ASR_PORT", "8080"))), Handler)
+    WATCH = IdleWatch(server.shutdown)
     state("ready", f"本机转录服务已启动（{'显卡' if device == 'cuda' else 'CPU'}）")
     server.serve_forever()
+    state("idle", idle_message("本机转录模型"))
 except Exception as error:
     state("error", str(error))
     sys.exit(1)

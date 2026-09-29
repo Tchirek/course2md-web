@@ -182,16 +182,22 @@ async function startLocalAsr() {
     for (let newline = output.indexOf('\n'); newline >= 0; newline = output.indexOf('\n')) {
       const line = output.slice(0, newline);
       output = output.slice(newline + 1);
+      if (asrProcess !== child) continue;
       try { asrStatus = JSON.parse(line); } catch { /* 模型库的普通输出 */ }
     }
   });
   child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-800); });
+  // 状態を書き換えるのは今の子プロセスだけ。空き時間で終わった旧プロセスの exit が、
+  // その間に起動し直した新しいプロセスの状態を上書きしないようにする
   child.on('error', (error) => {
+    if (asrProcess !== child) return;
     asrStatus = { state: 'error', message: `无法启动 Python：${error.message}` };
     asrProcess = null;
   });
   child.on('exit', (code) => {
-    if (asrStatus.state !== 'error') asrStatus = { state: 'error', message: errors || `转录服务退出：${code}` };
+    if (asrProcess !== child) return;
+    // 空き時間での自発的な終了（state: idle）はエラーではない。次に使うとき起動し直す
+    if (!['error', 'idle'].includes(asrStatus.state)) asrStatus = { state: 'error', message: errors || `转录服务退出：${code}` };
     asrProcess = null;
   });
 }
@@ -218,13 +224,19 @@ async function startLocalPolish() {
     for (let newline = output.indexOf('\n'); newline >= 0; newline = output.indexOf('\n')) {
       const line = output.slice(0, newline);
       output = output.slice(newline + 1);
+      if (polishProcess !== child) continue;
       try { polishStatus = JSON.parse(line); } catch { /* 安装程序输出 */ }
     }
   });
   child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-1000); });
-  child.on('error', (error) => { polishStatus = { state: 'error', message: error.message }; polishProcess = null; });
+  child.on('error', (error) => {
+    if (polishProcess !== child) return;
+    polishStatus = { state: 'error', message: error.message };
+    polishProcess = null;
+  });
   child.on('exit', (code) => {
-    if (polishStatus.state !== 'error') polishStatus = { state: 'error', message: errors || `本机润色服务退出：${code}` };
+    if (polishProcess !== child) return;
+    if (!['error', 'idle'].includes(polishStatus.state)) polishStatus = { state: 'error', message: errors || `本机润色服务退出：${code}` };
     polishProcess = null;
   });
 }
@@ -367,6 +379,8 @@ function errorText(body) {
 async function waitForLocalAsr(job, signal) {
   while (asrStatus.state !== 'ready') {
     if (signal.aborted) throw new Error('已取消');
+    // 長いダウンロードの間に空き時間で終わっていたら起動し直す
+    if (asrStatus.state === 'idle' && !asrProcess) await startLocalAsr();
     if (asrStatus.state === 'error') throw new Error(asrStatus.message);
     job.message = asrStatus.message || '正在加载本机转录模型';
     await new Promise((resolve) => setTimeout(resolve, 500));
