@@ -7,7 +7,7 @@
 //! node 路径、助手脚本路径、健康检查 URL），协议也一致：4 字节小端长度 + JSON。
 
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,13 +53,21 @@ async function main() {
   if (!body.toString('utf8').includes('"start"')) throw new Error('不支持的操作');
 
   if (!(await healthy())) {
+    // インストール時に記録したパスは無効になり得る（Node の更新で場所が変わった、プロジェクトを移動した等）。どれかを明示する
+    if (!nodePath || !existsSync(nodePath)) throw new Error(`找不到 Node：${nodePath}`);
+    if (!helperPath || !existsSync(helperPath)) throw new Error(`找不到助手脚本：${helperPath}`);
     const child = spawn(nodePath, [helperPath], { detached: true, stdio: 'ignore', windowsHide: true });
-    child.on('error', () => { reply(false, '无法启动本机助手进程'); process.exit(0); });
+    let exited = null;
+    child.on('error', (error) => { exited = `无法启动助手进程：${error.message}`; });
+    child.on('exit', (code) => { exited ??= `助手进程启动后立即退出（代码 ${code}），可在项目目录运行 npm run fast-asr 查看报错`; });
     child.unref();
-    // 最多等 10 秒：模型冷启动不归宿主管，这里只等 HTTP 服务本身起来
-    for (let i = 0; i < 50 && !(await healthy()); i++) await sleep(200);
+    // 最大 10 秒待つ：モデルのコールドスタートはホストの管轄外で、ここでは HTTP サービス自体の起動だけを待つ。プロセスが終了済みなら待たない
+    for (let i = 0; i < 50 && !(await healthy()); i++) {
+      if (exited && !(await healthy())) throw new Error(exited);
+      await sleep(200);
+    }
   }
-  reply(await healthy(), '本机助手启动失败');
+  reply(await healthy(), `助手进程 10 秒内未在 ${healthUrl} 应答`);
 }
 
 function healthy() {
