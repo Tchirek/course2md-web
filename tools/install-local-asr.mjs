@@ -6,6 +6,7 @@ import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDir, ensureHelperToken, tokenPath } from './helper-data.mjs';
+import { detectExtensionIds } from './extension-ids.mjs';
 
 // パスはスクリプトの位置から解決する。別ディレクトリから実行しても、ホスト設定には正しいヘルパーのパスが書かれる
 const tools = path.dirname(fileURLToPath(import.meta.url));
@@ -29,8 +30,15 @@ if (probe.status !== 0) {
 
 const helper = path.join(tools, 'fast-asr-server.mjs');
 const hostSource = path.join(tools, 'native-host.mjs');
-const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
-if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('扩展 ID 格式错误');
+// Allow every loaded copy of the extension (IDs of unpacked extensions depend on their folder),
+// plus any IDs given on the command line. The fixed default is only a fallback for installing
+// before the extension has been loaded.
+const requested = process.argv.slice(2);
+for (const id of requested) if (!/^[a-p]{32}$/.test(id)) throw new Error(`扩展 ID 格式错误：${id}`);
+const detected = detectExtensionIds();
+const extensionIds = [...new Set([...requested, ...detected])];
+if (!extensionIds.length) extensionIds.push('icceajppndlehndkedbflgimdbinmjcf');
+const allowedOrigins = extensionIds.map((id) => `chrome-extension://${id}/`);
 
 const dir = dataDir();
 mkdirSync(dir, { recursive: true });
@@ -51,7 +59,7 @@ if (isWin) {
   writeFileSync(path.join(dir, 'native-helper.config'), `${process.execPath}\r\n${helper}\r\nhttp://127.0.0.1:8766/health\r\n${tokenPath(dir)}\r\n`);
   writeFileSync(nativeManifest, JSON.stringify({
     name: 'com.course2md.helper', description: 'course2md local helper launcher',
-    path: nativeLauncher, type: 'stdio', allowed_origins: [`chrome-extension://${extensionId}/`],
+    path: nativeLauncher, type: 'stdio', allowed_origins: allowedOrigins,
   }, null, 2));
   for (const browser of ['Microsoft\\Edge', 'Google\\Chrome']) {
     const result = spawnSync('reg.exe', ['add', `HKCU\\Software\\${browser}\\NativeMessagingHosts\\com.course2md.helper`,
@@ -74,7 +82,7 @@ if (isWin) {
   const manifestPath = path.join(dir, 'native-helper.json');
   writeFileSync(manifestPath, JSON.stringify({
     name: 'com.course2md.helper', description: 'course2md local helper launcher',
-    path: hostPath, type: 'stdio', allowed_origins: [`chrome-extension://${extensionId}/`],
+    path: hostPath, type: 'stdio', allowed_origins: allowedOrigins,
   }, null, 2));
 
   const browserDirs = isMac ? [
@@ -121,8 +129,11 @@ const reply = await wakeThroughHost(host);
 if (!reply.ok) throw new Error(`本机宿主已注册，但未能拉起助手：${reply.error}`);
 if (reply.token !== token) throw new Error('本机宿主没有交出正确的访问令牌；扩展将无法使用本机助手');
 process.stdout.write('本机助手已安装并设置为登录后运行。生成笔记时会自动启动转录模型。\n');
-if (!isWin && extensionId === 'icceajppndlehndkedbflgimdbinmjcf') {
-  process.stdout.write('注意：这里用的是默认扩展 ID。若这台机器上扩展 ID 不同（edge://extensions 开发人员模式页可见），\n请带 ID 重新运行：node tools/install-local-asr.mjs <扩展ID>\n');
+if (detected.length) {
+  process.stdout.write(`已允许浏览器里加载的这些扩展调用本机助手：${extensionIds.join('、')}\n`);
+} else {
+  process.stdout.write('没有在 Edge / Chrome 里找到已加载的 course2md，暂按默认扩展 ID 注册。\n' +
+    '先在浏览器加载扩展再重新运行本命令即可自动识别；也可以直接带上 ID：node tools/install-local-asr.mjs <扩展ID>\n');
 }
 
 /** ネイティブメッセージングの形式（4 バイトのリトルエンディアン長 + JSON）でホストに start を送り、応答を読み取る。 */

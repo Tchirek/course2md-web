@@ -50,13 +50,13 @@ YouTube、B 站下载失败时，本机助手会用当前浏览器中该视频�
 npm run local:install
 ```
 
-它安装 Python `faster-whisper` 运行库（本机没有时），把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。扩展 ID 与默认值不同时带上 ID 运行：`node tools/install-local-asr.mjs <扩展ID>`（ID 在 `edge://extensions` 开发人员模式页可见）。
+它安装 Python `faster-whisper` 运行库（本机没有时），把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。安装脚本会在 Edge / Chrome 的配置里找出已加载的本扩展（解压加载的扩展 ID 随所在文件夹而变），只允许这些扩展调用助手，所以请先在浏览器加载扩展再运行；也可以直接带上 ID：`node tools/install-local-asr.mjs <扩展ID>`。
 选择本地模型转录后，助手会在任务开始时自动启动服务；设置页按钮也可手动启动。本机转录与润色模型 10 分钟没有任务就会退出并释放内存（环境变量 `C2MD_IDLE_SECONDS` 可调），下次用到时自动重新加载。首次没有 `small`
 多语言模型时会从 Hugging Face 下载到本机；按钮会显示下载、加载与就绪状态，
 并自动填好转录地址和模型名。需要 Python 3、Node.js 22、`ffmpeg`；YouTube、B 站
 快速提取还需要 `yt-dlp`。移动项目目录或 Node 换了位置后要重新运行安装命令。
 安装最后会经刚注册的宿主拉起助手，宿主不通就当场报错。插件唤不醒助手时会写明断在哪一环（未注册、扩展 ID 不符、Node 或助手路径失效等）。
-可运行 `npm run local:check-host` 核对浏览器能否找到宿主并验证宿主能否从零拉起服务（扩展 ID 非默认时在命令后加 `-- <扩展ID>`），`npm run local:check` 核对本机服务是否真的接收音频。
+可运行 `npm run local:check-host` 核对浏览器能否找到宿主并验证宿主能否从零拉起服务（默认核对浏览器里已加载的所有副本，也可在命令后加 `-- <扩展ID>` 指定），`npm run local:check` 核对本机服务是否真的接收音频。
 
 也可以接入自己已有的 OpenAI 兼容 ASR 服务，任选其一：
 

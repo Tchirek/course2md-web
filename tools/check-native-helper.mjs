@@ -13,16 +13,19 @@ import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { detectExtensionIds } from './extension-ids.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOST_NAME = 'com.course2md.helper';
-const extensionId = process.argv[2] || 'icceajppndlehndkedbflgimdbinmjcf';
+// Check the IDs given on the command line, otherwise every copy loaded in the local browsers.
+const extensionIds = process.argv.length > 2 ? process.argv.slice(2) : detectExtensionIds();
+if (!extensionIds.length) extensionIds.push('icceajppndlehndkedbflgimdbinmjcf');
 
 let failed = false;
 const problems = registrationProblems();
 for (const problem of problems) console.error(`注册：${problem}`);
 if (problems.length) failed = true;
-else console.log(`注册：浏览器能找到宿主，且允许扩展 ${extensionId} 调用`);
+else console.log(`注册：浏览器能找到宿主，且允许扩展 ${extensionIds.join('、')} 调用`);
 
 const hosts = [];
 if (process.platform === 'win32') {
@@ -80,8 +83,9 @@ function manifestProblem(manifestPath) {
   }
   if (manifest.name !== HOST_NAME) return `→ 清单 name 应为 ${HOST_NAME}`;
   if (!manifest.path || !existsSync(manifest.path)) return `→ 宿主程序不存在：${manifest.path}`;
-  if (!manifest.allowed_origins?.includes(`chrome-extension://${extensionId}/`)) {
-    return `→ 未允许扩展 ${extensionId}（只允许 ${manifest.allowed_origins?.join('、') || '无'}）`;
+  const missing = extensionIds.filter((id) => !manifest.allowed_origins?.includes(`chrome-extension://${id}/`));
+  if (missing.length) {
+    return `→ 未允许扩展 ${missing.join('、')}（只允许 ${manifest.allowed_origins?.join('、') || '无'}）`;
   }
   const configPath = join(dirname(manifest.path), 'native-helper.config');
   if (!existsSync(configPath)) return `→ 宿主配置不存在：${configPath}`;
