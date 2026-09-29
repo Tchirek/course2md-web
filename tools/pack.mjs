@@ -123,8 +123,9 @@ async function makeZip(name, stage, populate) {
     process.exit(packed.status ?? 1);
   }
   // 验包：条目数对得上、没有反斜杠
-  const listArgs = packer.cmd.endsWith('zip') ? ['-Z1', zipPath] : ['-tf', zipPath];
-  const listed = spawnSync(packer.cmd, listArgs, { encoding: 'utf8' });
+  // zip 自体は一覧を出せないので unzip -Z1（zipinfo）を使う。bsdtar は -tf
+  const [lister, listArgs] = packer.cmd.endsWith('zip') ? ['unzip', ['-Z1', zipPath]] : [packer.cmd, ['-tf', zipPath]];
+  const listed = spawnSync(lister, listArgs, { encoding: 'utf8' });
   const entries = (listed.stdout ?? '').split(/\r?\n/).filter(Boolean);
   const fileEntries = entries.filter((entry) => !entry.endsWith('/'));
   const bad = fileEntries.filter((entry) => entry.includes('\\'));
