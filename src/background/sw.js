@@ -151,57 +151,76 @@ const HANDLERS = {
   'audio.extensions': () => supportedAudioExtensions(),
 };
 
-async function localAsr(action) {
+function localAsr(action) {
+  return localHelperRequest(`/asr/${action}`, action === 'start' ? 'POST' : 'GET', 1200);
+}
+
+function localPolish(action) {
+  return localHelperRequest(`/polish/${action}`, action === 'start' ? 'POST' : 'GET', 1500);
+}
+
+/** ヘルパーが動いていなければホスト経由で一度だけ起こして再試行する。それでも失敗するなら「未起動」ではないので、そのまま報告し起動を繰り返さない。 */
+async function localHelperRequest(route, method, timeout) {
+  const request = () => fetch(`http://127.0.0.1:8766${route}`, { method, signal: AbortSignal.timeout(timeout) });
   let response;
   try {
-    response = await fetch(`http://127.0.0.1:8766/asr/${action}`, {
-      method: action === 'start' ? 'POST' : 'GET',
-      signal: AbortSignal.timeout(1200),
-    });
+    response = await request();
   } catch {
-    if (await wakeLocalHelper()) return localAsr(action);
-    throw new Error('本机助手无法启动。请在项目目录运行 npm run local:install。');
+    await ensureLocalHelper();
+    try {
+      response = await request();
+    } catch (error) {
+      throw new Error(`本机助手已在运行，但 ${route} 没有应答：${error?.message ?? error}`);
+    }
   }
   if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
   return response.json();
 }
 
-async function localPolish(action) {
-  let response;
-  try {
-    response = await fetch(`http://127.0.0.1:8766/polish/${action}`, {
-      method: action === 'start' ? 'POST' : 'GET', signal: AbortSignal.timeout(1500),
-    });
-  } catch {
-    if (await wakeLocalHelper()) return localPolish(action);
-    throw new Error('本机助手无法启动。请在项目目录运行 npm run local:install。');
-  }
-  if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
-  return response.json();
+const HELPER_HOST = 'com.course2md.helper';
+/** インストーラが既定で登録する拡張 ID。実際の ID が異なる場合は、案内に実 ID を含める。 */
+const DEFAULT_EXTENSION_ID = 'icceajppndlehndkedbflgimdbinmjcf';
+
+function helperHealthy(timeout) {
+  return fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(timeout) })
+    .then((response) => response.ok, () => false);
+}
+
+async function ensureLocalHelper() {
+  if (!await helperHealthy(700)) await wakeLocalHelper();
 }
 
 let wakingHelper;
-async function ensureLocalHelper() {
-  try {
-    const response = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(700) });
-    if (response.ok) return;
-  } catch { /* 唤醒已安装的本机宿主 */ }
-  if (!await wakeLocalHelper()) throw new Error('本机助手无法启动。请在项目目录运行 npm run local:install。');
-}
-async function wakeLocalHelper() {
-  if (wakingHelper) return wakingHelper;
-  wakingHelper = new Promise((resolve) => {
-    try {
-      chrome.runtime.sendNativeMessage('com.course2md.helper', { action: 'start' }, async () => {
-        if (chrome.runtime.lastError) return resolve(false);
-        try {
-          const response = await fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(2000) });
-          resolve(response.ok);
-        } catch { resolve(false); }
-      });
-    } catch { resolve(false); }
+/** ネイティブメッセージングホスト経由でローカルヘルパーを起動する。失敗時は漠然とした「起動できない」ではなく、どこで途切れたかを示すエラーを投げる。 */
+function wakeLocalHelper() {
+  wakingHelper ??= new Promise((resolve, reject) => {
+    chrome.runtime.sendNativeMessage(HELPER_HOST, { action: 'start' }, (reply) => {
+      const failure = chrome.runtime.lastError?.message;
+      if (failure) return reject(new Error(hostFailure(failure)));
+      if (!reply?.ok) {
+        return reject(new Error(`本机助手未能启动：${reply?.error || '宿主没有应答'}。请在项目目录重新运行 ${installCommand()}。`));
+      }
+      resolve();
+    });
+  }).then(async () => {
+    // ホストは起動を確認済みだが、拡張側からも確かめる。ポートを別のプログラムが握っている場合もここで分かる
+    if (!await helperHealthy(2000)) throw new Error('本机宿主报告助手已启动，但扩展访问不到 127.0.0.1:8766。');
   }).finally(() => { wakingHelper = null; });
   return wakingHelper;
+}
+
+function hostFailure(message) {
+  if (/not found/i.test(message)) {
+    return `本机助手未注册，或注册指向的文件已不存在。请在项目目录运行 ${installCommand()}。`;
+  }
+  if (/forbidden/i.test(message)) {
+    return `本机助手注册给了别的扩展 ID，当前扩展 ID 是 ${chrome.runtime.id}。请在项目目录运行 node tools/install-local-asr.mjs ${chrome.runtime.id}。`;
+  }
+  return `无法唤醒本机助手（${message}）。请在项目目录运行 ${installCommand()}，再用 npm run local:check-host 检查。`;
+}
+
+function installCommand() {
+  return chrome.runtime.id === DEFAULT_EXTENSION_ID ? 'npm run local:install' : `node tools/install-local-asr.mjs ${chrome.runtime.id}`;
 }
 
 /**
