@@ -171,7 +171,9 @@ export class Controller {
     this.imagesPending = false;
     this.doc = null;
     this.meta = null;
-    this.status = 'idle';
+    // 已武装自动生成：直接进入「加载中」占位（与本地模型转录一致），
+    // 不让「暂无笔记」在启动的一秒空窗里闪出来
+    this.status = this.autoRunArmed ? 'loading' : 'idle';
     this.error = null;
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
