@@ -7,6 +7,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+process.env.PIP_DISABLE_PIP_VERSION_CHECK = '1';
+
 function freeGB(dir) {
   try {
     const stats = statfsSync(dir);
@@ -45,7 +47,7 @@ if (!existsSync(python)) {
 // 逐项探测，缺了才装；pip 不再写缓存目录。
 for (const [probe, name, packages] of [
   ['import torch', 'torch', ['torch==2.6.0']],
-  ['import transformers, sentencepiece', 'transformers', ['transformers==4.51.3', 'sentencepiece']],
+  ['import transformers, tokenizers, sentencepiece; assert transformers.__version__ == "4.51.3"; assert tokenizers.__version__.startswith("0.21.")', 'transformers', ['--force-reinstall', '--no-deps', 'transformers==4.51.3', 'tokenizers==0.21.4', 'sentencepiece']],
 ]) {
   const check = spawnSync(python, ['-c', probe], { stdio: 'ignore' });
   if (check.status === 0) continue;
