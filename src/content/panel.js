@@ -224,8 +224,10 @@ export class Panel {
 
   render() {
     if (!this.scope) return;
-    const scrollTop = this.bodyEl?.scrollTop ?? 0;
-    const atBottom = this.bodyEl && this.bodyEl.scrollHeight - this.bodyEl.clientHeight - scrollTop < 80;
+    // scope.replaceChildren 会把正文连根拔起重插，节点脱离文档的瞬间 scrollTop
+    // 会被清零；这里只恢复用户自己滚到的位置——不吸附底部、不自动跟滚，
+    // 滚不滚、滚到哪，全由用户自己决定。
+    const keep = this.bodyEl?.isConnected ? this.bodyEl.scrollTop : 0;
 
     const reuseToggles = this.controlsSettings === this.state.settings &&
       this.controlsPolishRunning === Boolean(this.state.polish?.running);
@@ -239,9 +241,8 @@ export class Panel {
       this.renderBody(),
       this.renderFoot(),
     );
+    if (keep > 0) this.bodyEl.scrollTop = keep;
     this.applyDisplayMode();
-
-    if (this.bodyEl) this.bodyEl.scrollTop = atBottom ? this.bodyEl.scrollHeight : scrollTop;
   }
 
   // ---------- 头部 ----------
@@ -324,78 +325,83 @@ export class Panel {
 
   // ---------- 正文 ----------
   renderBody() {
-    const body = el('div', 'c2md-panel-body');
+    // 滚动容器复用同一个节点，不随重建更换：换节点会打断进行中的滚轮手势
+    // （图片批量到达时正好滚一半就被锁住）。内容先在文档外备齐，再「先加新、
+    // 后删旧」整体换入：滚动高度不经历塌陷，位置由浏览器滚动锚定原样保留。
+    // 不能用 replaceChildren——全新内容会让锚点丢失，滚动位置被钳回 0。
+    const body = this.bodyEl?.isConnected ? this.bodyEl : el('div', 'c2md-panel-body');
     this.bodyEl = body;
+    const next = el('div');
 
     const { status, sections, settings } = this.state;
     if ((status === 'loading' || status === 'running') && !sections?.length) {
       const empty = el('div', 'c2md-empty');
       empty.appendChild(progress({ ratio: null, label: '正在取文字' }));
-      body.appendChild(empty);
-      return body;
-    }
-    if (!sections?.length) {
+      next.appendChild(empty);
+    } else if (!sections?.length) {
       if (status !== 'error') {
         const empty = el('div', 'c2md-empty');
         empty.textContent = '暂无笔记';
-        body.appendChild(empty);
+        next.appendChild(empty);
       }
-      return body;
+    } else {
+      const polished = Boolean(settings?.polish && this.state.polish?.hasResult);
+
+      for (const section of sections) {
+        const visible = section.segments.filter((seg) => seg.raw ?? seg.text);
+        if (!visible.length) continue;
+
+        const sec = el('section', 'c2md-section');
+        if (settings?.imageLevel !== 'none' && section.image) {
+          const figure = el('figure', 'c2md-frame');
+          const image = document.createElement('img');
+          image.src = section.image;
+          image.alt = `视频画面 ${fmtTs(section.t)}`;
+          image.loading = 'lazy';
+          figure.appendChild(image);
+          sec.appendChild(figure);
+        }
+        if (section.title) {
+          const h = el('h3', 'c2md-section-title');
+          h.textContent = section.title;
+          sec.appendChild(h);
+        }
+
+        for (const seg of section.segments) {
+          const raw = seg.raw ?? seg.text;
+          const shown = polished ? seg.text : raw;
+          if (!shown && !raw) continue;
+
+          const p = el('p', 'c2md-para');
+          p.dataset.id = String(seg.id);
+          p.dataset.state = seg.state ?? 'kept';
+          p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
+          p.dataset.start = String(seg.start);
+
+          const sec0 = Number(seg.start);
+          const stamp = document.createElement('button');
+          stamp.type = 'button';
+          stamp.className = 'c2md-ts c2md-num';
+          stamp.dataset.start = String(sec0);
+          stamp.textContent = fmtTs(sec0);
+          stamp.title = `跳转到 ${fmtTs(sec0)}`;
+          stamp.addEventListener('click', () => this.handlers.onSeek?.(sec0));
+          p.appendChild(stamp);
+
+          const say = el('span', 'c2md-say');
+          say.dataset.raw = raw;
+          if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
+          say.textContent = shown;
+          p.appendChild(say);
+
+          sec.appendChild(p);
+        }
+        next.appendChild(sec);
+      }
     }
-
-    const polished = Boolean(settings?.polish && this.state.polish?.hasResult);
-
-    for (const section of sections) {
-      const visible = section.segments.filter((seg) => seg.raw ?? seg.text);
-      if (!visible.length) continue;
-
-      const sec = el('section', 'c2md-section');
-      if (settings?.imageLevel !== 'none' && section.image) {
-        const figure = el('figure', 'c2md-frame');
-        const image = document.createElement('img');
-        image.src = section.image;
-        image.alt = `视频画面 ${fmtTs(section.t)}`;
-        image.loading = 'lazy';
-        figure.appendChild(image);
-        sec.appendChild(figure);
-      }
-      if (section.title) {
-        const h = el('h3', 'c2md-section-title');
-        h.textContent = section.title;
-        sec.appendChild(h);
-      }
-
-      for (const seg of section.segments) {
-        const raw = seg.raw ?? seg.text;
-        const shown = polished ? seg.text : raw;
-        if (!shown && !raw) continue;
-
-        const p = el('p', 'c2md-para');
-        p.dataset.id = String(seg.id);
-        p.dataset.state = seg.state ?? 'kept';
-        p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
-        p.dataset.start = String(seg.start);
-
-        const sec0 = Number(seg.start);
-        const stamp = document.createElement('button');
-        stamp.type = 'button';
-        stamp.className = 'c2md-ts c2md-num';
-        stamp.dataset.start = String(sec0);
-        stamp.textContent = fmtTs(sec0);
-        stamp.title = `跳转到 ${fmtTs(sec0)}`;
-        stamp.addEventListener('click', () => this.handlers.onSeek?.(sec0));
-        p.appendChild(stamp);
-
-        const say = el('span', 'c2md-say');
-        say.dataset.raw = raw;
-        if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
-        say.textContent = shown;
-        p.appendChild(say);
-
-        sec.appendChild(p);
-      }
-      body.appendChild(sec);
-    }
+    const stale = [...body.childNodes];
+    body.append(...next.childNodes);
+    for (const node of stale) node.remove();
     return body;
   }
 

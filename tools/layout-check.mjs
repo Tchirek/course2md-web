@@ -164,6 +164,22 @@ try {
       plainGate.withText === false && plainGate.withoutText === true && plainGate.restored === false
         ? pass('panel/running 转录中可复制已生成的纯文本')
         : fail('panel/running', `运行中复制纯文本按钮状态错误：${JSON.stringify(plainGate)}`);
+      const scrollStable = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const sections = panel.state.sections;
+        // 先让正文高过视口，才谈得上滚动位置
+        panel.setState({ sections: [...sections, ...sections] });
+        const body = panel.scope.querySelector('.c2md-panel-body');
+        body.scrollTop = 120;
+        panel.setState({ sections: [...sections, ...sections, ...sections] });
+        const after = panel.scope.querySelector('.c2md-panel-body');
+        const result = { same: body === after, scrollTop: after.scrollTop, scrollable: after.scrollHeight > after.clientHeight };
+        panel.setState({ sections });
+        return result;
+      });
+      scrollStable.same && scrollStable.scrollable && scrollStable.scrollTop === 120
+        ? pass('panel/running 内容更新不换滚动容器、不自动滚动')
+        : fail('panel/running', `滚动容器或位置被改动：${JSON.stringify(scrollStable)}`);
     }
     if (state === 'ready') {
       const images = await page.evaluate(() => {
