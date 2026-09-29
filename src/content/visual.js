@@ -1,28 +1,26 @@
-// 图片只取有讲述的时间窗；最多每 10 秒一张，与原版的最短保存间隔一致。
-export function visualSections(sections, _duration, level = 'default') {
-  if (level === 'none') return sections.map((section) => ({ ...section, image: '' }));
+// 图片密度只决定「每个分节取哪些帧时刻」，绝不重新分节：
+// 显示结构（章节分节与段落）是稳定不变的，密度切换不会搬动任何段落，
+// 浏览器的原生滚动锚定才能始终锚在段落上。帧时刻落在段落的起始时间上，
+// 呈现时图片插在它对应的段落之前。
+export function attachFrames(sections, level = 'default', cache = new Map()) {
+  if (level === 'none') return sections.map((section) => ({ ...section, frames: [] }));
   const step = { few: 180, default: 60, many: 10 }[level] ?? 60;
-  const out = [];
-  for (const section of sections) {
-    let group = null;
+  return sections.map((section) => {
+    const frames = [];
     let slot = -1;
-    let first = true;
     for (const segment of section.segments) {
-      const nextSlot = Math.floor(Math.max(0, segment.start - section.t) / step);
-      if (!group || nextSlot !== slot) {
+      const nextSlot = Math.floor(Math.max(0, segment.start - (section.t ?? 0)) / step);
+      if (nextSlot !== slot) {
         slot = nextSlot;
-        group = { t: segment.start, title: first ? section.title : '', segments: [] };
-        out.push(group);
-        first = false;
+        frames.push({ t: segment.start, image: cache.get(segment.start) ?? '' });
       }
-      group.segments.push(segment);
     }
-  }
-  return out;
+    return { ...section, frames };
+  });
 }
 
-export async function captureSectionImages(sourceUrl, sections, signal, onImage) {
-  const times = sections.filter((section) => !section.captured).map((section) => section.t);
+export async function captureSectionImages(sourceUrl, frames, signal, onImage) {
+  const times = frames.map((frame) => frame.t);
   if (!times.length) return 0;
   const started = await chrome.runtime.sendMessage({ type: 'frame.start', payload: { sourceUrl, times } });
   if (!started?.ok || !started.value?.id) throw new Error(started?.error ?? '本机取帧服务不可用');
@@ -36,11 +34,11 @@ export async function captureSectionImages(sourceUrl, sections, signal, onImage)
       if (!reply?.ok) throw new Error(reply?.error ?? '本机取帧失败');
       const job = reply.value;
       for (const frame of job.images ?? []) {
-        const section = sections.find((item) => item.t === frame.time);
-        if (section) {
-          section.image = frame.data;
+        const item = frames.find((candidate) => candidate.t === frame.time);
+        if (item) {
+          item.image = frame.data;
           kept++;
-          onImage?.(section);
+          onImage?.(item);
         }
       }
       seen += job.images?.length ?? 0;

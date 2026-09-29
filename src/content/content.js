@@ -6,7 +6,7 @@
 import { pickAdapter, siteLabel } from '../adapters/index.js';
 import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
-import { visualSections, captureSectionImages } from './visual.js';
+import { attachFrames, captureSectionImages } from './visual.js';
 import { buildDoc, toMarkdown, toPlainText, fileNameFor } from '../core/format.js';
 import { useLocalPolish, LOCAL_POLISH } from '../core/settings.js';
 import { polishProgress } from '../core/prompt.js';
@@ -131,16 +131,16 @@ export class Controller {
         warnings: cached.warnings ?? [],
       };
       this.built.segments.forEach((seg, id) => { seg.id = id; });
-      this.previewSections = cached.imageLevel === this.settings.imageLevel
-        ? cached.previewSections ?? [] : visualSections(cached.sections, cached.meta.duration, this.settings.imageLevel);
+      for (const [t, image] of cached.images ?? []) this.imageCache.set(t, image);
       this.meta = cached.meta;
       this.doc = buildDoc({ ...this.meta, source: cached.stats.source }, cached.sections);
       this.status = 'ready';
       this.polishState.hasResult = Boolean(cached.polished);
-      for (const section of cached.previewSections ?? []) if (section.image) this.imageCache.set(section.t, section.image);
-      this.imagesPending = this.settings.imageLevel !== 'none' && cached.imageComplete !== true;
+      this.previewSections = attachFrames(this.built.sections, this.settings.imageLevel, this.imageCache);
+      this.imagesPending = this.settings.imageLevel !== 'none' &&
+        this.previewSections.some((section) => section.frames.some((frame) => !this.imageCache.has(frame.t)));
       if (this.settings.showPanel) this.panel.mount();
-      if (cached.imageLevel !== this.settings.imageLevel || this.imagesPending) this.refreshImages();
+      if (this.imagesPending) this.refreshImages();
     }
     this.broadcast();
   }
@@ -647,23 +647,27 @@ export class Controller {
     if (this.imagesPending && this.settings.imageLevel !== 'none') return { saved: false, pending: true };
     try {
       const visibleSections = this.previewSections.filter((section) => section.segments.some((seg) => seg.state !== 'skipped'));
-      const pictures = this.settings.imageLevel === 'none'
-        ? [] : visibleSections.filter((section) => section.image);
+      // 只导出落在保留段落上的帧，按出现顺序编号
+      const pictures = [];
+      const sections = visibleSections.map((section) => ({
+        ...section,
+        frames: this.settings.imageLevel === 'none' ? [] : (section.frames ?? [])
+          .filter((frame) => frame.image && section.segments.some((seg) => seg.state !== 'skipped' && seg.start === frame.t))
+          .map((frame) => {
+            pictures.push(frame.image);
+            return { ...frame, image: `frames/slide_${String(pictures.length).padStart(4, '0')}.jpg` };
+          }),
+      }));
       if (this.settings.imageLevel !== 'none' && !pictures.length) {
         throw new Error('未能取得离线视频画面，请检查本机助手与媒体下载。');
       }
       if (pictures.length) {
-        let number = 0;
-        const sections = visibleSections.map((section) => ({
-          ...section,
-          image: section.image ? `frames/slide_${String(++number).padStart(4, '0')}.jpg` : '',
-        }));
         return await send({
           type: 'file.saveBundle',
           payload: {
             folder: this.doc.meta.title,
             markdown: toMarkdown({ ...this.doc, sections }, { timestamps: this.settings.showTimestamps, images: true }),
-            images: pictures.map((section) => section.image),
+            images: pictures,
           },
         });
       }
@@ -707,13 +711,18 @@ export class Controller {
     if (!this.imageAbort || this.imageAbort.signal.aborted) this.imageAbort = new AbortController();
     if (this.imageLevel !== this.settings.imageLevel) this.imageError = null;
     this.imageLevel = this.settings.imageLevel;
-    this.previewSections = visualSections(sections, this.meta.duration, this.imageLevel);
-    for (const section of this.previewSections) section.image = this.imageCache.get(section.t) ?? '';
-    this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((section) => !this.imageCache.has(section.t));
+    // 密度只决定每个分节取哪些帧时刻，分节与段落原地不动
+    this.previewSections = attachFrames(sections, this.imageLevel, this.imageCache);
+    this.imagesPending = this.imageLevel !== 'none' &&
+      this.previewSections.some((section) => section.frames.some((frame) => !this.imageCache.has(frame.t)));
     this.broadcast();
     if (this.imageLevel !== 'none' && !this.imageError) {
       for (const section of this.previewSections) {
-        if (!this.imageCache.has(section.t) && !this.imageQueue.has(section.t) && !this.imageInFlight.has(section.t)) this.imageQueue.set(section.t, { ...section });
+        for (const frame of section.frames) {
+          if (!this.imageCache.has(frame.t) && !this.imageQueue.has(frame.t) && !this.imageInFlight.has(frame.t)) {
+            this.imageQueue.set(frame.t, frame);
+          }
+        }
       }
       if (!this.imageWorking && this.imageQueue.size) this.imagePromise = this.drainImages();
     }
@@ -728,15 +737,18 @@ export class Controller {
       while (!abort.signal.aborted && this.imageQueue.size) {
         const batch = [...this.imageQueue.values()];
         this.imageQueue.clear();
-        for (const section of batch) this.imageInFlight.add(section.t);
-        try { await captureSectionImages(sourceUrl, batch, abort.signal, (section) => {
+        for (const frame of batch) this.imageInFlight.add(frame.t);
+        try { await captureSectionImages(sourceUrl, batch, abort.signal, (frame) => {
           if (abort.signal.aborted) return;
-          this.imageCache.set(section.t, section.image);
-          const visible = this.previewSections.find((item) => item.t === section.t);
-          if (visible) visible.image = section.image;
-          this.imagesPending = this.imageLevel !== 'none' && this.previewSections.some((item) => !this.imageCache.has(item.t));
+          this.imageCache.set(frame.t, frame.image);
+          const visible = this.previewSections
+            .flatMap((section) => section.frames ?? [])
+            .find((item) => item.t === frame.t);
+          if (visible) visible.image = frame.image;
+          this.imagesPending = this.imageLevel !== 'none' &&
+            this.previewSections.some((section) => section.frames.some((item) => !this.imageCache.has(item.t)));
           this.broadcast();
-        }); } finally { for (const section of batch) this.imageInFlight.delete(section.t); }
+        }); } finally { for (const frame of batch) this.imageInFlight.delete(frame.t); }
         if (this.built) await this.saveCache();
       }
     } catch (error) {
@@ -767,9 +779,8 @@ export class Controller {
           version: chrome.runtime.getManifest().version,
           meta: this.meta,
           sections: this.built.sections,
-          previewSections: this.previewSections,
-          imageLevel: this.settings.imageLevel,
-          imageComplete: !this.imagesPending,
+          // 已取到的帧按时刻存，密度换挡时同款时刻直接复用
+          images: [...this.imageCache.entries()],
           stats: this.built.stats,
           warnings: this.built.warnings,
           polished: this.polishState.hasResult,

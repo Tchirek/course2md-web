@@ -8,31 +8,46 @@ import { planChunks, tailOf, mapPool } from '../src/core/chunk.js';
 import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJson, polishProgress } from '../src/core/prompt.js';
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, useLocalPolish, maskSecret, setPath, getPath } from '../src/core/settings.js';
-import { visualSections } from '../src/content/visual.js';
+import { attachFrames } from '../src/content/visual.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 import { captureAudio } from '../src/content/capture.js';
 import { cookieFileFor, cookieHeaderFor } from '../src/background/cookies.js';
 
-test('面板画面分组不改动按章节导出的正文', () => {
+test('图片帧只挂在分节上，不重排分节与段落，也不改动按章节导出的正文', () => {
   const segments = [0, 80, 100, 210].map((start) => ({ start, end: start + 2, text: String(start) }));
   const chapters = [{ t: 0, title: '第一章', segments }];
-  const view = visualSections(chapters, 240);
-  assert.deepEqual(view.map((section) => section.segments.map((s) => s.start)), [[0], [80, 100], [210]]);
+  const view = attachFrames(chapters, 'default');
+  assert.equal(view.length, 1);
+  assert.equal(view[0].segments, segments);
+  assert.deepEqual(view[0].frames.map((frame) => frame.t), [0, 80, 210]);
   assert.equal(view[0].title, '第一章');
-  assert.equal(view[1].title, '');
-  assert.equal(chapters[0].segments.length, 4);
-  view[0].image = 'data:image/jpeg;base64,preview';
+  assert.equal(chapters[0].frames, undefined);
+  view[0].frames[0].image = 'data:image/jpeg;base64,preview';
   const markdown = toMarkdown(buildDoc({ title: '课' }, chapters), { timestamps: false });
   assert.equal(markdown.match(/## 第一章/g).length, 1);
   assert.doesNotMatch(markdown, /data:image|!\[/);
 });
 
-test('图片密度分四档；多档至多每十秒取一张候选帧', () => {
+test('导出时图片帧落在同起点段落之前', () => {
+  const sections = [{ t: 0, title: '第一章', segments: [{ start: 0, end: 1, text: '甲' }, { start: 80, end: 81, text: '乙' }] }];
+  const view = attachFrames(sections, 'default').map((section) => ({
+    ...section,
+    frames: section.frames.map((frame) => ({ ...frame, image: `frames/${frame.t}.jpg` })),
+  }));
+  const markdown = toMarkdown({ ...buildDoc({ title: '课' }, view), sections: view }, { timestamps: false, images: true });
+  assert.match(markdown, /!\[视频 00:00 的截图\]\(frames\/0\.jpg\)\n\n甲\n\n!\[视频 01:20 的截图\]\(frames\/80\.jpg\)\n\n乙/);
+});
+
+test('图片密度分四档；多档至多每十秒取一个帧时刻，且不改变分节', () => {
   const sections = [{ t: 0, title: '第一章', segments: Array.from({ length: 181 }, (_, start) => ({ start, end: start + 1, text: '讲述' })) }];
-  assert.equal(visualSections(sections, 181, 'none').length, 1);
-  assert.equal(visualSections(sections, 181, 'few').length, 2);
-  assert.equal(visualSections(sections, 181, 'default').length, 4);
-  assert.equal(visualSections(sections, 181, 'many').length, 19);
+  const count = (level) => attachFrames(sections, level).map((section) => section.frames.length);
+  assert.deepEqual(count('none'), [0]);
+  assert.deepEqual(count('few'), [2]);
+  assert.deepEqual(count('default'), [4]);
+  assert.deepEqual(count('many'), [19]);
+  const cached = attachFrames(sections, 'few', new Map([[0, 'data:cached']]));
+  assert.equal(cached[0].frames[0].image, 'data:cached');
+  assert.equal(cached[0].frames[1].image, '');
 });
 
 test('复制纯文本先在点击事件内聚焦并复制', async () => {

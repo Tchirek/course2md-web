@@ -5,7 +5,7 @@ import { unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { visualSections } from '../src/content/visual.js';
+import { attachFrames } from '../src/content/visual.js';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const file = path.join(dir, 'scene-density-test.mp4');
@@ -36,7 +36,7 @@ try {
   const counts = {};
   const frames = {};
   for (const level of ['none', 'few', 'default', 'many']) {
-    const times = visualSections(source, 80, level).map((section) => section.t);
+    const times = attachFrames(source, level).flatMap((section) => section.frames).map((frame) => frame.t);
     if (level === 'none') { counts[level] = 0; continue; }
     const response = await fetch(`http://127.0.0.1:${port}/frames`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -63,20 +63,20 @@ try {
   const page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${webPort}/tools/selftest.html`);
   const kept = await page.evaluate(async (images) => {
-    const { visualSections, captureSectionImages } = await import('/src/content/visual.js');
+    const { attachFrames, captureSectionImages } = await import('/src/content/visual.js');
     const source = [{ t: 0, title: '实验', segments: Array.from({ length: 80 }, (_, start) => ({ start, end: start + 1, text: '讲述' })) }];
     const result = { none: 0 };
     for (const level of ['few', 'default', 'many']) {
       chrome.runtime.sendMessage = async (message) => message.type === 'frame.start'
         ? { ok: true, value: { id: level } }
         : { ok: true, value: { state: 'done', images: images[level].slice(message.payload.after) } };
-      const sections = visualSections(source, 80, level);
-      await captureSectionImages('file:///offline.mp4', sections);
-      result[level] = sections.filter((section) => section.image).length;
+      const frames = attachFrames(source, level).flatMap((section) => section.frames);
+      await captureSectionImages('file:///offline.mp4', frames);
+      result[level] = frames.filter((frame) => frame.image).length;
     }
     return result;
   }, frames);
-  assert.deepEqual(kept, { none: 0, few: 1, default: 2, many: 3 });
+  assert.deepEqual(kept, { none: 0, few: 1, default: 2, many: 8 });
   process.stdout.write(`${JSON.stringify(kept)}\n`);
 } finally {
   await browser?.close();
