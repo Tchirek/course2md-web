@@ -91,9 +91,15 @@
 
 ### 平台字幕（默认）
 
-YouTube 走 `playerResponse.captions…captionTracks[].baseUrl`，加 `&fmt=json3`；
-B 站走 `api.bilibili.com/x/player/v2` 的 `subtitle.subtitle_url`；
+YouTube 走 `playerResponse.captions…captionTracks[].baseUrl`，加 `&fmt=json3`。这类地址带
+`exp=xpe`，必须附上播放器签发的访问凭证（`pot`）才有内容，否则是 200 空响应；凭证与视频
+绑定，扩展从播放器自己的字幕请求里取（没有就让播放器加载一次字幕再还原开关），片头广告
+播放期间等广告播完。
+B 站走 `api.bilibili.com/x/player/wbi/v2` 的 `subtitle.subtitle_url`。`/x/player/v2` 返回的
+地址路径虽是本视频的 aid+cid，`auth_key` 却常指向别的视频的字幕（实测约三分之二），不用；
+字幕文件本身不含视频标识，所以另加一道时间轴校验：字幕明显长于视频就判为串台并拒用。
 其他站点走标准 `<track>` 或页面已解析的 `textTracks`。
+取不到平台字幕时，这一次自动改用本地模型转录，浮窗只给一行提示。
 
 **请求用内容脚本自己发，不走后台。** 因为这两个接口都对 Referer/cookie 敏感，
 内容脚本的源就是页面本身，一切天然正确，也不需要额外的 host 权限。只有 LLM 和 ASR
@@ -230,10 +236,14 @@ src/background/            服务 worker（只做内容脚本做不了的事）
 src/content/               注入页面的一侧
   boot.js                  动态 import 入口（内容脚本不能用静态 ESM）
   page-bridge.js           MAIN world：读页面全局对象
-  content.js               控制器：状态、编排、消息
-  pipeline.js              取文字 → 分节 → 分段 → 润色 → 成文
+  content.js               控制器：状态、生命周期、消息
+  polish-coordinator.js    润色的调度：正式润色、转录中提前润色、本机润色服务
+  frame-loader.js          按密度取帧、逐张接收
+  exporter.js / session-cache.js / messaging.js  导出、会话缓存、后台通信
+  pipeline.js              取平台字幕（并再导出各阶段）
+  transcribe.js / polish.js / organize.js        本机转录、润色、分节成文
   capture.js               从 video 元素录音频切片
-  panel.js                 页面内面板
+  panel.js / panel-body.js 页面内面板；正文的就地对账（节点复用，交给原生滚动锚定）
   errors.js                异常 → 可操作的界面状态
 src/ui/
   tokens.css               设计令牌（取自 kill-ai-slop）
@@ -248,6 +258,11 @@ tools/                     开发工具，不参与运行
   make-icons.mjs           栅格化并编码 PNG 图标
   layout-check.mjs         几何断言
   shoot.mjs                各状态截图
+  check-sites.mjs          真实 YouTube / B 站页面的冒烟测试
+  fast-asr-server.mjs      本机助手（127.0.0.1:8766，除健康检查外都要访问令牌）
+  host-registration.mjs    原生消息宿主的注册、启动时自动修复、卸载
+  runtime-pins.json        运行时下载物的固定版本与 SHA-256
+types/                     供 tsc --checkJs 用的全局声明
 tests/                     node --test
 ```
 
@@ -259,9 +274,10 @@ service worker 用 `"type": "module"`，扩展页面用 `<script type="module">`
 
 ## 7. 测试策略
 
-三层，各管一类问题，`npm run check` 一次跑完：
+`npm run check` 一次跑完前四项；CI（GitHub Actions）在每次推送时跑它并试打包，
+打包脚本本身也要求它全部通过才产出发布包。发布只由版本标签触发。
 
-1. **`npm test`** —— 63 个单测，覆盖纯逻辑。重点在**边界与失败路径**：时间戳的非法值、
+1. **`npm test`** —— 单测，覆盖纯逻辑。重点在**边界与失败路径**：时间戳的非法值、
    id 不匹配时必须保留原文、滚动字幕的误合并、分块不切断段落、并发池的顺序与
    个别失败不拖垮整批。
 2. **`npm run check:manifest`** —— 清单自检。manifest 里写错路径只会让部件**静默失效**，
@@ -269,21 +285,21 @@ service worker 用 `"type": "module"`，扩展页面用 `<script type="module">`
    `web_accessible_resources` 里——因为动态 `import(chrome.runtime.getURL(…))` 加载的
    模块不在 manifest 里出现，覆盖不到就会在运行时报跨源错误。它在开发中确实抓到过一次
    真实缺陷：面板引用的 `src/ui/controls.js` 没有对页面授权。
-3. **`npm run check:layout`** —— 24 条几何断言（见第 5 节末尾）。
-4. **`npm run shots`** —— 17 张各状态截图，顺带报告页面错误。看截图仍然是发现视觉问题的
+3. **`npm run typecheck`** —— `tsc --checkJs` 检查 `src/`，代码仍是 JS，不引入构建步骤；
+   JSDoc 与实现对不上时直接报错。
+4. **`npm run check:layout`** —— 几何断言（见第 5 节末尾），含「切换图片档位时正在读的行
+   纹丝不动」的逐像素检查。
+5. **`npm run check:sites`** —— 在真实 YouTube / B 站页面上加载真扩展生成笔记（人工字幕、
+   广告后取字幕、无字幕自动转录、B 站未登录回退）。上游接口最容易变，替身测不出来；
+   站点会限流、识别自动化，所以不放进 CI，改动适配器后手动跑。
+6. **`npm run shots`** —— 各状态截图，顺带报告页面错误。看截图仍然是发现视觉问题的
    唯一有效手段；第 5 节末尾那两个 bug 单测和几何断言都抓不到。
 
-### 没被验证的部分（诚实交代）
+### 仍需人工留意的部分
 
-- **YouTube 与 B 站的真实接口调用**。解析层用真实格式的样本测过（滚动字幕、
-  `json3` 的定位事件、BOM、HTML 实体、cue 定位设置），但接口会变，
-  `src/adapters/` 是最可能需要维护的部分。
-- **真实视频的 ASR 转录**。请求构造、响应解析（含 `verbose_json` 与纯 `text` 两条回退
-  路径）、切片时间窗兜底都实现了且有单测覆盖解析部分，但没有对着真实服务与真实音频
-  跑过。`/models` 不响应时的连通性探测（发一段 0.1 秒静音 WAV 实测）同理。
-- **在真实 YouTube/Bilibili 页面上加载扩展**。这一项在本环境里做不到：Chrome 137 起
-  `--load-extension` 被移除，且无法访问这些站点。界面是通过「同一批真实文件 + chrome
-  替身」验证的，`chrome.*` 之外的部分（内容脚本注入、MAIN world 桥、SPA 换页）没有
-  在真实页面上跑过。
+- **上游接口会变。** YouTube 的字幕凭证、B 站的字幕接口都已在真实页面上验证（`check:sites`），
+  但它们随时可能调整，`src/adapters/` 仍是最可能需要维护的部分。
+- **真实视频的 ASR 与润色**依赖用户机器的 Python、显卡与内存；本机助手会报出内存不足、
+  模型校验不通过等具体原因，但无法在 CI 里覆盖。
 - **在浏览器里直接打开本地视频文件**（`file://`）。通用适配器与 `file:` 跳转链接的
   处理都写好了，但需要用户在扩展详情里打开「允许访问文件网址」才能验证。

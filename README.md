@@ -54,7 +54,11 @@ npm run local:install
 选择本地模型转录后，助手会在任务开始时自动启动服务；设置页按钮也可手动启动。本机转录与润色模型 10 分钟没有任务就会退出并释放内存（环境变量 `C2MD_IDLE_SECONDS` 可调），下次用到时自动重新加载。首次没有 `small`
 多语言模型时会从 Hugging Face 下载到本机；按钮会显示下载、加载与就绪状态，
 并自动填好转录地址和模型名。需要 Python 3、Node.js 22、`ffmpeg`；YouTube、B 站
-快速提取还需要 `yt-dlp`。移动项目目录或 Node 换了位置后要重新运行安装命令。
+快速提取还需要 `yt-dlp`。安装只需一次：以后更新代码，本机助手启动时会自动修复过时的宿主注册，
+无须重跑；移动了项目目录才需要重新安装。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连下载的模型一起删）。
+本机助手只监听 `127.0.0.1`，除健康检查外的请求都要带访问令牌；令牌只经原生消息交给本扩展，
+机器上的其他扩展和网页都用不了它读本机文件。运行时下载的模型与运行库都固定了版本与 SHA-256
+（`tools/runtime-pins.json`），校验通过才使用。
 安装最后会经刚注册的宿主拉起助手，宿主不通就当场报错。插件唤不醒助手时会写明断在哪一环（未注册、扩展 ID 不符、Node 或助手路径失效等）。
 可运行 `npm run local:check-host` 核对浏览器能否找到宿主并验证宿主能否从零拉起服务（默认核对浏览器里已加载的所有副本，也可在命令后加 `-- <扩展ID>` 指定），`npm run local:check` 核对本机服务是否真的接收音频。
 
@@ -134,12 +138,15 @@ course2md 的「本地录制」场景。
 零构建：没有打包器，没有构建产物。内容脚本用动态 `import()` 加载 ESM。
 
 ```sh
-npm run check        # 清单自检 + 65 个单测 + 24 条布局断言，一次跑完
+npm run check        # 清单自检 + 类型检查 + 单测 + 布局断言，一次跑完（CI 同款）
 npm test             # 只跑单测（纯逻辑，node --test）
 npm run check:manifest # 清单自检：引用的文件都在、模块闭包可被页面取到、权限对得上
+npm run typecheck    # tsc --checkJs 检查 src/（代码仍是 JS，零构建）
 npm run check:layout # 只跑几何断言：面板布局、按钮底色、无横向溢出
+npm run check:sites  # 在真实 YouTube / B 站页面上跑真扩展（需要网络，不进 CI）
 npm run check:image  # 用三次场景变化的实际视频检查四档图片密度
-npm run shots        # 17 张各状态截图 → tools/shots/
+npm run shots        # 各状态截图 → tools/shots/
+npm run pack         # 先跑完整检查，通过才打出两个发布包到 dist/
 npm run icons        # 重新生成扩展图标（自己栅格化 + 自己编码 PNG，无原生依赖）
 npm run serve        # 自测服务器：http://127.0.0.1:8787/tools/selftest.html
 ```
@@ -159,9 +166,8 @@ manifest 里出现，`web_accessible_resources` 覆盖不到就会在运行时�
 
 ## 已知边界
 
-- **YouTube 与 B 站的真实接口调用、真实视频的 ASR 转录尚未在真实环境验证过。**
-  解析层用真实格式的样本测过（滚动字幕、`json3` 定位事件、BOM、HTML 实体、cue 定位
-  设置），但接口会变，`src/adapters/` 是最可能需要维护的部分。
+- **上游接口会变。** YouTube 字幕凭证、B 站字幕接口都在真实页面上验证过（`npm run check:sites`），
+  但随时可能调整，`src/adapters/` 是最可能需要维护的部分。
 - **浏览器内 WebGPU ASR 尚未实现。** 当前的快速处理依靠浏览器离线解码或本机提取服务；WebGPU 需要随扩展打包可验证的模型与推理运行时。
 - **截图依赖本机助手取得视频文件。** 它用 `yt-dlp` 和 `ffmpeg` 离线取帧，不改动页面播放进度。无法下载媒体时会阻止图文导出并显示原因。多档按讲述时间窗最多每 10 秒检查一次画面，再用 0.85 相似度阈值去重。
 - **DRM 视频无法转录**，`captureStream()` 拿不到音轨。
