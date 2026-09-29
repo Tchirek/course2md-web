@@ -116,22 +116,35 @@ for (const cs of manifest.content_scripts ?? []) {
   }
 }
 
-// ---------- 5. 权限与 API 的对应关系 ----------
+// ---------- 5. 权限与 API 的对应关系（双向） ----------
+// 宣言した権限はすべて用途を登録し、その用途のコードが実在することを確かめる（使っていない
+// 権限を残さない）。逆に API を使っていれば権限の宣言を求める。走査はポップアップと設定
+// ページを含む拡張の全コードが対象（chrome.scripting はポップアップにしか無い）。
 const perms = new Set(manifest.permissions ?? []);
-const sources = [
-  ...dynamicModules.map((f) => ({ file: f, text: read(f) })),
-  { file: manifest.background.service_worker, text: read(manifest.background.service_worker) },
-];
-const uses = (needle, perm, why) => {
-  const hit = sources.find((s) => s.text.includes(needle));
-  if (!hit) return;
-  if (perms.has(perm)) ok.push(`${perm} 权限覆盖 ${needle}（${why}）`);
-  else problems.push(`用了 ${needle} 但没申请 ${perm} 权限（${why}）`);
+const listJs = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+  const rel = `${dir}/${entry.name}`;
+  if (entry.isDirectory()) return rel === 'src/vendor' ? [] : listJs(rel);
+  return entry.name.endsWith('.js') ? [rel] : [];
+});
+const sources = listJs('src').map((file) => ({ file, text: read(file) }));
+const PERMISSION_USES = {
+  storage: { needles: ['chrome.storage'], why: '设置与缓存' },
+  activeTab: { needles: ['chrome.scripting.executeScript'], why: '在用户点开弹窗的当前页注入内容脚本' },
+  scripting: { needles: ['chrome.scripting'], why: '在其他页面按需注入内容脚本' },
+  downloads: { needles: ['chrome.downloads'], why: '保存 .md 文件' },
+  cookies: { needles: ['chrome.cookies'], why: '向本机提取服务提供当前站点登录态' },
+  nativeMessaging: { needles: ['sendNativeMessage', 'connectNative'], why: '经本机宿主唤醒本机助手并取得访问令牌' },
+  clipboardWrite: { needles: ["execCommand('copy')"], why: '从弹窗触发复制时页面没有用户激活，execCommand 需要此权限' },
 };
-uses('chrome.storage', 'storage', '设置与缓存');
-uses('chrome.scripting', 'scripting', '在其他页面按需注入内容脚本');
-uses('chrome.downloads', 'downloads', '保存 .md 文件');
-uses('chrome.cookies', 'cookies', '向本机提取服务提供当前站点登录态');
+for (const [perm, { needles, why }] of Object.entries(PERMISSION_USES)) {
+  const hit = sources.find((s) => needles.some((needle) => s.text.includes(needle)));
+  if (hit && perms.has(perm)) ok.push(`${perm} 权限：${why}（${hit.file}）`);
+  else if (hit) problems.push(`${hit.file} 用了 ${needles[0]}，但没申请 ${perm} 权限（${why}）`);
+  else if (perms.has(perm)) problems.push(`申请了 ${perm} 权限，但代码里没有用到（登记的用途：${why}）`);
+}
+for (const perm of perms) {
+  if (!PERMISSION_USES[perm]) problems.push(`权限 ${perm} 没有登记用途：新增权限要在 check-manifest.mjs 的 PERMISSION_USES 里写明理由`);
+}
 
 // ---------- 6. MV3 不允许远程代码 ----------
 // 只要出现远程 URL 的 script 加载就是在违反 MV3。
