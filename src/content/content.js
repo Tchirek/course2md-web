@@ -15,40 +15,80 @@ import { PolishCoordinator } from './polish-coordinator.js';
 import { FrameLoader } from './frame-loader.js';
 import { ensureFreshCode, extensionGone, resumeAfterExtensionReload, takeResumeRequest } from './freshness.js';
 import { TitleLauncher } from './title-launcher.js';
+import { DEFAULT_SETTINGS } from '../core/settings.js';
 
 const POLL_MS = 1500;
+
+/** @typedef {import('../core/settings.js').Settings} Settings */
+/** @typedef {import('../core/format.js').DocSection} DocSection */
+/** @typedef {import('./errors.js').ErrorState} ErrorState */
+/** @typedef {'idle'|'loading'|'running'|'ready'|'error'} Status */
+/** @typedef {'copy'|'download'} ExportKind */
+/** @typedef {{source?: string}} RunOverrides 只作用于某次生成的选择 */
+
+/**
+ * 会话缓存里存的一份笔记（saveCache 写、loadCache 读；扩展版本不同的会被丢弃）。
+ * @typedef {object} CacheEntry
+ * @property {import('../adapters/index.js').VideoMeta} meta
+ * @property {DocSection[]} sections
+ * @property {[number, string][]} [images] 讲述时刻 → 已取到的帧
+ * @property {import('./pipeline.js').PipelineStats} stats
+ * @property {string[]} [warnings]
+ * @property {boolean} [polished]
+ */
 
 export class Controller {
   constructor() {
     this.adapter = pickAdapter();
-    this.settings = null;
+    // 真正的设置在 init() 里从后台读；读到之前（或后台没起来时）先用默认值
+    /** @type {Settings} */
+    this.settings = structuredClone(DEFAULT_SETTINGS);
+    /** 当前面板与帧所用的图片密度（设置改了之后，由 FrameLoader 跟上） */
+    this.imageLevel = this.settings.imageLevel;
+    /** @type {import('../adapters/index.js').VideoMeta|null} */
     this.meta = null;
+    /** @type {import('./pipeline.js').PipelineResult|null} */
     this.built = null;
+    /** @type {(DocSection & {frames: import('../core/format.js').Frame[]})[]} 面板显示的分节（带去重后的帧） */
     this.previewSections = [];
+    /** @type {import('../core/format.js').Doc|null} */
     this.doc = null;
+    /** @type {Status} */
     this.status = 'idle';
+    /** @type {ErrorState|null} */
     this.error = null;
+    /** @type {ErrorState|null} */
     this.imageError = null;
     this.stageLabel = '';
+    /** @type {number|null} */
     this.stageRatio = null;
+    /** @type {AbortController|null} */
     this.abort = null;
     this.imagesPending = false;
-    this.autoTimer = null;
+    /** @type {ReturnType<typeof setTimeout>|undefined} */
+    this.autoTimer = undefined;
     // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
     this.autoRunArmed = false;
     // 只作用于下一次生成的临时选择（如标题旁的按钮指定优先用平台字幕），不改设置
+    /** @type {RunOverrides|null} */
     this.nextRunOverrides = null;
     // 自动生成（换视频时）沿用开启它的那次选择：由标题旁的 ↗ 开启的就一直优先用平台字幕
+    /** @type {RunOverrides|null} */
     this.autoRunOverrides = null;
     // 内容がまだできていないときに押された複製・保存。できた瞬間に実行する（もう一度押すと取り消し）。
     // ブラウザの「ダウンロード完了後に開く」と同じ考え方
     this.pendingExport = { copy: false, download: false };
     // 実行し終えた書き出し。該当ボタンにしばらく「已复制」「已保存」を出す（両方同時に終わりうるので別々に持つ）
     this.exportFlash = { copy: false, download: false };
+    /** @type {Partial<Record<ExportKind, ReturnType<typeof setTimeout>>>} */
     this.exportFlashTimers = {};
     this.panelDismissed = false;
+    /** @type {import('../core/model.js').TranscriptEvent[]|null} 转录途中已到手的事件 */
     this.liveEvents = null;
+    /** @type {DocSection[]|null} 转录途中先组织出来的分节 */
     this.liveSections = null;
+    /** @type {string|null} 这次生成自动改用本地转录的说明 */
+    this.fallbackNotice = null;
     this.urlKey = this.currentUrlKey();
     /** @type {TitleLauncher|null} */
     this.launcher = null;
@@ -75,16 +115,14 @@ export class Controller {
   // ---------- 生命周期 ----------
 
   async init() {
-    this.settings = await send({ type: 'settings.load' }).catch(() => null);
-    if (!this.settings) {
-      // 后台还没起来时用默认值兜底，界面不至于空白
-      const { DEFAULT_SETTINGS } = await import('../core/settings.js');
-      this.settings = structuredClone(DEFAULT_SETTINGS);
-    }
+    // 后台还没起来时沿用构造时的默认值，界面不至于空白
+    const loaded = await send({ type: 'settings.load' }).catch(() => null);
+    if (loaded) this.settings = loaded;
     this.imageLevel = this.settings.imageLevel;
 
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
-      const handler = this.MESSAGES[message?.type];
+      // 只认自己的消息类型：不把 constructor 之类原型上的名字当成处理函数
+      const handler = Object.hasOwn(this.MESSAGES, message?.type) ? this.MESSAGES[message.type] : null;
       if (!handler) return false;
       Promise.resolve(handler.call(this, message.payload ?? {}))
         .then((value) => respond({ ok: true, value }))
@@ -200,6 +238,8 @@ export class Controller {
 
   // ---------- 消息 ----------
 
+  // 载荷来自弹窗等扩展页面，按 any 接收
+  /** @type {Record<string, (payload: any) => unknown>} */
   MESSAGES = {
     'c2md.ping': async () => ({
       ready: true,
@@ -303,9 +343,14 @@ export class Controller {
     }
   }
 
+  /**
+   * @param {string} stage
+   * @param {import('./pipeline.js').ProgressInfo} [info]
+   */
   onProgress(stage, info = {}) {
     if (info.message) this.stageLabel = info.message;
-    this.stageRatio = Number.isFinite(info.ratio) ? Math.min(1, Math.max(0, info.ratio)) : null;
+    const ratio = info.ratio;
+    this.stageRatio = typeof ratio === 'number' && Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : null;
     this.status = 'running';
     this.panel.setState({ status: 'running', stageLabel: this.stageLabel, stageRatio: this.stageRatio });
     this.broadcast(false);
@@ -348,6 +393,7 @@ export class Controller {
       meta.chapters = meta.chapters ?? [];
       if (runAbort.signal.aborted) throw new AbortError();
 
+      /** @type {import('./pipeline.js').PipelineArgs} */
       const common = {
         adapter,
         meta,
@@ -449,7 +495,10 @@ export class Controller {
     });
   }
 
-  /** 扩展正在重新加载：面板说明缘由，扩展起来后刷新页面、接着生成。 */
+  /**
+   * 扩展正在重新加载：面板说明缘由，扩展起来后刷新页面、接着生成。
+   * @param {RunOverrides} overrides
+   */
   resumeAfterReload(overrides) {
     this.status = 'running';
     this.stageLabel = '扩展已更新，正在重新加载页面后继续';
@@ -482,16 +531,18 @@ export class Controller {
 
   // ---------- 动作 ----------
 
+  /** @param {number} seconds */
   async seek(seconds) {
     const ok = await this.adapter.seek(seconds).catch(() => false);
     if (!ok) return false;
     // 短暂标一下当前段落，用户回到页面时知道跳到哪了
-    if (this.panel.isMounted) {
-      for (const p of this.panel.scope.querySelectorAll('.c2md-para[data-active]')) {
+    const scope = this.panel.scope;
+    if (this.panel.isMounted && scope) {
+      for (const p of scope.querySelectorAll('.c2md-para[data-active]')) {
         if (p instanceof HTMLElement) delete p.dataset.active;
       }
       const target = /** @type {HTMLElement|null} */ (
-        this.panel.scope.querySelector(`.c2md-para[data-start="${Math.floor(seconds)}"]`));
+        scope.querySelector(`.c2md-para[data-start="${Math.floor(seconds)}"]`));
       if (target) {
         target.dataset.active = 'true';
         setTimeout(() => delete target.dataset.active, 1600);
@@ -520,7 +571,10 @@ export class Controller {
     return this.status === 'ready' && (!this.exportReady() || this.polisher.busy);
   }
 
-  /** 浮窓の複製・保存：書き出せるならすぐ実行、作成中なら「完了後に実行」を切り替える。 */
+  /**
+   * 浮窓の複製・保存：書き出せるならすぐ実行、作成中なら「完了後に実行」を切り替える。
+   * @param {ExportKind} kind
+   */
   async requestExport(kind) {
     if (this.exportReady()) return this.runExport(kind);
     if (!this.exportBusy()) return false;
@@ -529,6 +583,7 @@ export class Controller {
     return false;
   }
 
+  /** @param {ExportKind} kind */
   async runExport(kind) {
     const ok = kind === 'copy' ? await this.copyMarkdown() : (await this.download())?.saved !== false;
     if (ok) {
@@ -583,10 +638,12 @@ export class Controller {
   }
 
 
+  /** @param {string} [section] 设置页要打开的分区 */
   async openOptions(section) {
     return send({ type: 'ui.openOptions', payload: { section } });
   }
 
+  /** @param {object} patch 要改的设置（只含改动的字段） */
   async patchSettings(patch) {
     const previousLevel = this.settings.imageLevel;
     const reply = await send({ type: 'settings.save', payload: { patch } });
@@ -603,6 +660,7 @@ export class Controller {
 
   /** 存最近一次的笔记。存不进去（配额满）也不算错，只是下次要重新抓。 */
   async saveCache() {
+    if (!this.built) return;
     await saveSession(sessionKey(this.adapter.id), {
       meta: this.meta,
       sections: this.built.sections,
@@ -614,7 +672,7 @@ export class Controller {
     });
   }
 
-  /** @returns {Promise<any>} キャッシュの項目（sections、stats、images など）。無ければ null */
+  /** @returns {Promise<CacheEntry|null>} 没有、过期或版本不同时为 null */
   loadCache() {
     return loadSession(sessionKey(this.adapter.id));
   }

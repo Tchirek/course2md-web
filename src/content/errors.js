@@ -4,8 +4,13 @@
 //! ——尤其是 LLM / ASR 报回来的原话，用户改配置时需要看到它。
 
 /**
+ * 界面上的一条错误：标题、说明，以及可选的「打开设置」要跳到的分区。
+ * @typedef {{title:string, body:string, options?:string, detail?:string}} ErrorState
+ */
+
+/**
  * @param {any} error 投げられた任意の値（Error、文字列、actionable 付きの領域エラー）
- * @returns {{title:string, body:string, options?:string, detail?:string}}
+ * @returns {ErrorState}
  */
 export function toErrorState(error) {
   const message = String(error?.message ?? error ?? '未知错误').trim();

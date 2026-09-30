@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "strict": true },
-  "include": ["src/core/*.js", "src/adapters/*.js", "src/background/*.js", "types/**/*.d.ts", "src/vendor/*.d.ts"]
+  "include": ["src/core/*.js", "src/adapters/*.js", "src/background/*.js", "src/content/*.js", "types/**/*.d.ts", "src/vendor/*.d.ts"]
 }

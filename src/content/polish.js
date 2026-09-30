@@ -36,7 +36,7 @@ async function llmChat(payload, onDelta, signal) {
  *
  * @param {object} args
  * @param {import('../core/model.js').Segment[]} args.segments 平坦段落（会被就地修改）
- * @param {number[]} args.sectionIndexOf
+ * @param {number[]} [args.sectionIndexOf] 段落下标 -> 章节下标（没有就都算第 0 节）
  * @param {{title?: string, uploader?: string, language?: string}} args.meta
  * @param {import('../core/settings.js').Settings} args.settings
  * @param {(done:number,total:number)=>void} [args.onProgress]

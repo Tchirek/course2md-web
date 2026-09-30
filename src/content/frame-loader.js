@@ -6,17 +6,23 @@ import { toErrorState } from './errors.js';
 import { signatureOf } from './frame-signature.js';
 import { attachFrames, captureSectionImages } from './visual.js';
 
+/** @typedef {import('../core/format.js').Frame} Frame */
+
 export class FrameLoader {
   /** @param {import('./content.js').Controller} controller */
   constructor(controller) {
     this.c = controller;
+    /** @type {AbortController|null} */
     this.abort = null;
     /** @type {Promise<unknown>} */
     this.promise = Promise.resolve();
+    /** @type {Map<number, Frame>} 待取的帧，按讲述时刻 */
     this.queue = new Map();
+    /** @type {Set<number>} 已交给本机服务、还没回来的时刻 */
     this.inFlight = new Set();
     /** @type {'idle'|'loading'} */
     this.state = 'idle';
+    /** @type {Map<number, string>} 已取到的帧，按讲述时刻 */
     this.cache = new Map();
     /** @type {Map<number, import('../core/similarity.js').Signature>} */
     this.signatures = new Map();
@@ -38,7 +44,7 @@ export class FrameLoader {
 
   /**
    * 面板与导出看到的帧：按密度取的候选帧，去掉与上一张相似的（见 core/similarity.js）。
-   * @returns {object[]} 候选帧所在的分节（未去重），供补取缺的帧
+   * @returns {(import('../core/format.js').DocSection & {frames: Frame[]})[]} 候选帧所在的分节（未去重），供补取缺的帧
    */
   present() {
     const sections = this.c.built?.sections ?? this.c.liveSections ?? [];
@@ -69,6 +75,7 @@ export class FrameLoader {
       this.cancel();
     }
     if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
+    const abort = this.abort;
     if (this.c.imageLevel !== this.c.settings.imageLevel) this.c.imageError = null;
     this.c.imageLevel = this.c.settings.imageLevel;
     // 密度只决定每个分节取哪些帧时刻，分节与段落原地不动
@@ -82,15 +89,15 @@ export class FrameLoader {
           }
         }
       }
-      if (this.state === 'idle' && this.queue.size) this.promise = this.drainImages();
+      if (this.state === 'idle' && this.queue.size) this.promise = this.drainImages(abort);
     }
     return this.promise;
   }
 
-  async drainImages() {
+  /** @param {AbortController} abort 这一轮取帧的中止（取消后若有新一轮，由新的接着取） */
+  async drainImages(abort) {
     this.state = 'loading';
-    const abort = this.abort;
-    const sourceUrl = this.c.meta.url;
+    const sourceUrl = this.c.meta?.url ?? '';
     try {
       while (!abort.signal.aborted && this.queue.size) {
         const batch = [...this.queue.values()];
@@ -98,7 +105,7 @@ export class FrameLoader {
         for (const frame of batch) this.inFlight.add(frame.t);
         try { await captureSectionImages(sourceUrl, batch, abort.signal, async (frame) => {
           if (abort.signal.aborted) return;
-          await this.remember(frame.t, frame.image);
+          if (frame.image) await this.remember(frame.t, frame.image);
           if (abort.signal.aborted) return;
           this.present();
           this.c.broadcast();
@@ -113,7 +120,8 @@ export class FrameLoader {
       }
     } finally {
       this.state = 'idle';
-      if (abort.signal.aborted && this.queue.size && this.abort !== abort) this.promise = this.drainImages();
+      const next = this.abort;
+      if (abort.signal.aborted && this.queue.size && next && next !== abort) this.promise = this.drainImages(next);
     }
   }
 }

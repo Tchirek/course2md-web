@@ -10,7 +10,15 @@ import { icon, checkGlyph } from './icons.js';
  *
  * `needsSetup` 指向设置页的哪一段——没配好时把下一步直接告诉用户，
  * 而不是让他自己找。
+ *
+ * @typedef {object} DisplayToggle
+ * @property {'showTimestamps'|'polish'} key 对应的设置项
+ * @property {string} label
+ * @property {'showTimestamps'|'polish'} [dependsOn] 要先勾选的另一项，没勾时本行禁用
+ * @property {string} [needsSetup] 没配置好时「去设置」要打开的分区
+ * @property {string} [unconfiguredHint] 没配置好时代替说明的一句话
  */
+/** @type {DisplayToggle[]} */
 export const DISPLAY_TOGGLES = [
   {
     key: 'showTimestamps',
@@ -197,7 +205,7 @@ export function iconButton({ iconName, label, onClick }) {
  * 只写设置而不设属性，就会出现「选了深色但界面是浅色」这种不一致——
  * 面板里已经做了（applyDisplayMode），弹窗与设置页也得跟上。
  *
- * @param {object} settings
+ * @param {{theme?: string}|null|undefined} settings
  * @param {HTMLElement} [root]
  */
 export function applyTheme(settings, root = document.body) {
@@ -209,13 +217,13 @@ export function applyTheme(settings, root = document.body) {
  * 渲染那几行勾选，并把依赖关系接好。
  *
  * @param {object} args
- * @param {object} args.settings
+ * @param {import('../core/settings.js').Settings} args.settings
  * @param {(patch:object) => void} args.onChange 用户改动后回调（只需处理持久化）
  * @param {() => void} [args.onSetup] 点「去设置」时打开设置页
  * @param {boolean} [args.showPolishLevel] 整形の強さの選択を出す
  * @param {boolean} [args.showPolishEngine] 显示润色方式（本机/自备）选择
  * @param {boolean} [args.polishLevelWhenChecked] 只在勾选润色时显示润色强度/方式
- * @param {{running?:boolean, done?:number, total?:number}|null} [args.polishProgress] 整形の進捗（あれば整形の行末に進捗リングを描く）
+ * @param {{running?:boolean, done:number, total:number}|null} [args.polishProgress] 整形の進捗（あれば整形の行末に進捗リングを描く）
  * @returns {DocumentFragment}
  */
 export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel = false, showPolishEngine = false, polishLevelWhenChecked = false, polishProgress = null }) {
@@ -238,7 +246,7 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
         onSetup,
         onChange: (checked) => onChange?.({ [toggle.key]: checked }),
         trailing: toggle.key === 'polish' && polishProgress?.running
-          ? progressRing(polishProgress.done, polishProgress.total, '润色') : null,
+          ? progressRing(polishProgress.done, polishProgress.total, '润色') : undefined,
       }),
     );
     if (toggle.key === 'showTimestamps') {
@@ -280,7 +288,11 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
   return frag;
 }
 
-/** 润色方式选择：本机内置模型 or 自备 API（兼容旧的 auto 语义）。 */
+/**
+ * 润色方式选择：本机内置模型 or 自备 API（兼容旧的 auto 语义）。
+ * @param {import('../core/settings.js').Settings} settings
+ * @param {(patch:object) => void} onChange
+ */
 export function polishEngineRow(settings, onChange) {
   return segmented({
     options: [
@@ -294,7 +306,12 @@ export function polishEngineRow(settings, onChange) {
   });
 }
 
-/** 有已知总量时才画圆环；每完成一块推进一次。 */
+/**
+ * 有已知总量时才画圆环；每完成一块推进一次。
+ * @param {number} done
+ * @param {number} total
+ * @param {string} label
+ */
 export function progressRing(done, total, label) {
   const ring = document.createElement('span');
   ring.className = 'c2md-ring';
@@ -311,10 +328,15 @@ export function progressRing(done, total, label) {
   return ring;
 }
 
+/** @param {string|undefined} key */
 function labelOf(key) {
   return DISPLAY_TOGGLES.find((t) => t.key === key)?.label ?? key;
 }
 
+/**
+ * @param {string} section 设置页分区
+ * @param {import('../core/settings.js').Settings} settings
+ */
 function isConfigured(section, settings) {
   if (section === 'llm') {
     return Boolean(settings.llm?.baseUrl && settings.llm?.model);

@@ -9,26 +9,56 @@ import { displayToggleRows, iconButton, note, progressRing } from '../ui/control
 import { PanelBody } from './panel-body.js';
 import { all, button, el, one, plain } from './panel-dom.js';
 
+/**
+ * 面板显示所需的状态。控制器的 panelState() 给全量，setState 可以只给变了的字段。
+ * @typedef {object} PanelState
+ * @property {import('./content.js').Status} status
+ * @property {import('../core/settings.js').Settings|null} settings
+ * @property {{title?: string, duration?: number}|null} meta
+ * @property {import('../core/format.js').DocSection[]} sections
+ * @property {import('./pipeline.js').PipelineStats|null} stats
+ * @property {string[]} warnings
+ * @property {import('./errors.js').ErrorState|null} error
+ * @property {import('./polish-coordinator.js').PolishProgress|null} polish
+ * @property {string} [stageLabel]
+ * @property {number|null} [stageRatio] 转写进度 0–1；不知道时为 null
+ * @property {boolean} [imagesPending]
+ * @property {boolean} [exportReady]
+ * @property {boolean} [exportBusy]
+ * @property {Record<'copy'|'download', boolean>} [pendingExport]
+ * @property {Record<'copy'|'download', boolean>} [exportFlash]
+ */
+
+/** @typedef {{docked: boolean, left?: number, top?: number, width?: number, height?: number}} Layout 用户拖过的位置与大小（停靠时沿用停靠前的大小） */
+
 export class Panel {
   /**
    * @param {object} handlers
-   * @param {(patch:object) => void} handlers.onSettings
-   * @param {(seconds:number) => void} handlers.onSeek
-   * @param {() => void} [handlers.onCopy]
-   * @param {() => void} [handlers.onCopyText]
-   * @param {() => void} [handlers.onDownload]
-   * @param {() => void} [handlers.onRerun]
-   * @param {() => void} [handlers.onRepolish]
-   * @param {(section?:string) => void} [handlers.onOptions]
-   * @param {() => void} [handlers.onClose]
+   * @param {(patch:object) => unknown} handlers.onSettings
+   * @param {(seconds:number) => unknown} handlers.onSeek
+   * @param {() => unknown} [handlers.onCopy]
+   * @param {() => unknown} [handlers.onCopyText]
+   * @param {() => unknown} [handlers.onDownload]
+   * @param {() => unknown} [handlers.onRerun]
+   * @param {() => unknown} [handlers.onRepolish]
+   * @param {(section?:string) => unknown} [handlers.onOptions]
+   * @param {() => unknown} [handlers.onClose]
    */
   constructor(handlers) {
     this.handlers = handlers;
+    /** @type {PanelState} */
     this.state = { status: 'idle', settings: null, meta: null, sections: [], stats: null, warnings: [], error: null, polish: null };
+    /** @type {HTMLDivElement|null} */
     this.host = null;
+    /** @type {HTMLDivElement|null} */
     this.scope = null;
     this.body = new PanelBody(this);
+    /** @type {Layout|null} */
     this.layout = null;
+    /** 上次画勾选区时的设置与润色状态：两者都没变就复用那块 DOM（见 render） */
+    /** @type {PanelState['settings']|undefined} */
+    this.controlsSettings = undefined;
+    this.controlsPolishRunning = false;
   }
 
   /** 挂到页面上。已挂则复用。 */
@@ -66,20 +96,22 @@ export class Panel {
   }
 
   rememberLayout() {
+    if (!this.host) return;
     const rect = this.host.getBoundingClientRect();
     this.layout = this.host.dataset.docked === 'true'
       ? { ...this.layout, docked: true }
       : { docked: false, left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   }
 
+  /** @param {PointerEvent} event */
   startDrag(event) {
-    if (event.button !== 0 || event.target.closest('button')) return;
     const host = this.host;
+    if (!host || event.button !== 0 || (event.target instanceof Element && event.target.closest('button'))) return;
     const rect = host.getBoundingClientRect();
     const origin = { x: event.clientX, y: event.clientY };
     const docked = host.dataset.docked === 'true';
     let moved = false;
-    const move = (e) => {
+    const move = (/** @type {PointerEvent} */ e) => {
       if (!moved && Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 4) return;
       if (!moved && docked) {
         host.dataset.docked = 'false';
@@ -105,7 +137,7 @@ export class Panel {
       if (host.getBoundingClientRect().right >= innerWidth - 24) {
         host.dataset.docked = 'true';
         host.style.cssText = '';
-        this.layout.docked = true;
+        if (this.layout) this.layout.docked = true;
       }
     };
     window.addEventListener('pointermove', move);
@@ -116,7 +148,10 @@ export class Panel {
     return Boolean(this.host?.isConnected);
   }
 
-  /** 样式表用扩展内的文件，不把 CSS 复制进 JS 字符串。 */
+  /**
+   * 样式表用扩展内的文件，不把 CSS 复制进 JS 字符串。
+   * @param {ShadowRoot} root
+   */
   applyStyles(root) {
     const base = document.createElement('link');
     base.rel = 'stylesheet';
@@ -127,7 +162,10 @@ export class Panel {
     root.append(base, panel);
   }
 
-  /** 合并状态并重绘。只有影响结构的字段才触发重建。 */
+  /**
+   * 合并状态并重绘。只有影响结构的字段才触发重建。
+   * @param {Partial<PanelState>} patch
+   */
   setState(patch) {
     const progressOnly = this.state.status === 'running' && patch.status === 'running' &&
       Object.keys(patch).every((key) => key === 'status' || key === 'stageLabel' || key === 'stageRatio');
@@ -149,12 +187,14 @@ export class Panel {
     if (!this.scope) return;
     if (progressOnly) {
       const ring = one(this.scope, '.c2md-source .c2md-ring');
-      if (Boolean(ring) !== Number.isFinite(this.state.stageRatio)) {
+      const ratio = this.state.stageRatio;
+      const known = typeof ratio === 'number' && Number.isFinite(ratio);
+      if (Boolean(ring) !== known) {
         this.render();
         return;
       }
-      if (ring && Number.isFinite(this.state.stageRatio)) {
-        const now = Math.round(this.state.stageRatio * 100);
+      if (ring && known) {
+        const now = Math.round(ratio * 100);
         ring.style.setProperty('--progress', `${now}%`);
         ring.title = `转写 ${now}%`;
         ring.setAttribute('aria-valuenow', String(now));
@@ -163,7 +203,7 @@ export class Panel {
     }
     if (polishOnly) {
       const ring = one(this.scope, '.c2md-panel-toggles .c2md-ring');
-      if (ring) {
+      if (ring && this.state.polish) {
         const { done, total } = this.state.polish;
         ring.style.setProperty('--progress', `${total > 0 ? Math.min(100, 100 * done / total) : 0}%`);
         ring.title = total > 0 ? `润色 ${done}/${total}` : '正在准备润色';
@@ -189,7 +229,7 @@ export class Panel {
 
     const polished = Boolean(settings.polish && this.state.polish?.hasResult);
     for (const el of all(this.scope, '.c2md-say')) {
-      const next = polished && el.dataset.polished ? el.dataset.polished : el.dataset.raw;
+      const next = (polished && el.dataset.polished ? el.dataset.polished : el.dataset.raw) ?? '';
       if (el.textContent !== next) {
         el.textContent = next;
         if (polished && el.dataset.polished) {
@@ -211,17 +251,21 @@ export class Panel {
     }
   }
 
+  /**
+   * 润色写回了一个段落：只改这一段的文字与状态。
+   * @param {import('../core/model.js').Segment} seg
+   */
   updateSegment(seg) {
     const p = one(this.scope, `.c2md-para[data-id="${seg.id}"]`);
-    if (!p) return;
     const say = one(p, '.c2md-say');
+    if (!p || !say) return;
     say.dataset.raw = seg.raw ?? seg.text;
     if (seg.raw && seg.text && seg.raw !== seg.text) say.dataset.polished = seg.text;
     else delete say.dataset.polished;
     p.dataset.state = seg.state ?? 'kept';
     const polished = this.state.settings?.polish;
     p.style.display = polished && seg.state === 'skipped' ? 'none' : '';
-    const next = polished && say.dataset.polished ? say.dataset.polished : say.dataset.raw;
+    const next = (polished && say.dataset.polished ? say.dataset.polished : say.dataset.raw) ?? '';
     if (say.textContent !== next) {
       say.textContent = next;
       if (polished) {
@@ -235,11 +279,12 @@ export class Panel {
   }
 
   render() {
-    if (!this.scope) return;
+    const scope = this.scope;
+    if (!scope) return;
 
     const reuseToggles = this.controlsSettings === this.state.settings &&
       this.controlsPolishRunning === Boolean(this.state.polish?.running);
-    const toggles = reuseToggles ? this.scope.querySelector('.c2md-panel-toggles') : null;
+    const toggles = reuseToggles ? scope.querySelector('.c2md-panel-toggles') : null;
     this.controlsSettings = this.state.settings;
     this.controlsPolishRunning = Boolean(this.state.polish?.running);
 
@@ -256,11 +301,11 @@ export class Panel {
       this.body.render(),
       this.renderFoot(),
     ];
-    const current = [...this.scope.children];
+    const current = [...scope.children];
     slots.forEach((node, index) => {
       if (current[index] === node) return;
       if (current[index]) current[index].replaceWith(node);
-      else this.scope.append(node);
+      else scope.append(node);
     });
     for (const extra of current.slice(slots.length)) extra.remove();
 
@@ -290,8 +335,9 @@ export class Panel {
 
     const line = el('div', 'c2md-source');
     if (meta?.duration) line.appendChild(plain(fmtTs(meta.duration)));
-    if (status === 'running' && Number.isFinite(this.state.stageRatio)) {
-      line.appendChild(progressRing(Math.round(this.state.stageRatio * 100), 100, '转写'));
+    const ratio = this.state.stageRatio;
+    if (status === 'running' && typeof ratio === 'number' && Number.isFinite(ratio)) {
+      line.appendChild(progressRing(Math.round(ratio * 100), 100, '转写'));
     }
     if (line.childNodes.length) head.appendChild(line);
     return head;

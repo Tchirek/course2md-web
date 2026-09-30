@@ -5,7 +5,10 @@
 
 import { fmtTs } from '../core/time.js';
 import { progress } from '../ui/controls.js';
-import { el } from './panel-dom.js';
+import { el, one } from './panel-dom.js';
+
+/** @typedef {import('../core/model.js').Segment} Segment */
+/** @typedef {{t: number, image: string}} ShownFrame 已取到图的帧 */
 
 export class PanelBody {
   /** @param {import('./panel.js').Panel} panel */
@@ -49,6 +52,7 @@ export class PanelBody {
     const polished = Boolean(settings?.polish && this.panel.state.polish?.hasResult);
     const level = settings?.imageLevel;
 
+    /** @type {Map<string, HTMLElement>} */
     const existing = new Map();
     for (const child of [...body.children]) {
       if (!(child instanceof HTMLElement) || !child.classList.contains('c2md-section')) { child.remove(); continue; }
@@ -58,7 +62,7 @@ export class PanelBody {
     }
 
     const shown = sections.filter((section) => section.segments.some((seg) => seg.raw ?? seg.text));
-    const keyOf = (section) => String(section.t ?? section.segments[0]?.start ?? 0);
+    const keyOf = (/** @type {import('../core/format.js').DocSection} */ section) => String(section.t ?? section.segments[0]?.start ?? 0);
     const usedKeys = new Set(shown.map(keyOf));
     // 不要になった節を先に外す（段落ごとの理由は syncSection と同じ）
     for (const [key, sec] of existing) {
@@ -71,13 +75,19 @@ export class PanelBody {
       if (!sec) sec = el('section', 'c2md-section');
       this.syncSection(sec, section, level, polished);
       // 已在正确位置就零 DOM 操作；分节顺序只增不变，正常路径不搬任何节点
-      if (sec === cursor) cursor = cursor.nextSibling;
+      if (sec === cursor) cursor = sec.nextSibling;
       else body.insertBefore(sec, cursor);
     }
     return body;
   }
 
-  /** 分节内对账：标题、帧图片（按时刻插在对应段落前）、段落（只增不搬）。 */
+  /**
+   * 分节内对账：标题、帧图片（按时刻插在对应段落前）、段落（只增不搬）。
+   * @param {HTMLElement} sec
+   * @param {import('../core/format.js').DocSection} section
+   * @param {string|undefined} level 图片密度
+   * @param {boolean} polished 是否显示润色文
+   */
   syncSection(sec, section, level, polished) {
     sec.dataset.t = String(section.t ?? section.segments[0]?.start ?? 0);
 
@@ -94,7 +104,9 @@ export class PanelBody {
     }
 
     // 期望的子节点序列：取到图的帧按时刻插在首个 start >= t 的段落前
-    const frames = (level === 'none' ? [] : (section.frames ?? [])).filter((frame) => frame.image);
+    const frames = (level === 'none' ? [] : (section.frames ?? []))
+      .filter(/** @returns {frame is ShownFrame} */ (frame) => Boolean(frame.image));
+    /** @type {({kind: 'frame', frame: ShownFrame} | {kind: 'para', seg: Segment})[]} */
     const items = [];
     let fi = 0;
     for (const seg of section.segments) {
@@ -103,15 +115,17 @@ export class PanelBody {
     }
     while (fi < frames.length) items.push({ kind: 'frame', frame: frames[fi++] });
 
-    const keyOf = (item) => item.kind === 'frame' ? `f${item.frame.t}` : `p${item.seg.id}`;
+    const keyOf = (/** @type {(typeof items)[number]} */ item) => item.kind === 'frame' ? `f${item.frame.t}` : `p${item.seg.id}`;
     const used = new Set(items.map(keyOf));
     // 不要になった子（密度切り替えで外れた図など）は走査の前に外す。残る節点の相対順序は
     // もともと正しいので、以降は新しい節点の挿入だけで済み、段落を一つも動かさない。
     // 後から外すと、居残った図の前へ後続の段落がすべて insertBefore で差し直され、
     // ブラウザのスクロールアンカーが失われて読んでいる位置が図一枚分跳ぶ。
+    /** @type {Map<string, HTMLElement>} */
     const existing = new Map();
     for (const child of [...sec.children]) {
       if (child === title) continue;
+      if (!(child instanceof HTMLElement)) { child.remove(); continue; }
       const key = child.classList.contains('c2md-frame') ? `f${child.dataset.t}` : `p${child.dataset.id}`;
       if (!existing.has(key) && used.has(key)) existing.set(key, child);
       else child.remove();
@@ -130,15 +144,21 @@ export class PanelBody {
       }
       // 已在正确位置就零 DOM 操作——段落一旦被 insertBefore 挪动，
       // 原生滚动锚定的锚点就会失联，阅读位置随之漂移
-      if (node === cursor) cursor = cursor.nextSibling;
+      if (node === cursor) cursor = node.nextSibling;
       else sec.insertBefore(node, cursor);
     }
   }
 
-  /** 就地更新段落：状态、显隐、文本，有变化才动 DOM。 */
+  /**
+   * 就地更新段落：状态、显隐、文本，有变化才动 DOM。
+   * @param {HTMLElement} node
+   * @param {Segment} seg
+   * @param {boolean} polished
+   */
   syncPara(node, seg, polished) {
     const raw = seg.raw ?? seg.text;
-    const say = node.querySelector('.c2md-say');
+    const say = one(node, '.c2md-say');
+    if (!say) return;
     // 摘掉残留的润色脉冲：动画类跟着节点重放就是深绿闪
     if (say.classList.contains('c2md-say--fresh')) say.classList.remove('c2md-say--fresh');
     const state = seg.state ?? 'kept';
@@ -151,10 +171,11 @@ export class PanelBody {
     } else if (say.dataset.polished !== undefined) {
       delete say.dataset.polished;
     }
-    const target = polished && say.dataset.polished ? say.dataset.polished : say.dataset.raw;
+    const target = (polished && say.dataset.polished ? say.dataset.polished : say.dataset.raw) ?? '';
     if (say.textContent !== target) say.textContent = target;
   }
 
+  /** @param {ShownFrame} frame */
   buildFrame(frame) {
     const figure = el('figure', 'c2md-frame');
     figure.dataset.t = String(frame.t);
@@ -166,6 +187,10 @@ export class PanelBody {
     return figure;
   }
 
+  /**
+   * @param {Segment} seg
+   * @param {boolean} polished
+   */
   buildPara(seg, polished) {
     const raw = seg.raw ?? seg.text;
     const shown = polished ? seg.text : raw;

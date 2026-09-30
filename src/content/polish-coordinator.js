@@ -8,9 +8,17 @@ import { toErrorState } from './errors.js';
 import { send } from './messaging.js';
 import { polishSegments, finalize, eventSectionIndexOf, AbortError } from './pipeline.js';
 
+/** @typedef {import('../core/settings.js').Settings} Settings */
+
 /** 提前润色起步的最少事件数：攒够一点内容就开始，不等转录全部结束。 */
 export const EARLY_POLISH_MIN_EVENTS = 12;
 
+/**
+ * 润色进度：done / total 是已润色内容与视频的时长（秒），hasResult 表示已有润色过的段落。
+ * @typedef {{hasResult: boolean, running: boolean, done: number, total: number}} PolishProgress
+ */
+
+/** @returns {PolishProgress} */
 const idleProgress = () => ({ hasResult: false, running: false, done: 0, total: 0 });
 const idleEarly = () => ({ active: false, done: false, promise: /** @type {Promise<void>|null} */ (null), covered: 0 });
 
@@ -55,7 +63,10 @@ export class PolishCoordinator {
     this.restartPending = false;
   }
 
-  /** 从会话缓存恢复的笔记是否带着润色结果。 */
+  /**
+   * 从会话缓存恢复的笔记是否带着润色结果。
+   * @param {boolean} hasResult
+   */
   restore(hasResult) {
     this.progress.hasResult = hasResult;
   }
@@ -67,7 +78,7 @@ export class PolishCoordinator {
 
   /**
    * 转录进行中又到了一批事件：攒够量就先润一批，上一批落定后接着推进。
-   * @param {object[]} events
+   * @param {import('../core/model.js').TranscriptEvent[]} events
    */
   onPartial(events) {
     const batchDue = events.length - (this.early.covered ?? 0) >= EARLY_POLISH_MIN_EVENTS;
@@ -79,6 +90,8 @@ export class PolishCoordinator {
    * 润色相关的设置变了（控制器已换上新设置之后调用）。
    * 开了润色或换了模型：笔记已成就重润；正在收尾或润色就排队重润；转录中途就把提前润色接上。
    * 关了润色：停掉手头的润色，已完成的段落保留。
+   * @param {Settings} old
+   * @param {Settings} next
    */
   settingsChanged(old, next) {
     const configChanged = next.polishLevel !== old.polishLevel ||
@@ -86,12 +99,13 @@ export class PolishCoordinator {
       next.llm?.baseUrl !== old.llm?.baseUrl || next.llm?.model !== old.llm?.model;
     const wanted = next.polish && (!old.polish || configChanged);
     if (old.polish && !next.polish && this.progress.running) this.abort?.abort();
+    const live = this.c.liveEvents;
     if (this.c.built && wanted) {
       if (this.finalizing || this.progress.running) this.restartPending = true;
       else this.repolish({ reset: configChanged });
     } else if (!this.c.built && wanted && this.c.status === 'running' && !this.early.active && !this.early.done &&
-      (this.c.liveEvents?.length ?? 0) >= EARLY_POLISH_MIN_EVENTS) {
-      this.startEarlyPolish(this.c.liveEvents);
+      live && live.length >= EARLY_POLISH_MIN_EVENTS) {
+      this.startEarlyPolish(live);
     }
   }
 
@@ -131,7 +145,7 @@ export class PolishCoordinator {
   /**
    * 跑一遍润色。
    * @param {object} [options]
-   * @param {object[]} [options.segments] 要润色的段落（默认 this.c.built.segments；提前润色时传事件列表）
+   * @param {import('../core/model.js').Segment[]} [options.segments] 要润色的段落（默认 this.c.built.segments；提前润色时传事件列表）
    * @param {number[]} [options.sectionIndexOf] 段落下标 -> 章节下标
    * @param {boolean} [options.resume] 续润：跳过已润色的段落
    * @param {boolean} [options.early] 转录尚未结束的提前润色：不触碰面板正文
@@ -144,7 +158,7 @@ export class PolishCoordinator {
     if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
     const polishAbort = this.abort;
     const runAbort = this.c.abort;
-    const signal = AbortSignal.any([polishAbort.signal, runAbort?.signal].filter(Boolean));
+    const signal = AbortSignal.any(runAbort ? [polishAbort.signal, runAbort.signal] : [polishAbort.signal]);
     this.progress = { hasResult: this.progress.hasResult, running: true, done: 0, total: 0 };
     this.c.panel.setState({ polish: this.progress });
     try {
@@ -156,7 +170,8 @@ export class PolishCoordinator {
     const result = await polishSegments({
       segments,
       sectionIndexOf,
-      meta: this.c.meta,
+      // 元信息只作提示用；万一还没有也照样润色
+      meta: this.c.meta ?? {},
       settings: polishSettings,
       signal,
       resume,
@@ -182,12 +197,13 @@ export class PolishCoordinator {
 
     if (signal.aborted) throw new AbortError();
 
+    const built = this.c.built;
     if (result.failed && !early) {
-      this.c.built.warnings.push(`润色失败 ${result.failed}/${result.chunks}：${result.firstError || '模型未返回可用文本'}`);
+      built?.warnings.push(`润色失败 ${result.failed}/${result.chunks}：${result.firstError || '模型未返回可用文本'}`);
     }
     this.progress = { hasResult: true, running: false, ...polishProgress(segments, this.c.meta?.duration) };
-    if (!early) {
-      this.c.doc = finalize(this.c.built, this.c.meta, this.c.settings);
+    if (!early && built && this.c.meta) {
+      this.c.doc = finalize(built, this.c.meta, this.c.settings);
       await this.c.saveCache();
     }
     } finally {
@@ -199,7 +215,10 @@ export class PolishCoordinator {
     }
   }
 
-  /** 提前润色：转录还在进行时就润已经到手的事件；事件对象就地更新。 */
+  /**
+   * 提前润色：转录还在进行时就润已经到手的事件；事件对象就地更新。
+   * @param {import('../core/model.js').TranscriptEvent[]} events
+   */
   startEarlyPolish(events) {
     const early = this.early;
     early.active = true;
@@ -226,7 +245,11 @@ export class PolishCoordinator {
     return { ...this.c.settings.llm, ...LOCAL_POLISH, concurrency: 1 };
   }
 
-  /** 启动本机润色服务并等它就绪；启动进度照常显示。 */
+  /**
+   * 启动本机润色服务并等它就绪；启动进度照常显示。
+   * @param {AbortSignal} signal
+   * @returns {Promise<Settings>}
+   */
   async localPolishSettings(signal) {
     await this.waitLocalPolish(signal, (message) => {
       if (signal.aborted) return;
@@ -239,6 +262,7 @@ export class PolishCoordinator {
   }
 
   /** 静默确保本机润色可用：不打扰进度显示，只在失败时抛错。 */
+  /** @param {AbortSignal} signal */
   async ensureLocalPolish(signal) {
     await this.waitLocalPolish(signal);
     return this.localPolishLlm();
@@ -261,6 +285,7 @@ export class PolishCoordinator {
     }
   }
 
+  /** @param {{reset?: boolean}} [options] reset：从头重润，而不是续润 */
   async repolish(options = {}) {
     if (!this.c.built) return { status: 'none' };
     if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
