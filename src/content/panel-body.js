@@ -25,17 +25,21 @@ export class PanelBody {
     this.el = body;
     const { status, sections, settings } = this.panel.state;
 
+    // The two empty states share one class, so tell them apart by kind: checking the class
+    // alone left "暂无笔记" in place for the whole wait when a run started from an idle panel.
     if ((status === 'loading' || status === 'running') && !sections?.length) {
-      if (!body.querySelector('.c2md-empty')) {
+      if (!body.querySelector('.c2md-empty[data-kind="loading"]')) {
         const empty = el('div', 'c2md-empty');
+        empty.dataset.kind = 'loading';
         empty.appendChild(progress({ ratio: null, label: '正在取文字' }));
         body.replaceChildren(empty);
       }
       return body;
     }
     if (!sections?.length) {
-      if (status !== 'error' && !body.querySelector('.c2md-empty')) {
+      if (status !== 'error' && !body.querySelector('.c2md-empty[data-kind="none"]')) {
         const empty = el('div', 'c2md-empty');
+        empty.dataset.kind = 'none';
         empty.textContent = '暂无笔记';
         body.replaceChildren(empty);
       }

@@ -251,6 +251,21 @@ try {
       gate.pending[0] && gate.pending[1] && gate.pending[2] === false
         ? pass('panel/ready 取帧中仅允许复制纯文本')
         : fail('panel/ready', `取帧导出限制错误：${JSON.stringify(gate)}`);
+      // A run started from an idle, empty panel must replace "暂无笔记" with the loading state
+      const emptyToLoading = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const saved = { status: panel.state.status, sections: panel.state.sections };
+        const body = () => panel.scope.querySelector('.c2md-panel-body')?.textContent.trim() ?? '';
+        panel.setState({ status: 'idle', sections: [] });
+        const idle = body();
+        panel.setState({ status: 'running' });
+        const running = body();
+        panel.setState(saved);
+        return { idle, running };
+      });
+      emptyToLoading.idle === '暂无笔记' && emptyToLoading.running.includes('正在取文字')
+        ? pass('panel/ready 从空面板开始生成时显示加载中')
+        : fail('panel/ready', `空面板开始生成时状态不对：${JSON.stringify(emptyToLoading)}`);
       // 生成中提前按下复制/下载：按钮文字在「平常／完成后…／已…」间切换，尺寸与位置都不能变
       const armedSize = await page.evaluate(() => {
         const panel = window.__selftestPanel;
