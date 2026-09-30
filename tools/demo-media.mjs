@@ -3,6 +3,7 @@
 //
 //   npm run media                 すべて撮る → docs/media/
 //   npm run media -- deferred     名前に "deferred" を含む場面だけ
+//   C2MD_MEDIA_KEEP=1 npm run media   合成したコマを消さずに残す
 //
 // 要るもの：Edge、ffmpeg、ネットワーク、本機助手（截图を取るため。npm run local:install）。
 //
@@ -125,7 +126,7 @@ async function lectureOne() {
   rec.camera(full);
   await sleep(700);
   const launch = await rec.stop();
-  if (wanted('launch')) await makeGif(launch, 'demo-launch.gif', 880);
+  if (wanted('launch')) await makeGif(launch, 'demo-launch.gif', 880, 128);
 
   if (wanted('density')) {
     // 前の場面で読み進めた分を戻し、截图が一枚まるごと見える位置から始める
@@ -536,8 +537,12 @@ function pointerAt(clip, t) {
   return list.at(-1);
 }
 
-/** 記録を 50 fps の GIF に仕上げる。最後の状態は少し長めに見せる。 */
-async function makeGif(clip, name, width) {
+/**
+ * 記録を 50 fps の GIF に仕上げる。最後の状態は少し長めに見せる。
+ * colors：パレットの色数。パネルだけの画面は 64 で足りるが、ページ全体を写すと YouTube の赤と白に
+ * 色を取られ、講義スライドの写真（金色）が桃色に崩れるので 128 にする。
+ */
+async function makeGif(clip, name, width, colors = 64) {
   const warp = timeWarp(clip);
   const height = Math.round((width * clip.base.height) / clip.base.width / 2) * 2;
   const hold = 1.2;
@@ -611,11 +616,13 @@ async function makeGif(clip, name, width) {
   await painter.close();
 
   // 画面の大半は平らな色の UI。色数を絞り、ディザもかけない方が寄り引きのコマが軽い（抖動は模様になって圧縮を損なう）
-  const filter = 'split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle';
+  const filter = `split[a][b];[a]palettegen=max_colors=${colors}:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle`;
   const out = join(OUT, name);
   const run = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(dir, 'o%05d.jpg'),
     '-filter_complex', filter, '-loop', '0', out]);
-  rmSync(dir, { recursive: true, force: true });
+  // C2MD_MEDIA_KEEP=1 なら合成したコマを残す（GIF の色数などを後から試すため）
+  if (process.env.C2MD_MEDIA_KEEP) console.log(`合成したコマ：${dir}`);
+  else rmSync(dir, { recursive: true, force: true });
   if (run.status !== 0) throw new Error(`ffmpeg が失敗：${run.stderr}`);
   console.log(`${name}  ${(total / FPS).toFixed(1)} s  ${FPS} fps  ${(statSync(out).size / 1024 / 1024).toFixed(2)} MB`);
 }
