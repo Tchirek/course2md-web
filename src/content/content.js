@@ -17,8 +17,6 @@ import { ensureFreshCode, extensionGone, resumeAfterExtensionReload, takeResumeR
 import { TitleLauncher } from './title-launcher.js';
 
 const POLL_MS = 1500;
-/** 提前润色起步的最少事件数：攒够一点内容就开始，不等转录全部结束。 */
-const EARLY_POLISH_MIN_EVENTS = 12;
 
 export class Controller {
   constructor() {
@@ -34,7 +32,6 @@ export class Controller {
     this.stageLabel = '';
     this.stageRatio = null;
     this.abort = null;
-    this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.imagesPending = false;
     this.autoTimer = null;
     // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
@@ -50,12 +47,8 @@ export class Controller {
     this.exportFlash = { copy: false, download: false };
     this.exportFlashTimers = {};
     this.panelDismissed = false;
-    this.polishAbort = null;
-    this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
     this.liveSections = null;
-    this.polishRestart = false;
-    this.finalizingPolish = false;
     this.urlKey = this.currentUrlKey();
     /** @type {TitleLauncher|null} */
     this.launcher = null;
@@ -105,25 +98,11 @@ export class Controller {
       const next = /** @type {any} */ (changes.settings.newValue);
       if (!next) return;
       const old = this.settings;
-      const configChanged = next.polishLevel !== old.polishLevel ||
-        next.polishEngine !== old.polishEngine ||
-        next.llm?.baseUrl !== old.llm?.baseUrl || next.llm?.model !== old.llm?.model;
-      const repolish = this.built && !this.finalizingPolish && next.polish && !this.polishState.running &&
-        (!old.polish || configChanged);
-      if (this.built && next.polish && (this.finalizingPolish || this.polishState.running) && (!old.polish || configChanged)) {
-        this.polishRestart = true;
-      }
-      const resumeEarly = !this.built && this.status === 'running' && next.polish &&
-        !this.earlyPolish.active && !this.earlyPolish.done &&
-        (this.liveEvents?.length ?? 0) >= EARLY_POLISH_MIN_EVENTS && (!old.polish || configChanged);
       this.settings = next;
       this.panel.setState({ settings: this.settings });
-      // 半途取消润色：停掉手头的润色，已完成的段落保留
-      if (old.polish && !next.polish && this.polishState.running) this.polishAbort?.abort();
       if (this.meta && (this.built || this.liveSections) && this.imageLevel !== this.settings.imageLevel) this.frames.refreshImages();
       if (this.settings.showPanel && this.doc && !this.panelDismissed) this.panel.mount();
-      if (repolish) this.polisher.repolish({ reset: configChanged });
-      if (resumeEarly) this.polisher.startEarlyPolish(this.liveEvents);
+      this.polisher.settingsChanged(old, next);
     });
 
     // SPA 换视频：YouTube 与 B 站都是不刷新页面换内容的
@@ -152,7 +131,7 @@ export class Controller {
       this.meta = cached.meta;
       this.doc = buildDoc({ ...this.meta, source: cached.stats.source }, cached.sections);
       this.status = 'ready';
-      this.polishState.hasResult = Boolean(cached.polished);
+      this.polisher.restore(Boolean(cached.polished));
       this.frames.present();
       if (this.settings.showPanel) this.panel.mount();
       if (this.imagesPending) this.frames.refreshImages();
@@ -186,7 +165,7 @@ export class Controller {
     if (key === this.urlKey) return;
     this.abort?.abort();
     this.frames.cancel();
-    this.polishAbort?.abort();
+    this.polisher.cancel();
     clearTimeout(this.autoTimer);
     this.urlKey = key;
     this.pendingExport = { copy: false, download: false };
@@ -202,12 +181,8 @@ export class Controller {
     // 不让「暂无笔记」在启动的一秒空窗里闪出来
     this.status = this.autoRunArmed ? 'loading' : 'idle';
     this.error = null;
-    this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
-    this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
     this.liveSections = null;
-    this.polishRestart = false;
-    this.finalizingPolish = false;
     this.panel.setState(this.panelState());
     if (this.autoRunArmed) this.scheduleAutoRun();
   }
@@ -288,7 +263,7 @@ export class Controller {
         : null,
       stats: this.built?.stats ?? null,
       segmented: this.built ? this.built.segments.length : 0,
-      polish: { ...this.polishState },
+      polish: { ...this.polisher.progress },
       error: this.error,
       // 自動切り替えの知らせは、文字起こしの途中や失敗時にも見えるようにする（完成後は built.warnings にある）
       warnings: this.built?.warnings ?? (this.fallbackNotice ? [this.fallbackNotice] : []),
@@ -344,9 +319,8 @@ export class Controller {
 
     this.abort?.abort();
     this.frames.cancel();
-    this.polishAbort?.abort();
+    this.polisher.begin();
     this.abort = new AbortController();
-    this.polishAbort = new AbortController();
     const runAbort = this.abort;
     const adapter = this.adapter;
     this.status = 'running';
@@ -357,12 +331,8 @@ export class Controller {
     this.built = null;
     this.previewSections = [];
     this.doc = null;
-    this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
-    this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
     this.liveEvents = null;
     this.liveSections = null;
-    this.polishRestart = false;
-    this.finalizingPolish = false;
     this.stageLabel = '正在读取页面信息';
     this.panelDismissed = false;
     this.panel.mount();
@@ -393,13 +363,8 @@ export class Controller {
           this.liveEvents = events;
           this.liveSections = partial.sections;
           this.frames.refreshImages();
-          // 润色不必等转录全部结束：攒够量就先润一批，上一批落定后接着推进
-          const batchDue = events.length - (this.earlyPolish.covered ?? 0) >= EARLY_POLISH_MIN_EVENTS;
-          const batchFree = !this.earlyPolish.active &&
-            ((this.earlyPolish.covered ?? 0) === 0 || this.earlyPolish.done);
-          if (this.settings.polish && this.polisher.polishReady() && batchDue && batchFree) {
-            this.polisher.startEarlyPolish(events);
-          }
+          // 润色不必等转录全部结束
+          this.polisher.onPartial(events);
         },
       };
 
@@ -423,7 +388,8 @@ export class Controller {
       if (runAbort.signal.aborted) throw new AbortError();
       this.meta = meta;
       this.built = built;
-      this.finalizingPolish = true;
+      // 下一行的取帧会广播状态，预约的导出可能就此触发：先声明收尾，让导出等润色
+      this.polisher.prepareFinish();
 
       this.doc = finalize(this.built, this.meta, this.settings);
       this.status = 'ready';
@@ -432,27 +398,13 @@ export class Controller {
       if (runAbort.signal.aborted) throw new AbortError();
 
       // 勾了润色且配置齐全，就在同一次流程里顺带跑掉
-      if (this.settings.polish) {
-        // 先等提前润色收尾，续润只处理还没润过的段落
-        if (this.earlyPolish.promise) await this.earlyPolish.promise.catch(() => {});
-        if (runAbort.signal.aborted) throw new AbortError();
-        do {
-          this.polishRestart = false;
-          try {
-            await this.polisher.runPolish({ resume: true });
-          } catch (error) {
-            if (runAbort.signal.aborted) throw error;
-            if (!(error instanceof AbortError)) this.error = toErrorState(error);
-          }
-        } while (this.settings.polish && this.polishRestart && !runAbort.signal.aborted);
-      }
+      await this.polisher.finish(runAbort);
       if (runAbort.signal.aborted) throw new AbortError();
 
       this.doc = finalize(this.built, this.meta, this.settings);
       this.status = 'ready';
       this.stageLabel = '';
       await this.saveCache();
-      this.finalizingPolish = false;
     } catch (error) {
       if (this.abort !== runAbort) return { status: 'stale' };
       // 途中扩展被重新加载（例如后台发现自己是旧代码而自行重载）：刷新页面接着生成
@@ -470,11 +422,7 @@ export class Controller {
     }
 
     if (this.settings.showPanel && !this.panelDismissed) this.panel.mount();
-    this.finalizingPolish = false;
-    if (this.polishRestart && this.settings.polish && this.built && !this.polishState.running) {
-      this.polishRestart = false;
-      this.polisher.repolish();
-    }
+    this.polisher.afterRun();
     this.broadcast();
     return { status: this.status, error: this.error };
   }
@@ -522,7 +470,7 @@ export class Controller {
   cancel() {
     this.abort?.abort();
     this.frames.cancel();
-    this.polishAbort?.abort();
+    this.polisher.stop();
     this.status = 'idle';
     this.stageLabel = '';
     this.built = null;
@@ -569,7 +517,7 @@ export class Controller {
   /** まだ内容を作っている最中か（文字起こし・画像取得・润色）。この間の書き出しは予約になる。 */
   exportBusy() {
     if (this.status === 'running' || this.status === 'loading') return true;
-    return this.status === 'ready' && (!this.exportReady() || this.polishState.running || this.finalizingPolish);
+    return this.status === 'ready' && (!this.exportReady() || this.polisher.busy);
   }
 
   /** 浮窓の複製・保存：書き出せるならすぐ実行、作成中なら「完了後に実行」を切り替える。 */
@@ -662,7 +610,7 @@ export class Controller {
       images: [...this.frames.cache.entries()],
       stats: this.built.stats,
       warnings: this.built.warnings,
-      polished: this.polishState.hasResult,
+      polished: this.polisher.progress.hasResult,
     });
   }
 
