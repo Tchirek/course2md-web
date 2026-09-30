@@ -6,6 +6,8 @@
   子（llama-server など）が数 GB を抱えたまま居残らないようにする。
 """
 import os
+import atexit
+import signal
 import subprocess
 import sys
 import threading
@@ -90,6 +92,10 @@ def popen_bound(args, **options):
     if sys.platform.startswith("linux"):
         return subprocess.Popen(args, preexec_fn=_die_with_parent, **options)
     process = subprocess.Popen(args, **options)
+    if sys.platform == 'darwin':
+        # pkill sends SIGTERM. Unwind Python finally blocks so owned model children exit too.
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+        atexit.register(lambda: process.terminate() if process.poll() is None else None)
     if sys.platform == "win32":
         try:
             _kill_on_close(process)
