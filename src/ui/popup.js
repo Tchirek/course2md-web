@@ -6,21 +6,39 @@
 import { segmented, displayToggleRows, progress, note, applyTheme } from './controls.js';
 import { icon } from './icons.js';
 import { reloadIfCodeChanged } from '../core/build.js';
+import { DEFAULT_SETTINGS, withDefaults } from '../core/settings.js';
+
+/**
+ * 取 popup.html 里固定存在的元素；缺了就是页面与脚本对不上，直接说清楚。
+ * @param {string} id
+ */
+function byId(id) {
+  const node = document.getElementById(id);
+  if (!node) throw new Error(`popup.html 缺少 #${id}`);
+  return node;
+}
+
+const runButton = byId('run');
+if (!(runButton instanceof HTMLButtonElement)) throw new Error('popup.html 的 #run 应当是按钮');
 
 const el = {
-  title: document.getElementById('page-title'),
-  pageMeta: document.getElementById('page-meta'),
-  source: document.getElementById('source-control'),
-  toggles: document.getElementById('toggles'),
-  status: document.getElementById('status'),
-  run: /** @type {HTMLButtonElement} */ (document.getElementById('run')),
-  secondary: document.getElementById('secondary'),
-  options: document.getElementById('open-options'),
+  title: byId('page-title'),
+  pageMeta: byId('page-meta'),
+  source: byId('source-control'),
+  toggles: byId('toggles'),
+  status: byId('status'),
+  run: runButton,
+  secondary: byId('secondary'),
+  options: byId('open-options'),
 };
 
-/** @type {object} */
-let settings = null;
-let tab = null;
+// 读到存储里的设置之前先用默认值
+/** @type {import('../core/settings.js').Settings} */
+let settings = structuredClone(DEFAULT_SETTINGS);
+/** @type {chrome.tabs.Tab|undefined} */
+let tab;
+/** 页面控制器广播的状态里，弹窗用得到的部分 */
+/** @type {{status?: string, stageRatio?: number|null, error?: unknown}|null} */
 let state = null;
 
 // ---------- 启动 ----------
@@ -35,7 +53,6 @@ async function init() {
     send({ type: 'settings.load' }).catch(() => null),
     chrome.tabs.query({ active: true, currentWindow: true }),
   ]);
-  const { withDefaults } = await import('../core/settings.js');
   settings = withDefaults(reply ?? {});
   applyTheme(settings);
 
@@ -130,7 +147,7 @@ function renderStatus() {
  * 改设置：先落盘再重绘。storage.onChanged 也会推一次，两条路径都写同一份
  * 状态，所以不需要额外的同步逻辑。
  */
-async function patch(patchObject) {
+async function patch(/** @type {object} */ patchObject) {
   const reply = await send({ type: 'settings.save', payload: { patch: patchObject } }).catch(
     () => null,
   );
@@ -171,7 +188,7 @@ async function start() {
     el.status.dataset.tone = 'error';
     el.status.replaceChildren();
     const p = document.createElement('div');
-    p.textContent = String(error?.message ?? error);
+    p.textContent = String(/** @type {{message?: string}} */ (error)?.message ?? error);
     el.status.appendChild(p);
   } finally {
     el.run.disabled = false;
@@ -184,7 +201,7 @@ async function showPanel() {
     await ask({ type: 'c2md.showPanel' });
     window.close();
   } catch (error) {
-    showError('无法打开浮窗', String(error?.message ?? error));
+    showError('无法打开浮窗', String(/** @type {{message?: string}} */ (error)?.message ?? error));
   }
 }
 
@@ -207,7 +224,7 @@ async function ensureController() {
   } catch (error) {
     showError(
       '无法在这个页面运行',
-      `${String(error?.message ?? error)}\n` +
+      `${String(/** @type {{message?: string}} */ (error)?.message ?? error)}\n` +
         '内置站点不需要额外授权；其他页面请在扩展详情里允许「在此站点上」访问。',
     );
     return false;
@@ -223,11 +240,16 @@ async function ensureController() {
   return false;
 }
 
+/**
+ * @param {string} title
+ * @param {string} body
+ */
 function showError(title, body) {
   el.status.dataset.tone = 'error';
   el.status.replaceChildren(note({ title, body, tone: 'error' }));
 }
 
+/** @param {string} url */
 function siteOf(url) {
   try {
     const host = new URL(url).hostname;
@@ -241,6 +263,13 @@ function siteOf(url) {
 
 // ---------- 与页面控制器通信 ----------
 
+/** @typedef {{type: string, payload?: object}} Message */
+
+/**
+ * 发给后台。
+ * @param {Message} message
+ * @returns {Promise<any>} 后台返回的值（类型随请求而不同）
+ */
 function send(message) {
   return chrome.runtime.sendMessage(message).then((reply) => {
     if (!reply) throw new Error('扩展后台没有响应');
@@ -249,6 +278,12 @@ function send(message) {
   });
 }
 
+/**
+ * 发给当前标签页里的控制器。
+ * @param {Message} message
+ * @param {number} [timeoutMs] 0 表示不限时
+ * @returns {Promise<any>} 控制器返回的值；没有标签页时为 null
+ */
 async function ask(message, timeoutMs = 10_000) {
   if (!tab?.id) return null;
   const task = chrome.tabs.sendMessage(tab.id, message).then((reply) => {
@@ -265,6 +300,7 @@ async function ask(message, timeoutMs = 10_000) {
   ]);
 }
 
+/** @param {number} ms */
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }

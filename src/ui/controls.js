@@ -291,7 +291,7 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
 /**
  * 润色方式选择：本机内置模型 or 自备 API（兼容旧的 auto 语义）。
  * @param {import('../core/settings.js').Settings} settings
- * @param {(patch:object) => void} onChange
+ * @param {(patch:{polishEngine: string}) => void} onChange
  */
 export function polishEngineRow(settings, onChange) {
   return segmented({
