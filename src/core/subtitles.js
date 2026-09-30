@@ -68,14 +68,10 @@ export function parseVtt(text) {
     if (!lines.length) continue;
     if (/^(NOTE|STYLE|REGION|WEBVTT)\b/i.test(lines[0].trim())) continue;
 
-    let timeIdx = lines.findIndex((l) => l.includes('-->'));
-    if (timeIdx < 0) {
-      // 单行块里可能直接是时间轴（无 cue id）
-      timeIdx = lines.findIndex((l) => /-->/.test(l));
-      if (timeIdx < 0) continue;
-    }
+    // cue id 行可有可无，时间轴行是第一条含 --> 的行
+    const timeIdx = lines.findIndex((l) => l.includes('-->'));
+    if (timeIdx < 0) continue;
     const [rawStart, rest] = lines[timeIdx].split('-->');
-    if (rest === undefined) continue;
     const start = parseCueTime(rawStart);
     // 时间轴后面可能跟 "align:start position:0%" 之类的设置，取第二段里的第一个时间
     const endToken = rest.trim().split(/\s+/)[0];
