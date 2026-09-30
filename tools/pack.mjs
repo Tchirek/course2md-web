@@ -30,6 +30,7 @@ const HELPER_FILES = [
   'tools/bilibili-audio.mjs',
   'tools/launch-local-polish.mjs',
   'tools/local-asr.py',
+  'tools/runtime_download.py',
   'tools/local-polish.py',
   'tools/service_lifecycle.py',
   'tools/pins.py',

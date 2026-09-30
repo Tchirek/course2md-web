@@ -333,6 +333,7 @@ async function startLocalPolish() {
   polishStatus = { state: 'starting', message: '正在准备本机润色' };
   const child = spawn(process.execPath, [fileURLToPath(new URL('./launch-local-polish.mjs', import.meta.url))], {
     windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, C2MD_DATA_DIR: dataDir() },
   });
   polishProcess = child;
   let output = '';
