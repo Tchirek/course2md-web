@@ -28,6 +28,9 @@ test('cleanCueText 去标记、解实体、合并换行', () => {
   assert.equal(cleanCueText('<c.yellow>逐</c><c.yellow>词</c>'), '逐词');
   assert.equal(cleanCueText('<00:00:01.000>卡拉OK'), '卡拉OK');
   assert.equal(cleanCueText('&lt;tag&gt; &amp; &nbsp;x'), '<tag> & x');
+  // 转义过的实体只解一层：&amp;#60; 是字面的「&#60;」，不是「<」
+  assert.equal(cleanCueText('&amp;#60; &amp;lt; &#60; &#x4e2d;'), '&#60; &lt; < 中');
+  assert.equal(cleanCueText('&#39;a&#39; &bogus; &#1114112;'), "'a' &bogus; &#1114112;");
   assert.equal(cleanCueText('<i>斜体</i>'), '斜体');
   assert.equal(cleanCueText('  a   b  '), 'a b');
 });

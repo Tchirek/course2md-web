@@ -3,17 +3,19 @@
 //! 全部解析到统一的 TranscriptEvent，下游（段落组织、润色、渲染）不再关心来源。
 //! 与 course2md 的 subtitle.rs 同一策略：平台字幕优先，ASR 兜底。
 
-/** 解码常见的 HTML 实体与 VTT 转义。 */
+const NAMED_ENTITIES = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&', nbsp: ' ' };
+
+/**
+ * 解码常见的 HTML 实体与 VTT 转义。
+ * 只扫一遍：逐个替换会让 `&amp;#60;` 先变成 `&#60;` 再被解成 `<`（二次解码）。
+ * 认不出的实体、超出 Unicode 范围的码点原样保留。
+ */
 export function decodeEntities(s) {
-  return String(s)
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+  return String(s).replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (whole, dec, hex, name) => {
+    if (name !== undefined) return NAMED_ENTITIES[name] ?? whole;
+    const code = dec !== undefined ? Number(dec) : parseInt(hex, 16);
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  });
 }
 
 /**
