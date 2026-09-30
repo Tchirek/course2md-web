@@ -3,12 +3,14 @@
 //! 全部解析到统一的 TranscriptEvent，下游（段落组织、润色、渲染）不再关心来源。
 //! 与 course2md 的 subtitle.rs 同一策略：平台字幕优先，ASR 兜底。
 
+/** @type {Record<string, string>} */
 const NAMED_ENTITIES = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&', nbsp: ' ' };
 
 /**
  * 解码常见的 HTML 实体与 VTT 转义。
  * 只扫一遍：逐个替换会让 `&amp;#60;` 先变成 `&#60;` 再被解成 `<`（二次解码）。
  * 认不出的实体、超出 Unicode 范围的码点原样保留。
+ * @param {unknown} s
  */
 export function decodeEntities(s) {
   return String(s).replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (whole, dec, hex, name) => {
@@ -21,6 +23,7 @@ export function decodeEntities(s) {
 /**
  * 去掉字幕里的标记：`<v Speaker>`、`<c.classname>`、`<00:00:01.000>`（卡拉OK）、
  * `<i>`/`<b>`/`<font>` 等。保留文字。
+ * @param {unknown} s
  */
 export function stripTags(s) {
   return String(s)
@@ -29,7 +32,8 @@ export function stripTags(s) {
     .replace(/<[^>]*>/g, '');
 }
 
-/** 一个 cue 的文本清理：去标记、解码实体、压掉行内多余空白、合并换行为空格。 */
+/** 一个 cue 的文本清理。
+ * @param {unknown} raw */
 export function cleanCueText(raw) {
   return decodeEntities(stripTags(raw))
     .replace(/[ \t]+/g, ' ')
@@ -37,7 +41,8 @@ export function cleanCueText(raw) {
     .trim();
 }
 
-/** 解析 `HH:MM:SS.mmm` / `MM:SS.mmm` / `SS.mmm`（VTT 用点，SRT 用逗号）。 */
+/** 解析 `HH:MM:SS.mmm` / `MM:SS.mmm` / `SS.mmm`。
+ * @param {unknown} value */
 export function parseCueTime(value) {
   const text = String(value).trim().replace(',', '.');
   const m = text.match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?$/);
@@ -114,13 +119,14 @@ function readCues(text, vtt) {
  */
 export function parseJson3(input) {
   const data = typeof input === 'string' ? safeJson(input) : input;
-  const raw = data?.events;
+  const raw = asRecord(data)?.events;
   if (!Array.isArray(raw)) return [];
 
   const events = [];
-  for (const ev of raw) {
+  for (const value of raw) {
+    const ev = asRecord(value);
     if (!Array.isArray(ev?.segs)) continue;
-    const text = cleanCueText(ev.segs.map((s) => s?.utf8 ?? '').join(''));
+    const text = cleanCueText(ev.segs.map((s) => asRecord(s)?.utf8 ?? '').join(''));
     if (text === '') continue;
     const start = Number(ev.tStartMs) / 1000;
     if (!Number.isFinite(start)) continue;
@@ -162,6 +168,7 @@ export function parseTimedTextXml(text) {
   return events;
 }
 
+/** @param {string} attrs @param {string} name */
 function attr(attrs, name) {
   const m = attrs.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
   return m ? decodeEntities(m[1]) : '';
@@ -173,11 +180,12 @@ function attr(attrs, name) {
  */
 export function parseBilibili(input) {
   const data = typeof input === 'string' ? safeJson(input) : input;
-  const raw = data?.body;
+  const raw = asRecord(data)?.body;
   if (!Array.isArray(raw)) return [];
 
   const events = [];
-  for (const item of raw) {
+  for (const value of raw) {
+    const item = asRecord(value);
     const start = Number(item?.from);
     const end = Number(item?.to);
     const text = cleanCueText(item?.content ?? '');
@@ -350,13 +358,18 @@ function wordBoundary(before, after) {
   return SEPARATOR.test(before) || SEPARATOR.test(after) || (UNSPACED.test(before) && UNSPACED.test(after));
 }
 
+/** @template {{start:number}} T @param {T[]} events */
 function sortByStart(events) {
-  return events
-    .map((e, i) => [e, i])
-    .sort((a, b) => a[0].start - b[0].start || a[1] - b[1])
-    .map(([e]) => e);
+  return [...events].sort((a, b) => a.start - b.start);
 }
 
+/** @param {unknown} value @returns {Record<string, unknown>|null} */
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? /** @type {Record<string, unknown>} */ (value) : null;
+}
+
+/** @param {string} text @returns {unknown} */
 function safeJson(text) {
   try {
     return JSON.parse(text);
@@ -411,11 +424,13 @@ export function normalizeChapters(chapters) {
   return out;
 }
 
-/** 语言代码 -> 中文可读标签（设置页与轨道选择器用）。 */
+/** 语言代码 -> 中文可读标签（设置页与轨道选择器用）。
+ * @param {unknown} code */
 export function languageLabel(code) {
   const raw = String(code ?? '').trim();
   if (!raw) return '未知语言';
   const lower = raw.toLowerCase();
+  /** @type {Record<string, string>} */
   const table = {
     zh: '中文', 'zh-hans': '简体中文', 'zh-cn': '简体中文',
     'zh-hant': '繁体中文', 'zh-tw': '繁体中文', 'zh-hk': '繁体中文',
