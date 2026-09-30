@@ -221,9 +221,9 @@ async function prepare(page, url, at) {
     document.head.appendChild(style);
   }, at);
   await installCursor(page);
-  // 光標は標題の左下から。動画の上に置くと再生の操作バーが出てしまう
+  // 光標は標題の下、説明欄から。動画の上だと再生の操作バー、チャンネル名の上だと吹き出しが出てしまう
   const launcher = await launcherCenter(page);
-  mouse = { x: Math.max(40, launcher.x - 240), y: Math.min(HEIGHT - 20, launcher.y + 70) };
+  mouse = { x: Math.max(40, launcher.x - 200), y: Math.min(HEIGHT - 20, launcher.y + 150) };
   await page.mouse.move(mouse.x, mouse.y);
   await sleep(2500);
 }
