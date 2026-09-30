@@ -140,12 +140,12 @@ YouTube、B 站下載失敗時，本機助手會用目前瀏覽器中該影片�
 npm run local:install
 ```
 
-它安裝 Python `faster-whisper` 執行環境（本機沒有時），把輕量本機助手註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫助手，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。
+它為本機轉錄建立獨立的 Python 環境（放在資料目錄下，所有依賴固定版本，不改動你的全域 Python）；有 NVIDIA 顯示卡時再下載與轉錄引擎編譯版本一致的 cuBLAS / cuDNN（約 1.3 GB，固定 SHA-256，只需一次；顯示卡轉錄中途出錯會改用 CPU 繼續，浮動視窗裡給一行提示）。然後把輕量本機助手註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫助手，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。
 選擇本地模型轉錄後，助手會在任務開始時自動啟動服務；設定頁按鈕也可手動啟動。本機轉錄與潤色模型 10 分鐘沒有任務就會退出並釋放記憶體（環境變數 `C2MD_IDLE_SECONDS` 可調），下次用到時自動重新載入。首次沒有 `small`
 多語言模型時會從 Hugging Face 下載到本機；按鈕會顯示下載、載入與就緒狀態，
 並自動填好轉錄地址和模型名。需要 Python 3、Node.js 22、`ffmpeg`；YouTube、B 站
 快速提取還需要 `yt-dlp`。安裝只需一次：以後更新程式碼，本機助手啟動時會自動修復過時的主機註冊，
-無須重跑；移動了專案目錄才需要重新安裝。解除安裝執行 `npm run local:uninstall`（加 `-- --purge` 連下載的模型一起刪）。
+無須重跑；移動了專案目錄才需要重新安裝。解除安裝執行 `npm run local:uninstall`（加 `-- --purge` 連下載的模型一起刪）。資料目錄預設在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的應用程式資料目錄）；系統磁碟空間緊張時，執行 `npm run local:install -- --data-dir D:\course2md` 把它連同已下載的模型移到別的磁碟，之後一直沿用。
 本機助手只監聽 `127.0.0.1`，除健康檢查外的請求都要帶存取權杖；權杖只經原生訊息交給本擴充功能，
 機器上的其他擴充功能和網頁都用不了它讀本機檔案。執行時下載的模型與執行環境都固定了版本與 SHA-256
 （`tools/runtime-pins.json`），驗證通過才使用。
@@ -236,7 +236,7 @@ npm run check:layout # 只跑幾何斷言：面板佈局、按鈕底色、無橫
 npm run check:sites  # 在真實 YouTube / B 站頁面上跑真擴充功能（需要網路，不進 CI）
 npm run check:image  # 用三次場景變化的實際影片檢查四個圖片密度檔位
 npm run shots        # 各狀態截圖 → tools/shots/
-npm run pack         # 先跑完整檢查，通過才打出兩個發行套件到 dist/
+npm run pack         # 先跑完整檢查，通過才打出兩個發行套件到 dist/（推送到 main 後 CI 會自動發布 release，版本號自動遞增）
 npm run media        # 在真實 YouTube 頁面上用本擴充功能錄製 README 的示範素材 → docs/media/
 npm run icons        # 重新生成擴充功能圖示（自己柵格化 + 自己編碼 PNG，無原生依賴）
 npm run serve        # 自測伺服器：http://127.0.0.1:8787/tools/selftest.html

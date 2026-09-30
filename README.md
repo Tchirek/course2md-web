@@ -138,12 +138,12 @@ YouTube、B 站下载失败时，本机助手会用当前浏览器中该视频�
 npm run local:install
 ```
 
-它安装 Python `faster-whisper` 运行库（本机没有时），把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。安装脚本会在 Edge / Chrome 的配置里找出已加载的本扩展（解压加载的扩展 ID 随所在文件夹而变），只允许这些扩展调用助手，所以请先在浏览器加载扩展再运行；也可以直接带上 ID：`node tools/install-local-asr.mjs <扩展ID>`。
+它为本机转录建立独立的 Python 环境（放在数据目录下，所有依赖固定版本，不改动你的全局 Python）；有 NVIDIA 显卡时再下载与转录引擎编译版本一致的 cuBLAS / cuDNN（约 1.3 GB，固定 SHA-256，只需一次；显卡转录中途出错会改用 CPU 继续，浮窗里给一行提示）。然后把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。安装脚本会在 Edge / Chrome 的配置里找出已加载的本扩展（解压加载的扩展 ID 随所在文件夹而变），只允许这些扩展调用助手，所以请先在浏览器加载扩展再运行；也可以直接带上 ID：`node tools/install-local-asr.mjs <扩展ID>`。
 选择本地模型转录后，助手会在任务开始时自动启动服务；设置页按钮也可手动启动。本机转录与润色模型 10 分钟没有任务就会退出并释放内存（环境变量 `C2MD_IDLE_SECONDS` 可调），下次用到时自动重新加载。首次没有 `small`
 多语言模型时会从 Hugging Face 下载到本机；按钮会显示下载、加载与就绪状态，
 并自动填好转录地址和模型名。需要 Python 3、Node.js 22、`ffmpeg`；YouTube、B 站
 快速提取还需要 `yt-dlp`。安装只需一次：以后更新代码，本机助手启动时会自动修复过时的宿主注册，
-无须重跑；移动了项目目录才需要重新安装。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连下载的模型一起删）。
+无须重跑；移动了项目目录才需要重新安装。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连下载的模型一起删）。数据目录默认在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的应用数据目录）；系统盘空间紧张时，运行 `npm run local:install -- --data-dir D:\course2md` 把它连同已下载的模型移到别的盘，之后一直沿用。
 本机助手只监听 `127.0.0.1`，除健康检查外的请求都要带访问令牌；令牌只经原生消息交给本扩展，
 机器上的其他扩展和网页都用不了它读本机文件。运行时下载的模型与运行库都固定了版本与 SHA-256
 （`tools/runtime-pins.json`），校验通过才使用。
@@ -234,7 +234,7 @@ npm run check:layout # 只跑几何断言：面板布局、按钮底色、无横
 npm run check:sites  # 在真实 YouTube / B 站页面上跑真扩展（需要网络，不进 CI）
 npm run check:image  # 用三次场景变化的实际视频检查四档图片密度
 npm run shots        # 各状态截图 → tools/shots/
-npm run pack         # 先跑完整检查，通过才打出两个发布包到 dist/
+npm run pack         # 先跑完整检查，通过才打出两个发布包到 dist/（推送到 main 后 CI 会自动发布 release，版本号自动递增）
 npm run media        # 在真实 YouTube 页面上用本扩展录制 README 的演示素材 → docs/media/
 npm run icons        # 重新生成扩展图标（自己栅格化 + 自己编码 PNG，无原生依赖）
 npm run serve        # 自测服务器：http://127.0.0.1:8787/tools/selftest.html

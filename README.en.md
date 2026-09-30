@@ -140,12 +140,12 @@ Run once in the project folder (Windows / macOS / Linux alike):
 npm run local:install
 ```
 
-It installs the Python `faster-whisper` runtime (if missing), registers the lightweight local helper as a native messaging host (which is how the extension wakes it up) and makes it start at login. Windows uses the registry and a compiled exe host; macOS / Linux write the browser's `NativeMessagingHosts` folder and start at login via LaunchAgent and XDG autostart respectively. The installer finds this extension among those loaded in Edge / Chrome (an unpacked extension's ID depends on its folder) and allows only those to call the helper, so load the extension in the browser before running it; you can also pass the ID: `node tools/install-local-asr.mjs <extension ID>`.
+It sets up a separate Python environment for local transcription (in the data directory, every dependency pinned, your global Python untouched); on machines with an NVIDIA GPU it also downloads the cuBLAS / cuDNN that match the transcription engine's build (about 1.3 GB, pinned by SHA-256, once; if the GPU fails in the middle of a job it finishes on the CPU, with a one-line notice in the panel). It then registers the lightweight local helper as a native messaging host (which is how the extension wakes it up) and makes it start at login. Windows uses the registry and a compiled exe host; macOS / Linux write the browser's `NativeMessagingHosts` folder and start at login via LaunchAgent and XDG autostart respectively. The installer finds this extension among those loaded in Edge / Chrome (an unpacked extension's ID depends on its folder) and allows only those to call the helper, so load the extension in the browser before running it; you can also pass the ID: `node tools/install-local-asr.mjs <extension ID>`.
 With local transcription selected, the helper starts the service when a job begins; the button on the settings page starts it by hand too. The local transcription and polishing models exit and free their memory after 10 minutes without work (tunable with the `C2MD_IDLE_SECONDS` environment variable) and reload the next time they are needed. The first time, if the multilingual `small`
 model is missing, it is downloaded from Hugging Face; the button shows downloading, loading and ready,
 and fills in the transcription address and model name. Requires Python 3, Node.js 22 and `ffmpeg`; fast
 extraction on YouTube and Bilibili also needs `yt-dlp`. Installing once is enough: after later code updates the helper repairs an outdated host registration when it starts,
-so there is nothing to re-run; only moving the project folder needs a reinstall. To uninstall run `npm run local:uninstall` (add `-- --purge` to delete the downloaded models too).
+so there is nothing to re-run; only moving the project folder needs a reinstall. To uninstall run `npm run local:uninstall` (add `-- --purge` to delete the downloaded models too). The data directory defaults to `%LOCALAPPDATA%\course2md` (the usual application-data folder on macOS / Linux); if the system drive is short of space, `npm run local:install -- --data-dir D:\course2md` moves it, downloaded models included, to another drive for good.
 The local helper listens only on `127.0.0.1`, and every request except the health check needs an access token; the token is handed only to this extension over native messaging,
 so other extensions and web pages on the machine cannot use the helper to read local files. Models and runtimes downloaded at run time are pinned to a version and SHA-256
 (`tools/runtime-pins.json`) and used only after they verify.
@@ -236,7 +236,7 @@ npm run check:layout # geometry assertions only: panel layout, button fills, no 
 npm run check:sites  # run the real extension on real YouTube / Bilibili pages (needs network, not in CI)
 npm run check:image  # check the four image densities against a real video with three scene changes
 npm run shots        # screenshots of every state → tools/shots/
-npm run pack         # runs the full check first, and only then writes the two release packages to dist/
+npm run pack         # runs the full check first, and only then writes the two release packages to dist/ (every push to main is released by CI, with the version bumped automatically)
 npm run media        # record the README demos with this extension on real YouTube pages → docs/media/
 npm run icons        # regenerate the extension icons (own rasteriser + own PNG encoder, no native deps)
 npm run serve        # self-test server: http://127.0.0.1:8787/tools/selftest.html

@@ -13,12 +13,18 @@
 
 ## 运行时下载（不随发布包分发）
 
-启用本机转录或本机润色时，本机助手按 `tools/runtime-pins.json` 里固定的版本与 SHA-256
-下载下列组件，校验通过才使用：
+启用本机转录或本机润色时，本机助手按 `tools/runtime-pins.json` 里固定的版本下载下列组件
+（模型、运行库与显卡加速库另外固定了 SHA-256，校验通过才使用）。Python 包装进本项目自己的虚拟环境，
+不改动用户的全局 Python：
 
 | 组件 | 固定版本 | 许可 |
 | --- | --- | --- |
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper)（pip） | 1.2.1 | MIT |
+| [CTranslate2](https://github.com/OpenNMT/CTranslate2)（pip） | 4.8.1 | MIT |
+| 转录环境的其余依赖（PyAV、ONNX Runtime、tokenizers、huggingface_hub 等，完整清单见 `asr-python`） | 见清单 | 各自的开源许可（BSD / MIT / Apache-2.0） |
+| NVIDIA [cuBLAS](https://pypi.org/project/nvidia-cublas-cu12/)（`nvidia-cublas-cu12`，仅限有 NVIDIA 显卡的机器） | 12.8.4.1 | NVIDIA Software License Agreement（CUDA 可再分发组件） |
+| NVIDIA [cuDNN](https://pypi.org/project/nvidia-cudnn-cu12/)（`nvidia-cudnn-cu12`，同上） | 9.10.2.21 | NVIDIA cuDNN Software License Agreement |
+| 本机润色环境的依赖（transformers、tokenizers、safetensors 等，完整清单见 `polish-python`） | 见清单 | Apache-2.0 等 |
 | [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small) 模型 | 提交 `536b066` | MIT |
 | [FireRedASR2S](https://github.com/FireRedTeam/FireRedASR2S) 中的 `fireredpunc` 源码 | 提交 `4e7d9aa` | Apache-2.0 |
 | [FireRedTeam/FireRedPunc](https://huggingface.co/FireRedTeam/FireRedPunc) 模型 | 提交 `e448fd9` | Apache-2.0 |
