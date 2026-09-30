@@ -10,7 +10,10 @@
 把视频变成「截图 + 按截图分段的文字」的图文讲义。它是本地程序，靠 `yt-dlp` 下载、
 靠 `ffmpeg` 抽帧和抽音轨。
 
-这个插件给它换一个壳：**浏览器里就地做，不需要任何外部二进制**。因此：
+这个插件给它换一个壳，与它并行不悖：页面交互、字幕解析与笔记组织在浏览器里做，平台字幕与
+纯文字笔记不需要任何外部程序。截图、快速取音与本机转录交给本机助手，和原版一样靠 `yt-dlp` 与
+`ffmpeg`；本机转录用的也是原版的 Qwen3-ASR 与 llama.cpp，模型文件与原版共用同一份（第 3 节）。
+早先这里写着「不需要任何外部二进制」，那只对纯文字成立，图文讲义从来都离不开本机助手。因此：
 
 **照搬的部分**（这些是它的核心判断，值得保持一致的语义，两边产出的笔记才能互相接续）：
 
@@ -25,6 +28,9 @@
 | 时间戳解析宽容度 | 接受 `1:02:03`/`90s`/`[01:00]`/`1,5` | `timeline.rs::parse_timestamp` |
 | 润色输出契约 | 逐条 `{id, text}` JSON，id 对不上就整块放弃 | `llm.rs::segment_ids_match` |
 | 原文留存 | `raw` 与 `text` 并存 | `timeline.rs::TranscriptEvent` |
+| 转录模型 | Qwen3-ASR-1.7B Q8_0 GGUF，放在原版的模型目录、原版的布局里 | `models.rs::llama_paths` |
+| 语音分段 | 静音 -28dB 持续 0.4 秒为界；段长上限 20 秒，超长段在上限前 3 秒内最安静处切开；外沿各向静音扩 0.25 秒 | `asr.rs::ffmpeg_vad` / `normalize_segments` |
+| 截图去重 | 与保留下来的画面 SSIM ≥ 0.85 即略去 | `config.rs::DEFAULT_SIMILARITY` |
 
 **改掉的部分**：
 
@@ -124,9 +130,29 @@ B 站 JSON、timedtext XML 本身不重复，一律不合并。43 分钟的实�
 ### 本地模型转录
 
 优先走不依赖播放时钟的路径。YouTube、B 站由可选的本机提取服务调用 `yt-dlp` 下载音轨；
-本地文件由同一服务直接读取，再用 `ffmpeg` 切成 WAV，发到用户配置的 OpenAI 兼容本机 ASR。普通可读取的媒体由浏览器
-`fetch` 和 Web Audio 离线解码，切成 16 kHz 单声道 WAV 后发送同一服务。两条路径都按
-计算与网络速度处理；ASR 请求最多两个并行。
+本地文件由同一服务直接读取，再用 `ffmpeg` 转成 16 kHz 单声道 WAV，按停顿切段后逐段发到
+OpenAI 兼容的本机 ASR。普通可读取的媒体由浏览器 `fetch` 和 Web Audio 离线解码，按设置里的
+切片长度切成 WAV 后发送同一服务，最多两个请求并行。两条路径都按计算与网络速度处理。
+
+**按停顿切段，而不是每 30 秒切一刀。** 以前固定 30 秒一片：语间被切断，片头片尾的半个词
+两边都认不准；片内的停顿也看不见。换成 Qwen3-ASR 后这一点更要紧——它只返回文字、不给
+时间戳，送进去的那一段本身就是事件的时间。所以沿用原版的分段（`tools/speech-segments.mjs`，
+取值见第 1 节的表）：事件从一句话开始的地方开始，段落组织要的 3.5 秒静音也还在。实测 4 分钟
+的课堂录音切成 73 段，句句从开口处起算。
+
+**转录模型与原版共用。** 以前的内置转录是 faster-whisper `small`：独立的 Python 虚拟环境加
+显卡用的 cuBLAS / cuDNN，数据目录里约 2.5 GB，只归这一个扩展用。现在用原版同款的
+Qwen3-ASR-1.7B（约 2.5 GB），由已经为本机润色准备的 llama.cpp 运行，服务 `tools/qwen-asr.py`
+只用 Python 标准库。体积相当，但：
+
+- 模型放在原版的模型目录里（原版 `config.toml` 的 `model_dir`，否则原版的默认位置），布局也
+  与原版相同。装过原版的机器一个字节都不用下；先装本插件的，日后装原版时模型已经就位。
+- 那里已有的文件按固定的 SHA-256 核对，对不上就原样保留并报错，绝不覆盖原版的东西；卸载时
+  也不删它（原版可能还在用）。
+- 数据目录被 `--data-dir` 挪到别的盘时，说明系统盘紧张；原版此时若还没有自己的选择、也没
+  下载过模型，安装脚本就把模型目录写进原版的 `config.toml`，两边以后都下到那里。
+- 输出自带标点。4 分钟英文课与同一视频的 YouTube 自动字幕逐词对比，差异约 6%，多是口头重复
+  与同音词；中文用合成语音测过，逐字无误。
 
 两条快路径都无法使用时，`captureStream()` 与 `MediaRecorder` 从播放器录音。它需要真实
 播放，保留了现有视频与音量恢复逻辑；各片转写现在与后续录制并行，不再额外串行等待。
@@ -149,7 +175,10 @@ B 站 JSON、timedtext XML 本身不重复，一律不合并。43 分钟的实�
 | 显示图片 | 无档不截图；少／默认／多以 180 秒／60 秒／10 秒作为候选画面间距 |
 | 润色文本 | 按 id 契约改写；关掉即显示 `raw` 原文 |
 
-多档沿用原版 0.85 的相似度阈值与 10 秒的最短保存间隔。本机助手下载视频并用 ffmpeg 离线取帧，页面播放器不跳进度；已取得的帧按讲述时刻暂存，切换密度只补缺。
+各档都只保留有变化的画面，沿用原版 0.85 的相似度阈值；多档候选最密每 10 秒一张。课堂录像常在
+幻灯片与讲师镜头之间来回切，只和上一张比（原版的做法）会让同一页在每次切回来时重复出现，
+所以和两分钟内保留过的画面都比一遍（`src/core/similarity.js` 里记着实测数字）。本机助手下载视频
+并用 ffmpeg 离线取帧，页面播放器不跳进度；已取得的帧按讲述时刻暂存，切换密度只补缺。
 
 **切换是瞬时的，不重建 DOM。** 每个段落元素同时带着 `data-raw` 与 `data-polished`，
 切换只是换 `textContent` 与根节点的 `data-timestamps` 属性。因此：切换不跳滚动位置，
@@ -225,6 +254,7 @@ src/core/                  纯逻辑，不碰 DOM 与 chrome.*，可直接单测
   prompt.js                提示词构建 + 响应解析 + 写回
   format.js                Markdown / 纯文本 / 结构化 JSON / 跳转链接
   subtitles.js             VTT / SRT / json3 / timedtext / B 站 解析
+  similarity.js            画面相似度（SSIM）与去重
   settings.js              默认值、归一化、可运行性判定
   time.js                  时间戳解析与格式化
   json.js                  从混杂文本里抠 JSON
@@ -243,7 +273,8 @@ src/content/               注入页面的一侧
   page-bridge.js           MAIN world：读页面全局对象
   content.js               控制器：状态、生命周期、消息
   polish-coordinator.js    润色的调度：正式润色、转录中提前润色、本机润色服务
-  frame-loader.js          按密度取帧、逐张接收
+  frame-loader.js          按密度取帧、逐张接收；自己持有待取队列、已取画面与签名
+  frame-signature.js       画面的灰度签名（给 similarity.js 比较）
   exporter.js / session-cache.js / messaging.js  导出、会话缓存、后台通信
   pipeline.js              取平台字幕（并再导出各阶段）
   transcribe.js / polish.js / organize.js        本机转录、润色、分节成文
@@ -265,6 +296,9 @@ tools/                     开发工具，不参与运行
   shoot.mjs                各状态截图
   check-sites.mjs          真实 YouTube / B 站页面的冒烟测试
   fast-asr-server.mjs      本机助手（127.0.0.1:8766，除健康检查外都要访问令牌）
+  speech-segments.mjs      按停顿切分语音（原版 asr.rs 的规则）
+  qwen-asr.py              本机转录服务：与原版共用的 Qwen3-ASR，只用 Python 标准库
+  runtime_download.py      固定版本的下载与 llama.cpp 运行库（转录、润色共用）
   host-registration.mjs    原生消息宿主的注册、启动时自动修复、卸载
   runtime-pins.json        运行时下载物的固定版本与 SHA-256
 types/                     供 tsc --checkJs 用的全局声明
@@ -280,7 +314,8 @@ service worker 用 `"type": "module"`，扩展页面用 `<script type="module">`
 ## 7. 测试策略
 
 `npm run check` 一次跑完前四项；CI（GitHub Actions）在每次推送时跑它并试打包，
-打包脚本本身也要求它全部通过才产出发布包。发布只由版本标签触发。
+打包脚本本身也要求它全部通过才产出发布包。推送到 main 且检查通过后，CI 自动发布一个补丁版本
+（`tools/next-version.mjs`）；要进到新的次版本或主版本，手动改 manifest 与 package 的版本号。
 
 1. **`npm test`** —— 单测，覆盖纯逻辑。重点在**边界与失败路径**：时间戳的非法值、
    id 不匹配时必须保留原文、滚动字幕的误合并、分块不切断段落、并发池的顺序与

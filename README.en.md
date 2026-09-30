@@ -113,7 +113,7 @@ Drag the panel to the right edge of the screen to dock it as a full-height sideb
 | Option | Default | Behaviour |
 | --- | --- | --- |
 | **显示讲述时刻** (Show timestamps) | On | Marks each paragraph with `mm:ss`; click to seek |
-| **显示图片** (Show images) | Default | None / few / default / many; "many" keeps at most one changed frame every 10 seconds |
+| **显示图片** (Show images) | Default | None / few / default / many; only frames that changed are kept, "many" at most one every 10 seconds |
 | **润色文本** (Polish text) | Off | Light / standard / thorough; "standard" keeps the original prompt; if your own LLM fails it falls back to the local FireRedPunc + Qwen automatically |
 
 After you have clicked 「生成笔记」 once, switching videos generates automatically; closing the panel stops that.
@@ -125,13 +125,13 @@ With timestamps hidden, the text shows no seek buttons; unpolished transcript pa
 ### Platform subtitles (default, fastest)
 
 YouTube: human-made subtitles first, then auto-generated ones. Bilibili: CC subtitles from `player/wbi/v2` (`player/v2` often returns another video's subtitles, so it is not used).
-The rolling-window repetition of auto subtitles (the same sentence repeated across overlapping cues) is merged away.
+Auto subtitles that roll line by line (such as YouTube's auto-caption VTT, where every cue repeats the previous cue's last line) are collapsed by whole lines; two sentences in hand-made subtitles that merely meet end to end are never joined.
 YouTube subtitles need an access token issued by the player; the extension takes it from the player's own subtitle request, and if there is none it has the player load subtitles once and then restores the subtitle toggle. While a pre-roll ad plays, it waits for the ad to finish.
 When platform subtitles are unavailable (none exist, login required, the API fails, the subtitles don't match the video, …) that run switches to local transcription automatically with a one-line notice in the panel; the 「文字来源」 (text source) setting is left unchanged.
 
 ### Local transcription
 
-The preferred path is the local extraction service, which downloads and processes the streamed audio directly; short videos the browser can read directly (up to 3 minutes and 24 MiB) are decoded offline in the browser. Neither fast path waits for the player to play through. Audio is cut into 30-second chunks and sent to the local ASR service you configure.
+The preferred path is the local extraction service, which downloads and processes the streamed audio directly; short videos the browser can read directly (up to 3 minutes and 24 MiB) are decoded offline in the browser. Neither fast path waits for the player to play through. The local extraction service cuts the audio at pauses into stretches of speech (the same rule as the original course2md: a stretch that is too long is cut at its quietest point; at most 20 seconds for the built-in transcription, at most the chunk length from the settings for a service of your own) and sends them to the local ASR service; direct reading and player recording cut by the chunk length.
 When a YouTube or Bilibili download fails, the local helper retries with your current browser login for that site. The extension sends that site's cookies only to the local helper on `127.0.0.1`; the helper hands them to `yt-dlp` and deletes the temporary files when the job ends. Edge asks for the added site-cookie permission after the extension updates.
 
 Run once in the project folder (Windows / macOS / Linux alike):
@@ -140,12 +140,15 @@ Run once in the project folder (Windows / macOS / Linux alike):
 npm run local:install
 ```
 
-It sets up a separate Python environment for local transcription (in the data directory, every dependency pinned, your global Python untouched); on machines with an NVIDIA GPU it also downloads the cuBLAS / cuDNN that match the transcription engine's build (about 1.3 GB, pinned by SHA-256, once; if the GPU fails in the middle of a job it finishes on the CPU, with a one-line notice in the panel). It then registers the lightweight local helper as a native messaging host (which is how the extension wakes it up) and makes it start at login. Windows uses the registry and a compiled exe host; macOS / Linux write the browser's `NativeMessagingHosts` folder and start at login via LaunchAgent and XDG autostart respectively. The installer finds this extension among those loaded in Edge / Chrome (an unpacked extension's ID depends on its folder) and allows only those to call the helper, so load the extension in the browser before running it; you can also pass the ID: `node tools/install-local-asr.mjs <extension ID>`.
-With local transcription selected, the helper starts the service when a job begins; the button on the settings page starts it by hand too. The local transcription and polishing models exit and free their memory after 10 minutes without work (tunable with the `C2MD_IDLE_SECONDS` environment variable) and reload the next time they are needed. The first time, if the multilingual `small`
-model is missing, it is downloaded from Hugging Face; the button shows downloading, loading and ready,
-and fills in the transcription address and model name. Requires Python 3, Node.js 22 and `ffmpeg`; fast
-extraction on YouTube and Bilibili also needs `yt-dlp`. Installing once is enough: after later code updates the helper repairs an outdated host registration when it starts,
-so there is nothing to re-run; only moving the project folder needs a reinstall. To uninstall run `npm run local:uninstall` (add `-- --purge` to delete the downloaded models too). The data directory defaults to `%LOCALAPPDATA%\course2md` (the usual application-data folder on macOS / Linux); if the system drive is short of space, `npm run local:install -- --data-dir D:\course2md` moves it, downloaded models included, to another drive for good.
+Local transcription uses the same model as the original [course2md](https://github.com/mizorewww/course2md): **Qwen3-ASR-1.7B** (GGUF, the Q8_0 and mmproj files, about 2.5 GB together), run by llama.cpp's `llama-server`. The model lives in the original's model folder, in the original's layout: the folder named by `[defaults] model_dir` in the original's `config.toml` (in `%APPDATA%\course2md\` on Windows, `~/.config/course2md/` on macOS / Linux), or else the original's default (`%LOCALAPPDATA%\course2md\models` on Windows, `~/.cache/course2md/models` on macOS / Linux). A machine that has the original needs no download; if you install this extension first, the model is already in place when you install the original later. Files already there are used only if they match the pinned SHA-256; otherwise they are left untouched and an error is shown, so the original's files are never overwritten. For a folder passed to the original with `--model-dir` at run time, tell the helper with the `C2MD_MODEL_DIR` environment variable.
+
+Local transcription needs Node.js 22, Python 3.11 or later (standard library only, no virtual environment) and `ffmpeg`; fast extraction on YouTube and Bilibili also needs `yt-dlp`. Nothing like faster-whisper, PyTorch or separate CUDA libraries is installed any more: the llama.cpp runtime (pinned release `b11235`) is shared with local polishing, and the same release already on PATH is used as is; otherwise it is downloaded and verified. Windows (NVIDIA GPU) and macOS use the GPU, Linux the CPU; if the GPU cannot start, or fails in the middle of a job, the job continues on the CPU with a one-line notice in the panel.
+
+The install command registers the lightweight local helper as a native messaging host (which is how the extension wakes it up) and makes it start at login. Windows uses the registry and a compiled exe host; macOS / Linux write the browser's `NativeMessagingHosts` folder and start at login via LaunchAgent and XDG autostart respectively. The installer finds this extension among those loaded in Edge / Chrome (an unpacked extension's ID depends on its folder) and allows only those to call the helper, so load the extension in the browser before running it; you can also pass the ID: `node tools/install-local-asr.mjs <extension ID>`. The faster-whisper environment and model that earlier versions installed (about 2.5 GB) are deleted in this step.
+With local transcription selected, the helper starts the service when a job begins; the button on the settings page starts it by hand too, showing downloading, loading and ready, and fills in the transcription address and model name. The local transcription and polishing models exit and free their memory after 10 minutes without work (tunable with the `C2MD_IDLE_SECONDS` environment variable) and reload the next time they are needed. Installing once is enough: after later code updates the helper repairs an outdated host registration when it starts, so there is nothing to re-run; only moving the project folder needs a reinstall.
+
+The data directory (host, access token, polishing environment and runtimes) defaults to `%LOCALAPPDATA%\course2md` (the usual application-data folder on macOS / Linux); if the system drive is short of space, `npm run local:install -- --data-dir D:\course2md` moves it to another drive for good. When the data directory is not in its default place, the original names no model folder of its own and has no model in its default place yet, the installer writes `<data directory>\models` into the original's `config.toml` (keeping everything else in it), and both programs use the model there from then on. To uninstall run `npm run local:uninstall` (add `-- --purge` to delete the polishing environment and runtimes too); the transcription model shared with the original is never deleted.
+
 The local helper listens only on `127.0.0.1`, and every request except the health check needs an access token; the token is handed only to this extension over native messaging,
 so other extensions and web pages on the machine cannot use the helper to read local files. Models and runtimes downloaded at run time are pinned to a version and SHA-256
 (`tools/runtime-pins.json`) and used only after they verify.
@@ -178,7 +181,7 @@ YouTube's JavaScript challenge is solved with the Node.js runtime you already ha
 - If both local extraction and direct reading fail on YouTube or Bilibili, the reason is shown and the run stops — it no longer falls back to recording. Only other media that can't be extracted quickly is recorded from the player; then an hour-long lecture takes at least an hour, and **the tab must stay open** meanwhile.
 - While recording, the video really plays; its sound is turned down very low but not muted (a muted element records silence).
 - There is a gap of about 40 ms at chunk boundaries, so in extreme cases half a word may be lost. This keeps every chunk independently decodable.
-- When the service returns `verbose_json`, timestamps are accurate to the sentence; when it returns only plain text, they fall back to chunk level.
+- Through the local extraction service, timestamps land where each stretch of speech begins; direct reading and the recording fallback send fixed chunks, and when the service returns only plain text, timestamps are at chunk level.
 
 ## Setting up polishing
 
@@ -260,7 +263,7 @@ check against kill-ai-slop, and the pitfalls hit along the way) are in [DESIGN.m
 - **Upstream APIs change.** The YouTube subtitle token and the Bilibili subtitle API are both verified on real pages (`npm run check:sites`),
   but they can change at any time; `src/adapters/` is the part most likely to need maintenance.
 - **In-browser WebGPU ASR is not implemented yet.** Fast processing currently relies on offline decoding in the browser or the local extraction service; WebGPU would need a verifiable model and inference runtime shipped with the extension.
-- **Screenshots depend on the local helper getting the video file.** It extracts frames offline with `yt-dlp` and `ffmpeg` and never touches the page's playback position. If the media can't be downloaded, the illustrated export is blocked and the reason is shown. "Many" checks the picture at most every 10 seconds within the spoken time windows, then drops near-duplicates at a 0.85 similarity threshold.
+- **Screenshots depend on the local helper getting the video file.** It extracts frames offline with `yt-dlp` and `ffmpeg` and never touches the page's playback position. If the media can't be downloaded, the illustrated export is blocked and the reason is shown. Each density takes candidate frames within the spoken time windows ("many": at most one every 10 seconds); then, at the original's 0.85 similarity threshold, a frame identical to one kept in the last two minutes is left out.
 - **DRM videos can't be transcribed**: `captureStream()` gets no audio track.
 - Only the player-recording fallback has to run at real playback speed.
 
