@@ -9,7 +9,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.argv[2] || join(dirname(fileURLToPath(import.meta.url)), '..');
 const problems = [];
 const ok = [];
 
@@ -56,7 +56,7 @@ for (const file of dynamicModules) require_(file, '运行时模块');
 
 const patterns = (manifest.web_accessible_resources ?? []).flatMap((w) => w.resources ?? []);
 const globToRe = (glob) => {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*');
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
   return new RegExp(`^${escaped}$`);
 };
 
@@ -69,6 +69,8 @@ const globToRe = (glob) => {
 // WAR 放宽到没有必要的程度。
 const entry = 'src/content/boot.js';
 const closure = new Set();
+/** Non-module files the content scripts put into the page (stylesheets, the freshness iframe). */
+const pageLoaded = new Set();
 const queue = [entry];
 while (queue.length) {
   const file = queue.shift();
@@ -94,15 +96,43 @@ while (queue.length) {
     const resolved = spec.startsWith('.')
       ? join(dirname(file), spec).replace(/\\/g, '/')
       : spec.replace(/^\//, '');
-    if (!resolved.endsWith('.js')) return; // 样式表单独检查
+    if (!resolved.endsWith('.js')) {
+      // Stylesheets and pages the content script hands to the page by URL. An extension page
+      // loaded that way (freshness.html) fetches its own scripts from the extension's origin,
+      // so those scripts need no exposure.
+      pageLoaded.add(resolved);
+      return;
+    }
     if (!closure.has(resolved) && existsSync(join(ROOT, resolved))) queue.push(resolved);
   }
 }
 
-const needAccess = [...closure, 'src/ui/tokens.css', 'src/ui/panel.css'];
+// boot.js はブラウザが注入する。ページから取得するモジュールではない。
+const needAccess = [...closure].filter((file) => file !== entry).concat([...pageLoaded]);
 for (const file of needAccess) {
+  require_(file, 'ページから取得する資源');
   if (patterns.some((p) => globToRe(p).test(file))) ok.push(`${file} 可被页面取到`);
   else problems.push(`web_accessible_resources 覆盖不到：${file}（内容脚本会在跨源时被拦）`);
+}
+// The other direction: every exposed entry must be something a page actually loads. Anything
+// else is fingerprinting surface for nothing (freshness.js and the popup/options CSS used to be).
+const allFiles = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((item) =>
+  item.isDirectory() ? allFiles(`${dir}/${item.name}`) : [`${dir}/${item.name}`]);
+for (const file of allFiles('src')) {
+  if (patterns.some((pattern) => globToRe(pattern).test(file)) && !needAccess.includes(file)) {
+    problems.push(`web_accessible_resources 暴露了页面用不到的 ${file}`);
+  }
+}
+for (const pattern of patterns) {
+  if (!needAccess.some((file) => globToRe(pattern).test(file))) problems.push(`web_accessible_resources 多余条目：${pattern}`);
+}
+// use_dynamic_url would stop sites from probing the extension, but it cannot work with ES
+// modules: measured on Chrome 154, runtime.getURL returns the per-session URL, yet every
+// relative import inside a module loaded from it resolves against the static ID and is
+// refused ("Denying load of chrome-extension://<id>/src/..."), so the content script never
+// starts. Narrowing WAR reduces exposure, but a site knowing the static ID can still probe it.
+for (const w of manifest.web_accessible_resources ?? []) {
+  if (w.use_dynamic_url) problems.push('web_accessible_resources 不能开 use_dynamic_url：模块里的相对 import 会按静态 ID 解析而被拦，内容脚本起不来');
 }
 console.log(`内容脚本模块闭包：${closure.size} 个文件`);
 

@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/asr-runtime.test.mjs tests/next-version.test.mjs",
+    "test": "node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/asr-runtime.test.mjs tests/next-version.test.mjs tests/manifest.test.mjs",
     "test:core": "node --test tests/core.test.mjs",
     "serve": "node tools/serve.mjs",
     "pack": "node tools/pack.mjs",
@@ -20,7 +20,7 @@
     "check:local-polish": "node tools/check-local-polish.mjs",
     "shots": "node tools/shoot.mjs",
     "icons": "node tools/make-icons.mjs",
-    "check": "node tools/check-manifest.mjs && tsc -p tsconfig.json && node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/asr-runtime.test.mjs tests/next-version.test.mjs && node tools/layout-check.mjs",
+    "check": "node tools/check-manifest.mjs && tsc -p tsconfig.json && node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/asr-runtime.test.mjs tests/next-version.test.mjs tests/manifest.test.mjs && node tools/layout-check.mjs",
     "check:manifest": "node tools/check-manifest.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "check:sites": "node tools/check-sites.mjs",
