@@ -65,6 +65,20 @@ class SharedAsr(unittest.TestCase):
         self.assertEqual(asr.configure_models(self.root / 'moved' / 'models'), asr.default_model_dir())
         self.assertFalse(asr.config_path().exists(), 'no model_dir written: the original keeps using its copy')
 
+    def test_helper_with_a_moved_data_dir_shares_the_model_there_on_first_use(self):
+        target = self.root / 'moved' / 'models'
+        with patch.dict(os.environ, {'C2MD_SHARED_MODEL_TARGET': str(target)}):
+            self.assertEqual(asr.shared_root(), target)
+            self.assertIn(str(target.resolve()).replace('\\', '\\\\'), asr.config_path().read_text(encoding='utf-8'))
+            # an explicit C2MD_MODEL_DIR is the user's choice: config.toml is not consulted or written
+            asr.config_path().unlink()
+            with patch.dict(os.environ, {'C2MD_MODEL_DIR': str(self.root / 'explicit')}):
+                self.assertEqual(asr.shared_root(), (self.root / 'explicit').resolve())
+            self.assertFalse(asr.config_path().exists())
+        # without a moved data dir nothing is written: the original's own default is used
+        self.assertEqual(asr.shared_root(), asr.default_model_dir())
+        self.assertFalse(asr.config_path().exists())
+
     def test_config_preserves_comments_and_other_settings(self):
         config = asr.config_path()
         config.parent.mkdir(parents=True)

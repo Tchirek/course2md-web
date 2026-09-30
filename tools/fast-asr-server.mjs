@@ -15,7 +15,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
 import { SILENCE_FILTER, invertSilence, parseSilences, pcmData, rmsOfFile, speechSegments, wavFile } from './speech-segments.mjs';
-import { dataDir, ensureHelperToken, tokenPath } from './helper-data.mjs';
+import { dataDir, ensureHelperToken, removeObsoleteWhisper, sharedModelTarget, tokenPath } from './helper-data.mjs';
 import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
@@ -150,6 +150,12 @@ http.createServer(async (req, res) => {
 }).listen(PORT, '127.0.0.1', () => {
   // 端口已归本进程：同一端口不会有另一个助手在用这些临时文件
   sweepStaleTemp();
+  // 更新代码不会重跑安装：旧版的 faster-whisper 环境在这里清掉（与宿主注册的自动修复同理）
+  try {
+    removeObsoleteWhisper((target) => process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`));
+  } catch (error) {
+    process.stderr.write(`清理旧版转录环境失败：${error?.message ?? error}\n`);
+  }
   process.stdout.write(`course2md 本机提取服务：http://127.0.0.1:${PORT}\n`);
 });
 
@@ -275,7 +281,10 @@ function spawnLocalAsr() {
   const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
   const child = spawn(python, ['-u', fileURLToPath(new URL('./qwen-asr.py', import.meta.url))], {
     windowsHide: true,
-    env: { ...process.env, C2MD_ASR_PORT: String(ASR_PORT), C2MD_DATA_DIR: dataDir(), C2MD_ASR_DEVICE: asrDevice },
+    env: {
+      ...process.env, C2MD_ASR_PORT: String(ASR_PORT), C2MD_DATA_DIR: dataDir(), C2MD_ASR_DEVICE: asrDevice,
+      ...(sharedModelTarget() ? { C2MD_SHARED_MODEL_TARGET: sharedModelTarget() } : {}),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   asrProcess = child;

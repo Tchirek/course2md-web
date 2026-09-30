@@ -144,10 +144,10 @@ npm run local:install
 
 本機轉錄需要 Node.js 22、Python 3.11 或更新版本（只用標準函式庫，不建虛擬環境）和 `ffmpeg`；YouTube、B 站快速提取還需要 `yt-dlp`。不再安裝 faster-whisper、PyTorch 或單獨的 CUDA 函式庫：llama.cpp 執行庫（固定版本 `b11235`）與本機潤色共用一份，PATH 上已有同一版本就直接用，否則下載並校驗。Windows（NVIDIA 顯示卡）與 macOS 用顯示卡加速，Linux 用 CPU；顯示卡起不來或轉錄中途出錯就改用 CPU 繼續，浮動視窗裡給一行提示。
 
-安裝命令把輕量本機助手註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫助手，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。以前版本裝過的 faster-whisper 轉錄環境與模型（約 2.5 GB）會在這一步刪掉。
+安裝命令把輕量本機助手註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫助手，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。以前版本裝過的 faster-whisper 轉錄環境與模型（約 2.5 GB）會在這一步刪掉；只拉取了新程式碼、沒重跑安裝的，本機助手啟動時也會刪。
 選擇本地模型轉錄後，助手會在任務開始時自動啟動服務；設定頁按鈕也可手動啟動，按鈕會顯示下載、載入與就緒狀態，並自動填好轉錄地址和模型名。本機轉錄與潤色模型 10 分鐘沒有任務就會退出並釋放記憶體（環境變數 `C2MD_IDLE_SECONDS` 可調），下次用到時自動重新載入。安裝只需一次：以後更新程式碼，本機助手啟動時會自動修復過時的主機註冊，無須重跑；移動了專案目錄才需要重新安裝。
 
-資料目錄（主機、存取權杖、潤色環境與執行庫）預設在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的應用程式資料目錄）；系統磁碟空間緊張時，執行 `npm run local:install -- --data-dir D:\course2md` 把它移到別的磁碟，之後一直沿用。資料目錄不在預設位置、原版既沒有指定模型目錄、預設位置也還沒有模型時，安裝會把 `<資料目錄>\models` 寫進原版的 `config.toml`（其餘內容原樣保留），兩邊以後都用那裡的模型。解除安裝執行 `npm run local:uninstall`（加 `-- --purge` 連潤色環境與執行庫一起刪）；與原版共用的轉錄模型不會刪除。
+資料目錄（主機、存取權杖、潤色環境與執行庫）預設在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的應用程式資料目錄）；系統磁碟空間緊張時，執行 `npm run local:install -- --data-dir D:\course2md` 把它移到別的磁碟，之後一直沿用。資料目錄不在預設位置、原版既沒有指定模型目錄、預設位置也還沒有模型時，安裝（或更新程式碼後第一次本機轉錄）會把 `<資料目錄>\models` 寫進原版的 `config.toml`（其餘內容原樣保留），兩邊以後都用那裡的模型。解除安裝執行 `npm run local:uninstall`（加 `-- --purge` 連潤色環境與執行庫一起刪）；與原版共用的轉錄模型不會刪除。
 
 本機助手只監聽 `127.0.0.1`，除健康檢查外的請求都要帶存取權杖；權杖只經原生訊息交給本擴充功能，
 機器上的其他擴充功能和網頁都用不了它讀本機檔案。執行時下載的模型與執行環境都固定了版本與 SHA-256

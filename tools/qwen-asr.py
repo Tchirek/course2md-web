@@ -86,8 +86,19 @@ def configure_models(target):
     return model_dir()
 
 
-def prepare_model():
+def shared_root():
+    """Where the model is used from. When the helper's data directory was moved off its default place
+    (C2MD_SHARED_MODEL_TARGET), the model is not there yet and the original has no say, keep it next to
+    the data: the same step the installer takes, for helpers updated without re-running it."""
     root = model_dir()
+    target = os.environ.get('C2MD_SHARED_MODEL_TARGET')
+    if target and not os.environ.get('C2MD_MODEL_DIR') and not has_model(root):
+        return configure_models(target)
+    return root
+
+
+def prepare_model():
+    root = shared_root()
     pin = PINS['qwen-asr']
     # The same OS lock and layout as course2md/src/models.rs.
     with file_lock(root / '.download.lock'):

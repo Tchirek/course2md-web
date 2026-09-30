@@ -142,10 +142,10 @@ npm run local:install
 
 本机转录需要 Node.js 22、Python 3.11 或更新版本（只用标准库，不建虚拟环境）和 `ffmpeg`；YouTube、B 站快速提取还需要 `yt-dlp`。不再安装 faster-whisper、PyTorch 或单独的 CUDA 库：llama.cpp 运行库（固定版本 `b11235`）与本机润色共用一份，PATH 上已有同一版本就直接用，否则下载并校验。Windows（NVIDIA 显卡）与 macOS 用显卡加速，Linux 用 CPU；显卡起不来或转录中途出错就改用 CPU 继续，浮窗里给一行提示。
 
-安装命令把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。安装脚本会在 Edge / Chrome 的配置里找出已加载的本扩展（解压加载的扩展 ID 随所在文件夹而变），只允许这些扩展调用助手，所以请先在浏览器加载扩展再运行；也可以直接带上 ID：`node tools/install-local-asr.mjs <扩展ID>`。以前版本装过的 faster-whisper 转录环境与模型（约 2.5 GB）会在这一步删掉。
+安装命令把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。安装脚本会在 Edge / Chrome 的配置里找出已加载的本扩展（解压加载的扩展 ID 随所在文件夹而变），只允许这些扩展调用助手，所以请先在浏览器加载扩展再运行；也可以直接带上 ID：`node tools/install-local-asr.mjs <扩展ID>`。以前版本装过的 faster-whisper 转录环境与模型（约 2.5 GB）会在这一步删掉；只拉取了新代码、没重跑安装的，本机助手启动时也会删。
 选择本地模型转录后，助手会在任务开始时自动启动服务；设置页按钮也可手动启动，按钮会显示下载、加载与就绪状态，并自动填好转录地址和模型名。本机转录与润色模型 10 分钟没有任务就会退出并释放内存（环境变量 `C2MD_IDLE_SECONDS` 可调），下次用到时自动重新加载。安装只需一次：以后更新代码，本机助手启动时会自动修复过时的宿主注册，无须重跑；移动了项目目录才需要重新安装。
 
-数据目录（宿主、访问令牌、润色环境与运行库）默认在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的应用数据目录）；系统盘空间紧张时，运行 `npm run local:install -- --data-dir D:\course2md` 把它移到别的盘，之后一直沿用。数据目录不在默认位置、原版既没有指定模型目录、默认位置也还没有模型时，安装会把 `<数据目录>\models` 写进原版的 `config.toml`（其余内容原样保留），两边以后都用那里的模型。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连润色环境与运行库一起删）；与原版共用的转录模型不会删除。
+数据目录（宿主、访问令牌、润色环境与运行库）默认在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的应用数据目录）；系统盘空间紧张时，运行 `npm run local:install -- --data-dir D:\course2md` 把它移到别的盘，之后一直沿用。数据目录不在默认位置、原版既没有指定模型目录、默认位置也还没有模型时，安装（或更新代码后第一次本机转录）会把 `<数据目录>\models` 写进原版的 `config.toml`（其余内容原样保留），两边以后都用那里的模型。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连润色环境与运行库一起删）；与原版共用的转录模型不会删除。
 
 本机助手只监听 `127.0.0.1`，除健康检查外的请求都要带访问令牌；令牌只经原生消息交给本扩展，
 机器上的其他扩展和网页都用不了它读本机文件。运行时下载的模型与运行库都固定了版本与 SHA-256

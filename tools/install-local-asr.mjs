@@ -8,8 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
-import { LOCATION_FILE, chooseDataDir, dataDir, defaultDataDir } from './helper-data.mjs';
+import { LOCATION_FILE, chooseDataDir, dataDir, removeObsoleteWhisper, sharedModelTarget } from './helper-data.mjs';
 import { registerHost } from './host-registration.mjs';
 import { stopServices } from './services.mjs';
 
@@ -37,13 +36,13 @@ if (check.status !== 0) {
 } else {
   // A data directory on another drive usually means the system drive is short of space. Unless the original
   // already has its own choice or its own copy of the model, both programs then keep the model there
-  const moved = path.resolve(dataDir()) !== path.resolve(defaultDataDir());
-  const shared = spawnSync(python, [qwen, moved ? '--configure-models' : '--model-dir', ...(moved ? [path.join(dataDir(), 'models')] : [])],
+  const target = sharedModelTarget();
+  const shared = spawnSync(python, [qwen, ...(target ? ['--configure-models', target] : ['--model-dir'])],
     { encoding: 'utf8', windowsHide: true, env: pythonEnv });
   if (shared.status !== 0) process.stdout.write(`没能确定与原版共用的模型目录（本机助手照常安装）：${(shared.stdout || shared.stderr).trim()}\n`);
   else process.stdout.write(`本机转录与原版 course2md 共用模型目录：${shared.stdout.trim()}\n`);
 }
-removeWhisper();
+removeObsoleteWhisper((target) => process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`));
 // 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册
 const { host, allowedOrigins, detected, token } = registerHost({ extensionIds: requested });
 
@@ -82,29 +81,6 @@ function wakeThroughHost(command) {
     size.writeUInt32LE(body.length);
     child.stdin.end(Buffer.concat([size, body]));
   });
-}
-
-/**
- * The faster-whisper transcription that the shared Qwen3-ASR replaced: its environment (with the CUDA
- * libraries) and its model, about 2.5 GB that nothing uses any more. Only those exact paths; the
- * models folder itself may be the one shared with the original course2md.
- */
-function removeWhisper() {
-  const whisper = 'models--Systran--faster-whisper-small';
-  const targets = [];
-  for (const base of new Set([dataDir(), defaultDataDir()])) {
-    targets.push(...['venv', 'downloads', 'tmp', 'constraints.txt', '.install.lock'].map((name) => path.join(base, 'asr', name)));
-    targets.push(path.join(base, 'models', whisper), path.join(base, 'models', '.locks', whisper), path.join(base, 'models', 'verified.json'));
-  }
-  // older versions kept the model under ~/.cache on macOS / Linux (now also where the original keeps its models)
-  if (process.platform !== 'win32') {
-    const legacy = path.join(os.homedir(), '.cache', 'course2md', 'models');
-    targets.push(path.join(legacy, whisper), path.join(legacy, '.locks', whisper));
-  }
-  for (const target of targets.filter((item) => existsSync(item))) {
-    rmSync(target, { recursive: true, force: true });
-    process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`);
-  }
 }
 
 /**
