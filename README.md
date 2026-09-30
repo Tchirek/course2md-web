@@ -232,7 +232,7 @@ course2md 的「本地录制」场景。
 npm run check        # 清单自检 + 类型检查 + 单测 + 布局断言，一次跑完（CI 同款）
 npm test             # 只跑单测（纯逻辑，node --test）
 npm run check:manifest # 清单自检：引用的文件都在、模块闭包可被页面取到、权限对得上
-npm run typecheck    # tsc --checkJs 检查 src/，其中 core / adapters / background 按 strict 检查（代码仍是 JS，零构建）
+npm run typecheck    # tsc --checkJs 按 strict 检查整个 src/（代码仍是 JS，零构建）
 npm run check:layout # 只跑几何断言：面板布局、按钮底色、无横向溢出
 npm run check:sites  # 在真实 YouTube / B 站页面上跑真扩展（需要网络，不进 CI）
 npm run check:image  # 用三次场景变化的实际视频检查四档图片密度

@@ -16,7 +16,7 @@
       "chrome",
       "node"
     ],
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true
   },
   "include": [

@@ -20,9 +20,9 @@
     "check:local-polish": "node tools/check-local-polish.mjs",
     "shots": "node tools/shoot.mjs",
     "icons": "node tools/make-icons.mjs",
-    "check": "node tools/check-manifest.mjs && tsc -p tsconfig.json && tsc -p tsconfig.strict.json && node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/speech-segments.test.mjs tests/next-version.test.mjs tests/manifest.test.mjs tests/frame-loader.test.mjs tests/polish-lifetime.test.mjs && node tools/check-shared-asr.mjs && node tools/layout-check.mjs",
+    "check": "node tools/check-manifest.mjs && tsc -p tsconfig.json && node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/speech-segments.test.mjs tests/next-version.test.mjs tests/manifest.test.mjs tests/frame-loader.test.mjs tests/polish-lifetime.test.mjs && node tools/check-shared-asr.mjs && node tools/layout-check.mjs",
     "check:manifest": "node tools/check-manifest.mjs",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.strict.json",
+    "typecheck": "tsc -p tsconfig.json",
     "check:sites": "node tools/check-sites.mjs",
     "media": "node tools/demo-media.mjs"
   },
