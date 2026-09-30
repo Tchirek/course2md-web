@@ -1,11 +1,16 @@
 // One-time setup for the local helper: registered as a native messaging host, the extension can wake it up; start automatically at login.
 // Windows: compiled exe host + registry; macOS/Linux: shebang script host + NativeMessagingHosts directory
 // (autostart uses LaunchAgent / XDG autostart respectively). The host behaviors on both sides are consistent (tools/native-host.mjs).
+//
+// npm run local:install                          install (or repair) in the current data directory
+// npm run local:install -- --data-dir D:\course2md   move the data directory (models, runtimes, host) there first
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LOCATION_FILE, chooseDataDir, dataDir } from './helper-data.mjs';
 import { registerHost } from './host-registration.mjs';
+import { stopServices } from './services.mjs';
 
 // パスはスクリプトの位置から解決する。別ディレクトリから実行しても、ホスト設定には正しいヘルパーのパスが書かれる
 const tools = path.dirname(fileURLToPath(import.meta.url));
@@ -27,8 +32,17 @@ if (probe.status !== 0) {
   }
 }
 
-const requested = process.argv.slice(2);
+const args = process.argv.slice(2);
+const flag = args.findIndex((arg) => arg === '--data-dir' || arg.startsWith('--data-dir='));
+let targetDir = null;
+if (flag >= 0) {
+  targetDir = args[flag].includes('=') ? args[flag].slice('--data-dir='.length) : args[flag + 1];
+  if (!targetDir) throw new Error('--data-dir 后面要跟一个目录');
+  args.splice(flag, args[flag].includes('=') ? 1 : 2);
+}
+const requested = args;
 for (const id of requested) if (!/^[a-p]{32}$/.test(id)) throw new Error(`扩展 ID 格式错误：${id}`);
+if (targetDir) moveDataDir(path.resolve(targetDir));
 // 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册
 const { host, allowedOrigins, detected, token } = registerHost({ extensionIds: requested });
 
@@ -67,4 +81,42 @@ function wakeThroughHost(command) {
     size.writeUInt32LE(body.length);
     child.stdin.end(Buffer.concat([size, body]));
   });
+}
+
+/**
+ * Moves everything in the current data directory (models, runtimes, host, token) to target and
+ * records target as the data directory. The services are stopped first: they hold files open there.
+ * The token moves along, so the extension keeps working without being told a new one.
+ */
+function moveDataDir(target) {
+  const from = path.resolve(dataDir());
+  if (from === target) return;
+  if (target.startsWith(from + path.sep)) throw new Error('新的数据目录不能放在原数据目录里面');
+  stopServices();
+  mkdirSync(target, { recursive: true });
+  const skipped = [];
+  for (const name of existsSync(from) ? readdirSync(from) : []) {
+    if (name === LOCATION_FILE) continue;
+    const source = path.join(from, name);
+    const destination = path.join(target, name);
+    if (existsSync(destination)) {
+      skipped.push(name);
+      continue;
+    }
+    process.stdout.write(`正在移动 ${name}…
+`);
+    try {
+      renameSync(source, destination);
+    } catch (error) {
+      if (error.code !== 'EXDEV' && error.code !== 'EPERM') throw error;
+      // another drive: copy, then delete the original
+      cpSync(source, destination, { recursive: true });
+      rmSync(source, { recursive: true, force: true });
+    }
+  }
+  chooseDataDir(target);
+  process.stdout.write(`数据目录已改为 ${target}
+`);
+  if (skipped.length) process.stdout.write(`新目录里已有同名内容，保留原处未移动：${skipped.join('、')}（位于 ${from}）
+`);
 }

@@ -37,6 +37,7 @@ const HELPER_FILES = [
   'tools/uninstall-local-asr.mjs',
   'tools/native-host.mjs',
   'tools/helper-data.mjs',
+  'tools/services.mjs',
   'tools/extension-ids.mjs',
   'tools/host-registration.mjs',
   'tools/native-helper.cs',

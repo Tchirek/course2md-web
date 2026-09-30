@@ -1,11 +1,11 @@
 // 只在用户启用本机润色时准备隔离的 Python 环境。
 // 策略：优先复用系统 Python 已装的 torch（FireRedPunc 走 CPU，不需要 CUDA 版）；
-// 缺什么装什么，不再无条件拉 7GB 的 CUDA 轮子；模型与运行库放到空闲的盘上。
+// 缺什么装什么，不再无条件拉 7GB 的 CUDA 轮子。模型与运行库放在数据目录下（安装时选定，见 helper-data.mjs）。
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, statfsSync } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { dataDir } from './helper-data.mjs';
 
 process.env.PIP_DISABLE_PIP_VERSION_CHECK = '1';
 
@@ -18,15 +18,13 @@ function freeGB(dir) {
   }
 }
 
-/** 模型与运行库（Qwen GGUF、llama.cpp）体积大，默认放在空闲盘上。 */
+/**
+ * The polish environment and its models live in one fixed place under the data directory.
+ * It must not depend on free space at launch time: it used to jump to another drive when this one ran
+ * low, landing on a second environment that was never fully installed.
+ */
 function polishHome() {
-  if (process.env.C2MD_POLISH_HOME) return process.env.C2MD_POLISH_HOME;
-  const local = path.join(process.env.LOCALAPPDATA || os.homedir(), 'course2md', 'polish');
-  const localDrive = path.parse(local).root;
-  if (process.platform === 'win32' && existsSync('Q:\\') && freeGB(localDrive) < 6 && freeGB('Q:\\') > 6) {
-    return 'Q:\\c2md-data\\polish';
-  }
-  return local;
+  return process.env.C2MD_POLISH_HOME || path.join(dataDir(), 'polish');
 }
 
 const root = polishHome();
@@ -54,7 +52,7 @@ for (const [probe, name, packages] of [
   const drive = path.parse(root).root;
   const free = freeGB(drive);
   if (free < 1.5) {
-    say('error', `磁盘剩余空间不足（${drive} 还剩 ${Math.round(free * 10) / 10} GB）。请清理磁盘，或设置 C2MD_POLISH_HOME 指向空闲的盘。`);
+    say('error', `磁盘剩余空间不足（${drive} 还剩 ${Math.round(free * 10) / 10} GB）。请清理磁盘，或把数据目录移到空闲的盘：npm run local:install -- --data-dir <目录>`);
     process.exit(1);
   }
   say('installing', `正在安装本机润色运行库（${name}）`);

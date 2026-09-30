@@ -2,18 +2,49 @@
 //! 安装脚本、助手、检查脚本都从这里取路径，保证指向同一处。
 
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 export const TOKEN_FILE = 'helper-token';
+/** Downloaded models and runtimes: the parts moved along when the data directory changes. */
+export const DATA_PARTS = ['models', 'asr', 'polish'];
+/** Written in the default directory when the user picks another one (npm run local:install -- --data-dir). */
+export const LOCATION_FILE = 'location.json';
 
-/** 数据目录。可用 C2MD_DATA_DIR 覆盖（测试用）。 */
-export function dataDir() {
-  if (process.env.C2MD_DATA_DIR) return process.env.C2MD_DATA_DIR;
+/** The platform's default data directory. Always the same, so the choice below can be found from anywhere. */
+export function defaultDataDir() {
   if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || os.homedir(), 'course2md');
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'course2md');
   return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'course2md');
+}
+
+/**
+ * 数据目录（助手、原生宿主、模型与运行库都在这里）。C2MD_DATA_DIR 优先（测试用）。
+ * The location is decided once, at install time, and recorded; it never follows free disk space
+ * at the moment of use. (It used to switch drives when one ran low, silently landing on a second,
+ * half-installed environment.)
+ */
+export function dataDir() {
+  if (process.env.C2MD_DATA_DIR) return process.env.C2MD_DATA_DIR;
+  const base = defaultDataDir();
+  try {
+    const chosen = JSON.parse(readFileSync(path.join(base, LOCATION_FILE), 'utf8')).dir;
+    if (typeof chosen === 'string' && path.isAbsolute(chosen)) return chosen;
+  } catch { /* no choice recorded: use the default */ }
+  return base;
+}
+
+/** Records the chosen data directory (or forgets the choice when it is the default). */
+export function chooseDataDir(dir) {
+  const base = defaultDataDir();
+  const target = path.resolve(dir);
+  mkdirSync(base, { recursive: true });
+  if (target === path.resolve(base)) rmSync(path.join(base, LOCATION_FILE), { force: true });
+  else writeFileSync(path.join(base, LOCATION_FILE), `${JSON.stringify({ dir: target }, null, 2)}
+`);
+  mkdirSync(target, { recursive: true });
+  return target;
 }
 
 export function tokenPath(dir = dataDir()) {
