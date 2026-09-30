@@ -5,7 +5,7 @@
   <img alt="course2md：视频 → 图文讲义" src="docs/media/banner-light.svg" width="100%">
 </picture>
 
-**简体中文** · [English](README.en.md) · [日本語](README.ja.md)
+**简体中文** · [正體中文](README.zh-Hant.md) · [English](README.en.md) · [日本語](README.ja.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
