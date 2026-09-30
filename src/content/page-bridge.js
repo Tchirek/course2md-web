@@ -147,7 +147,8 @@ window.addEventListener('message', (event) => {
     return;
   }
   if (data.dir !== 'req') return;
-  const handler = handlers[data.method];
+  // 只认自己的方法：不调用 toString、constructor 等 Object.prototype 上的东西
+  const handler = Object.hasOwn(handlers, data.method) ? handlers[data.method] : null;
   // 非同期の handler（yt.captionToken）も同じ経路で返す
   Promise.resolve()
     .then(() => (handler ? handler(data.args ?? []) : null))
