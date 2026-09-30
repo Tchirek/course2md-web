@@ -34,16 +34,7 @@ export class Controller {
     this.stageLabel = '';
     this.stageRatio = null;
     this.abort = null;
-    this.imageAbort = null;
-    /** @type {Promise<unknown>} */
-    this.imagePromise = Promise.resolve(0);
-    this.imageQueue = new Map();
-    this.imageInFlight = new Set();
-    this.imageWorking = false;
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
-    this.imageCache = new Map();
-    /** @type {Map<number, import('../core/similarity.js').Signature>} 已取画面的灰度签名，按时刻 */
-    this.frameSignatures = new Map();
     this.imagesPending = false;
     this.autoTimer = null;
     // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
@@ -142,7 +133,9 @@ export class Controller {
     this.launcher.start();
 
     // 有缓存内容就恢复出来（后退/前进回来时不用重新抓一遍）
+    const cacheGeneration = this.frames.generation;
     const cached = await this.loadCache();
+    if (this.frames.generation !== cacheGeneration) return;
     if (cached) {
       this.built = {
         sections: cached.sections,
@@ -152,7 +145,10 @@ export class Controller {
         warnings: cached.warnings ?? [],
       };
       this.built.segments.forEach((seg, id) => { seg.id = id; });
-      for (const [t, image] of cached.images ?? []) await this.frames.remember(t, image);
+      for (const [t, image] of cached.images ?? []) {
+        await this.frames.remember(t, image);
+        if (this.frames.generation !== cacheGeneration) return;
+      }
       this.meta = cached.meta;
       this.doc = buildDoc({ ...this.meta, source: cached.stats.source }, cached.sections);
       this.status = 'ready';
@@ -189,7 +185,7 @@ export class Controller {
     const key = this.currentUrlKey();
     if (key === this.urlKey) return;
     this.abort?.abort();
-    this.imageAbort?.abort();
+    this.frames.cancel();
     this.polishAbort?.abort();
     clearTimeout(this.autoTimer);
     this.urlKey = key;
@@ -198,10 +194,7 @@ export class Controller {
     this.adapter = pickAdapter();
     this.built = null;
     this.previewSections = [];
-    this.imageCache.clear();
-    this.frameSignatures.clear();
-    this.imageQueue.clear();
-    this.imageInFlight.clear();
+    this.frames.reset();
     this.imagesPending = false;
     this.doc = null;
     this.meta = null;
@@ -350,9 +343,7 @@ export class Controller {
     this.nextRunOverrides = null;
 
     this.abort?.abort();
-    this.imageAbort?.abort();
-    this.imageQueue.clear();
-    this.imageInFlight.clear();
+    this.frames.cancel();
     this.polishAbort?.abort();
     this.abort = new AbortController();
     this.polishAbort = new AbortController();
@@ -530,7 +521,7 @@ export class Controller {
 
   cancel() {
     this.abort?.abort();
-    this.imageAbort?.abort();
+    this.frames.cancel();
     this.polishAbort?.abort();
     this.status = 'idle';
     this.stageLabel = '';
@@ -668,7 +659,7 @@ export class Controller {
       meta: this.meta,
       sections: this.built.sections,
       // 已取到的帧按时刻存，密度换挡时同款时刻直接复用
-      images: [...this.imageCache.entries()],
+      images: [...this.frames.cache.entries()],
       stats: this.built.stats,
       warnings: this.built.warnings,
       polished: this.polishState.hasResult,

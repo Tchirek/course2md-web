@@ -1,5 +1,5 @@
 //! 画面（フレーム）の取得：密度に応じて各節の取得時刻を決め、本機助手から一枚ずつ受け取る。
-//! 取得済みの画面・待ち行列などの状態はコントローラが持ち、ここはそれを読み書きする。
+//! FrameLoader owns the request lifetime, queue, cache and signatures.
 
 import { keepChanged } from '../core/similarity.js';
 import { toErrorState } from './errors.js';
@@ -10,6 +10,30 @@ export class FrameLoader {
   /** @param {import('./content.js').Controller} controller */
   constructor(controller) {
     this.c = controller;
+    this.abort = null;
+    /** @type {Promise<unknown>} */
+    this.promise = Promise.resolve();
+    this.queue = new Map();
+    this.inFlight = new Set();
+    /** @type {'idle'|'loading'} */
+    this.state = 'idle';
+    this.cache = new Map();
+    /** @type {Map<number, import('../core/similarity.js').Signature>} */
+    this.signatures = new Map();
+    this.generation = 0;
+  }
+
+  cancel() {
+    this.generation++;
+    this.abort?.abort();
+    this.queue.clear();
+    this.inFlight.clear();
+  }
+
+  reset() {
+    this.cancel();
+    this.cache.clear();
+    this.signatures.clear();
   }
 
   /**
@@ -18,10 +42,10 @@ export class FrameLoader {
    */
   present() {
     const sections = this.c.built?.sections ?? this.c.liveSections ?? [];
-    const candidates = attachFrames(sections, this.c.imageLevel, this.c.imageCache);
+    const candidates = attachFrames(sections, this.c.imageLevel, this.cache);
     this.c.imagesPending = this.c.imageLevel !== 'none' &&
-      candidates.some((section) => section.frames.some((frame) => !this.c.imageCache.has(frame.t)));
-    this.c.previewSections = keepChanged(candidates, this.c.frameSignatures);
+      candidates.some((section) => section.frames.some((frame) => !this.cache.has(frame.t)));
+    this.c.previewSections = keepChanged(candidates, this.signatures);
     return candidates;
   }
 
@@ -31,20 +55,20 @@ export class FrameLoader {
    * @param {string} image
    */
   async remember(t, image) {
+    const generation = this.generation;
     const signature = await signatureOf(image).catch(() => null);
-    this.c.imageCache.set(t, image);
-    if (signature) this.c.frameSignatures.set(t, signature);
+    if (generation !== this.generation) return;
+    this.cache.set(t, image);
+    if (signature) this.signatures.set(t, signature);
   }
 
   refreshImages() {
     const sections = this.c.built?.sections ?? this.c.liveSections;
-    if (!sections || !this.c.meta) return this.c.imagePromise;
+    if (!sections || !this.c.meta) return this.promise;
     if (this.c.imageLevel !== this.c.settings.imageLevel) {
-      this.c.imageAbort?.abort();
-      this.c.imageQueue.clear();
-      this.c.imageInFlight.clear();
+      this.cancel();
     }
-    if (!this.c.imageAbort || this.c.imageAbort.signal.aborted) this.c.imageAbort = new AbortController();
+    if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
     if (this.c.imageLevel !== this.c.settings.imageLevel) this.c.imageError = null;
     this.c.imageLevel = this.c.settings.imageLevel;
     // 密度只决定每个分节取哪些帧时刻，分节与段落原地不动
@@ -53,43 +77,43 @@ export class FrameLoader {
     if (this.c.imageLevel !== 'none' && !this.c.imageError) {
       for (const section of candidates) {
         for (const frame of section.frames) {
-          if (!this.c.imageCache.has(frame.t) && !this.c.imageQueue.has(frame.t) && !this.c.imageInFlight.has(frame.t)) {
-            this.c.imageQueue.set(frame.t, frame);
+          if (!this.cache.has(frame.t) && !this.queue.has(frame.t) && !this.inFlight.has(frame.t)) {
+            this.queue.set(frame.t, frame);
           }
         }
       }
-      if (!this.c.imageWorking && this.c.imageQueue.size) this.c.imagePromise = this.drainImages();
+      if (this.state === 'idle' && this.queue.size) this.promise = this.drainImages();
     }
-    return this.c.imagePromise;
+    return this.promise;
   }
 
   async drainImages() {
-    this.c.imageWorking = true;
-    const abort = this.c.imageAbort;
+    this.state = 'loading';
+    const abort = this.abort;
     const sourceUrl = this.c.meta.url;
     try {
-      while (!abort.signal.aborted && this.c.imageQueue.size) {
-        const batch = [...this.c.imageQueue.values()];
-        this.c.imageQueue.clear();
-        for (const frame of batch) this.c.imageInFlight.add(frame.t);
+      while (!abort.signal.aborted && this.queue.size) {
+        const batch = [...this.queue.values()];
+        this.queue.clear();
+        for (const frame of batch) this.inFlight.add(frame.t);
         try { await captureSectionImages(sourceUrl, batch, abort.signal, async (frame) => {
           if (abort.signal.aborted) return;
           await this.remember(frame.t, frame.image);
           if (abort.signal.aborted) return;
           this.present();
           this.c.broadcast();
-        }); } finally { for (const frame of batch) this.c.imageInFlight.delete(frame.t); }
+        }); } finally { for (const frame of batch) this.inFlight.delete(frame.t); }
         if (this.c.built) await this.c.saveCache();
       }
     } catch (error) {
       if (!abort.signal.aborted) {
-        this.c.imageQueue.clear();
+        this.queue.clear();
         this.c.imageError = toErrorState(error);
         this.c.broadcast();
       }
     } finally {
-      this.c.imageWorking = false;
-      if (abort.signal.aborted && this.c.imageQueue.size && this.c.imageAbort !== abort) this.c.imagePromise = this.drainImages();
+      this.state = 'idle';
+      if (abort.signal.aborted && this.queue.size && this.abort !== abort) this.promise = this.drainImages();
     }
   }
 }
