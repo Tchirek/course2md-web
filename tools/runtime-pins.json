@@ -71,6 +71,32 @@
     },
     "license": "NVIDIA Software License Agreement (redistributable CUDA libraries)"
   },
+  "polish-python": {
+    "note": "The polish environment (data dir/polish/venv) reuses the system PyTorch (FireRedPunc runs on the CPU) but gets every other package installed into it at these versions, so changes to the system Python cannot break it. Installing transformers without its dependencies used to leave it missing regex and friends.",
+    "torch": "2.6.0",
+    "packages": {
+      "transformers": "4.51.3",
+      "tokenizers": "0.21.4",
+      "sentencepiece": "0.2.2",
+      "huggingface_hub": "0.36.2",
+      "safetensors": "0.8.0",
+      "regex": "2026.9.10",
+      "numpy": "2.2.6",
+      "pyyaml": "6.0.3",
+      "requests": "2.32.3",
+      "urllib3": "2.3.0",
+      "idna": "3.7",
+      "certifi": "2025.1.31",
+      "charset-normalizer": "3.3.2",
+      "tqdm": "4.67.1",
+      "filelock": "3.20.0",
+      "fsspec": "2025.12.0",
+      "packaging": "24.2",
+      "typing_extensions": "4.15.0",
+      "colorama": "0.4.6"
+    },
+    "license": "transformers / tokenizers / safetensors / huggingface_hub: Apache-2.0"
+  },
   "whisper-small": {
     "repo": "Systran/faster-whisper-small",
     "revision": "536b0662742c02347bc0e980a01041f333bce120",
