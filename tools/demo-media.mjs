@@ -1,12 +1,18 @@
 // README 用の実演素材（GIF と画面写真）を、本物の拡張を本物の YouTube 上で動かして撮る。
-// 合成画像は使わない：見せているものはすべてその場で生成された結果。
+// 合成画像は使わない：見せているページの中身はすべてその場で生成された結果。
 //
 //   npm run media                 すべて撮る → docs/media/
 //   npm run media -- deferred     名前に "deferred" を含む場面だけ
 //
 // 要るもの：Edge、ffmpeg、ネットワーク、本機助手（截图を取るため。npm run local:install）。
-// 画面の記録は CDP の screencast：画面が変わったときだけ一枚届くので、待ち時間は
-// 各コマの表示時間を縮めて早送りにする（中身は間引かない）。
+//
+// 仕上げは録画ソフトと同じ考え方：
+// - 画面は CDP の screencast で記録する（変化したときだけ一枚届く）。待ち時間は早送りにする。
+// - 光標は画面記録に写らない。本物のマウス操作の位置と時刻を記録し、合成時に出力の一コマごとに
+//   補間して描く。録画のコマ数に左右されず、動きは常に滑らか。押した瞬間は光標が少し縮む。
+// - 要所で素早く寄って引く（カメラ）。寄り引きは出力時間で一定の長さ（早送り中でも速すぎない）。
+// - 合成はブラウザの canvas で行う（画素以下の精度で拡大縮小でき、寄り引きがぶれない）。
+//   出力は 50 fps（GIF で安定して再生できる上限）。
 // 実演に使う講義は MIT OpenCourseWare 6.0001（CC BY-NC-SA 4.0）。
 import puppeteer from 'puppeteer-core';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -30,8 +36,15 @@ const WIDTH = 1100;
 const HEIGHT = 700;
 const SCALE = 1.25;
 const PORT = 9360;
+const FPS = 50;
+/** 寄り引きの長さ（出力の秒） */
+const CAMERA_SECONDS = 0.38;
+/** 早送り区間で一コマを見せる最長（出力の秒） */
+const FAST_FRAME_CAP = 0.12;
 /** 今の光標の位置（glideTo の起点） */
 let mouse = { x: WIDTH * 0.45, y: HEIGHT * 0.62 };
+/** 記録中の場面。マウス操作はここに書き留める */
+let active = null;
 
 if (!EDGE) {
   console.error('Edge が見つからない。');
@@ -43,6 +56,7 @@ if (spawnSync('ffmpeg', ['-version']).status !== 0) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const now = () => Date.now() / 1000;
 const only = process.argv[2]?.toLowerCase();
 const wanted = (name) => !only || name.includes(only);
 mkdirSync(OUT, { recursive: true });
@@ -86,21 +100,32 @@ try {
 /** 標題の ↗ で生成 → 截图がそろう → 档位の切り替え → 側栏に寄せて一枚。 */
 async function lectureOne() {
   const page = await openLecture(LECTURE_1, 180);
-  const rec = await record(page);
-  await sleep(900);
-  await glideTo(page, await launcherCenter(page), 900);
-  await sleep(500);
+  const full = { x: 0, y: 0, width: WIDTH, height: HEIGHT };
+  const rec = await record(page, full);
+  await sleep(350);
+  const arrow = await launcherCenter(page);
+  // 標題の ↗ に寄りながら光標を運ぶ
+  rec.camera(zoomAt(arrow, 2.1, full));
+  await glideTo(page, arrow, 560);
+  await sleep(180);
   await click(page);
+  await sleep(160);
+  rec.camera(full);
   await waitPanel(page, (s) => s.says >= 4, 30_000);
-  await sleep(1800);
+  // 文字が出たら浮窓の上半分（見出し・切り替え・最初の段落）へ寄る
+  const panel = await panelBox(page);
+  rec.camera(zoomAt({ x: panel.x + panel.width / 2, y: panel.y + panel.height * 0.42 }, 1.6, full));
+  await sleep(1300);
   rec.speed(10);
   await waitPanel(page, (s) => s.images >= 3 && s.exportReady, 240_000);
   rec.speed(1);
-  await sleep(600);
-  await wheel(page, 150, 900);
-  await sleep(2000);
+  await sleep(300);
+  await wheel(page, 170, 520);
+  await sleep(1100);
+  rec.camera(full);
+  await sleep(700);
   const launch = await rec.stop();
-  if (wanted('launch')) await makeGif(launch, 'demo-launch.gif', { width: 960 });
+  if (wanted('launch')) await makeGif(launch, 'demo-launch.gif', 880);
 
   if (wanted('density')) {
     // 前の場面で読み進めた分を戻し、截图が一枚まるごと見える位置から始める
@@ -108,24 +133,32 @@ async function lectureOne() {
       const body = document.getElementById('c2md-panel-host')?.shadowRoot?.querySelector('.c2md-panel-body');
       if (body) body.scrollTop = 0;
     });
-    const box = await panelBox(page);
-    const dens = await record(page);
-    await sleep(700);
+    const base = pad(await panelBox(page), 6);
+    const dens = await record(page, base);
+    await sleep(350);
+    let first = true;
     for (const level of ['少', '多', '无', '默认']) {
-      await glideTo(page, await panelCenter(page, 'text', level), 600);
-      await sleep(250);
+      const target = await panelCenter(page, 'text', level);
+      // 最初の一回だけ切り替えの帯に寄って場所を示し、あとは全体で変化を見せる
+      if (first) dens.camera(zoomAt(target, 1.7, base));
+      await glideTo(page, target, first ? 480 : 380);
+      await sleep(120);
       await click(page);
+      if (first) {
+        await sleep(220);
+        dens.camera(base);
+        first = false;
+      }
       await waitPanel(page, (s) => s.exportReady, 60_000);
-      await sleep(1300);
+      await sleep(950);
     }
-    await makeGif(await dens.stop(), 'demo-density.gif', { crop: pad(box, 6), width: 560 });
+    await makeGif(await dens.stop(), 'demo-density.gif', 560);
   }
 
   if (wanted('light')) {
     await dock(page);
     await page.mouse.move(WIDTH / 3, HEIGHT - 40);
     await sleep(1200);
-    await hideCursor(page);
     await page.screenshot({ path: join(OUT, 'panel-light.png') });
   }
   await page.close();
@@ -136,28 +169,46 @@ async function deferredExport() {
   const page = await openLecture(LECTURE_2, 240);
   await glideTo(page, await launcherCenter(page), 1);
   await click(page);
-  await waitPanel(page, (s) => s.says >= 3, 30_000);
-  const box = await panelBox(page);
-  mouse = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await waitPanel(page, (s) => s.says >= 1, 30_000);
+  // 截图が多い档位にして、書き出しが「完了後」になる待ち時間を確保する（撮り終えたら戻す）
+  await glideTo(page, await panelCenter(page, 'text', '多'), 1);
+  await click(page);
+  const base = pad(await panelBox(page), 6);
+  mouse = { x: base.x + base.width / 2, y: base.y + base.height / 2 };
   await page.mouse.move(mouse.x, mouse.y);
-  const rec = await record(page);
-  await sleep(800);
-  await glideTo(page, await panelCenter(page, 'label', '复制 Markdown'), 700);
-  await sleep(300);
+  const rec = await record(page, base);
+  await sleep(250);
+  const copy = await panelCenter(page, 'label', '复制 Markdown');
+  const save = await panelCenter(page, 'label', '下载图文 .md');
+  const foot = { x: (copy.x + save.x) / 2, y: copy.y };
+  // 下の二つのボタンに寄って押す
+  rec.camera(zoomAt(foot, 1.9, base));
+  await glideTo(page, copy, 480);
+  await sleep(120);
   await click(page);
-  await sleep(900);
-  await glideTo(page, await panelCenter(page, 'label', '下载图文 .md'), 600);
-  await sleep(300);
+  // 先に押せたこと（「完成后复制」の予約）を確かめる。もうできていたなら実演にならない
+  await waitPanel(page, (s) => s.armed, 1500).catch(() => {
+    throw new Error('押した時点で生成が終わっていて、「完了後に実行」を実演できなかった。もう一度撮り直す。');
+  });
+  await sleep(450);
+  await glideTo(page, save, 380);
+  await sleep(140);
   await click(page);
-  await sleep(1500);
+  await sleep(700);
+  rec.camera(base);
+  await sleep(400);
   rec.speed(12);
   // 複製はその場で終わるが、図文の保存は画像を一枚ずつ書くぶん遅れて「已保存」になる
   await waitPanel(page, (s) => s.copied || s.saved, 240_000);
   rec.speed(1);
   await waitPanel(page, (s) => s.saved, 60_000);
-  // 「已保存」は 1.8 秒で消える。消える前に止め、最後のコマ（長めに見せる）をこの状態にする
-  await sleep(700);
-  await makeGif(await rec.stop(), 'demo-deferred.gif', { crop: pad(box, 6), width: 560 });
+  // 結果に寄って見せる。「已保存」は 1.8 秒で消えるので、その前に止める
+  rec.camera(zoomAt(foot, 1.9, base));
+  await sleep(1000);
+  const clip = await rec.stop();
+  await glideTo(page, await panelCenter(page, 'text', '默认'), 1);
+  await click(page);
+  await makeGif(clip, 'demo-deferred.gif', 560);
   // 「已保存」はダウンロードの受け付けで出る。書き終わるまで少し待つ
   let saved = [];
   for (let i = 0; i < 30 && !saved.length; i++) {
@@ -182,7 +233,6 @@ async function darkScreenshot() {
   await dock(page);
   await page.mouse.move(WIDTH / 3, HEIGHT - 40);
   await sleep(1200);
-  await hideCursor(page);
   await page.screenshot({ path: join(OUT, 'panel-dark.png') });
   await page.close();
 }
@@ -195,7 +245,7 @@ async function openLecture(url, at) {
   return page;
 }
 
-/** 動画を開いて広告を待ち、見栄えのする場面で止め、見える位置に光標を置く。 */
+/** 動画を開いて広告を待ち、見栄えのする場面で止め、光標を置く。 */
 async function prepare(page, url, at) {
   await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: SCALE });
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
@@ -220,7 +270,6 @@ async function prepare(page, url, at) {
     style.textContent = '#secondary, #related, ytd-comments { visibility: hidden !important; }';
     document.head.appendChild(style);
   }, at);
-  await installCursor(page);
   // 光標は標題の下、説明欄から。動画の上だと再生の操作バー、チャンネル名の上だと吹き出しが出てしまう
   const launcher = await launcherCenter(page);
   mouse = { x: Math.max(40, launcher.x - 200), y: Math.min(HEIGHT - 20, launcher.y + 150) };
@@ -228,67 +277,39 @@ async function prepare(page, url, at) {
   await sleep(2500);
 }
 
-/** 光標は画面記録に写らないので、本物のマウス事件を追う印を重ねる（押すと波紋）。 */
-async function installCursor(page) {
-  await page.evaluate(() => {
-    const dot = document.createElement('div');
-    dot.id = 'c2md-demo-cursor';
-    // YouTube は Trusted Types を課すので innerHTML は使えない。要素を組み立てる
-    const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg');
-    for (const [k, v] of Object.entries({ width: '22', height: '22', viewBox: '0 0 22 22' })) svg.setAttribute(k, v);
-    const path = document.createElementNS(ns, 'path');
-    for (const [k, v] of Object.entries({ d: 'M3 2 L3 18 L7.5 13.8 L10.6 20.4 L13.4 19.1 L10.4 12.7 L16.6 12.4 Z', fill: '#fff', stroke: '#111', 'stroke-width': '1.4', 'stroke-linejoin': 'round' })) path.setAttribute(k, v);
-    svg.appendChild(path);
-    dot.appendChild(svg);
-    dot.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transform:translate(-100px,-100px);filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))';
-    document.documentElement.appendChild(dot);
-    const style = document.createElement('style');
-    style.textContent = '@keyframes c2md-demo-ripple{from{opacity:.55;transform:translate(-50%,-50%) scale(.3)}to{opacity:0;transform:translate(-50%,-50%) scale(1)}}';
-    document.head.appendChild(style);
-    addEventListener('mousemove', (e) => { dot.style.transform = `translate(${e.clientX - 3}px, ${e.clientY - 2}px)`; }, true);
-    addEventListener('mousedown', (e) => {
-      const ring = document.createElement('div');
-      ring.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;width:44px;height:44px;border-radius:50%;background:rgba(36,106,80,.45);z-index:2147483646;pointer-events:none;animation:c2md-demo-ripple .5s ease-out forwards`;
-      document.documentElement.appendChild(ring);
-      setTimeout(() => ring.remove(), 600);
-    }, true);
-  });
-}
+// ---------- 操作（記録中なら光標の位置と押した時刻を書き留める） ----------
 
-async function hideCursor(page) {
-  await page.evaluate(() => document.getElementById('c2md-demo-cursor')?.remove());
-}
-
-// ---------- 操作 ----------
-
-/** なめらかに動かす（ease-in-out）。 */
+/** 素早く動かし、終わりはゆるやかに止める（ease-out）。 */
 async function glideTo(page, to, ms) {
-  const steps = Math.max(1, Math.round(ms / 16));
   const from = { ...mouse };
-  for (let i = 1; i <= steps; i++) {
-    const k = i / steps;
-    const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
-    await page.mouse.move(from.x + (to.x - from.x) * e, from.y + (to.y - from.y) * e);
-    if (steps > 1) await sleep(16);
+  const started = Date.now();
+  for (;;) {
+    const k = Math.min(1, (Date.now() - started) / Math.max(1, ms));
+    const e = 1 - (1 - k) ** 3;
+    const point = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+    await page.mouse.move(point.x, point.y);
+    active?.pointer(point);
+    if (k >= 1) break;
+    await sleep(8);
   }
   mouse = { ...to };
 }
 
 async function click(page) {
+  active?.press(mouse);
   await page.mouse.down();
-  await sleep(90);
+  await sleep(70);
   await page.mouse.up();
 }
 
-/** パネル本文の上でホイールを回す（読み進める様子）。 */
+/** パネル本文の上でホイールを細かく回す（なめらかに読み進める）。 */
 async function wheel(page, total, ms) {
   const box = await panelBox(page);
-  await glideTo(page, { x: box.x + box.width / 2, y: box.y + box.height * 0.6 }, 500);
-  const steps = Math.max(1, Math.round(ms / 50));
+  await glideTo(page, { x: box.x + box.width / 2, y: box.y + box.height * 0.6 }, 320);
+  const steps = Math.max(1, Math.round(ms / 16));
   for (let i = 0; i < steps; i++) {
     await page.mouse.wheel({ deltaY: total / steps });
-    await sleep(50);
+    await sleep(16);
   }
 }
 
@@ -349,6 +370,19 @@ function pad(box, px) {
   return { x, y, width: Math.min(WIDTH - x, Math.ceil(box.width + px * 2)), height: Math.min(HEIGHT - y, Math.ceil(box.height + px * 2)) };
 }
 
+/** 画面（base）と同じ縦横比で、point を中心に factor 倍に寄った範囲。base からははみ出さない。 */
+function zoomAt(point, factor, base) {
+  const width = base.width / factor;
+  const height = base.height / factor;
+  return {
+    x: Math.min(Math.max(point.x - width / 2, base.x), base.x + base.width - width),
+    y: Math.min(Math.max(point.y - height / 2, base.y), base.y + base.height - height),
+    width,
+    height,
+  };
+}
+
+
 /** パネルの状態が条件を満たすまで待つ。 */
 async function waitPanel(page, test, timeout) {
   const started = Date.now();
@@ -364,26 +398,32 @@ async function waitPanel(page, test, timeout) {
         exportReady: Boolean(copy && !copy.hasAttribute('title') && !copy.hasAttribute('disabled')),
         copied: buttons.some((b) => b.dataset.label === '已复制'),
         saved: buttons.some((b) => b.dataset.label === '已保存'),
+        armed: buttons.some((b) => b.getAttribute('aria-pressed') === 'true'),
         text: root?.querySelector('.c2md-panel-status')?.textContent?.trim().slice(0, 200) ?? '(パネルなし)',
       };
     }).catch(() => null);
     if (state && test(state)) return state;
-    await sleep(250);
+    await sleep(100);
   }
   const shot = join(tmpdir(), 'c2md-media-failed.png');
   await page.screenshot({ path: shot }).catch(() => {});
   throw new Error(`パネルが期待した状態にならない：${JSON.stringify(state)}（画面：${shot}）`);
 }
 
-// ---------- 記録と GIF ----------
+// ---------- 記録 ----------
 
-/** screencast を始める。speed(n) 以降のコマは n 倍速で表示する。 */
-async function record(page) {
+/**
+ * 場面の記録を始める。base はその場面で見せる範囲（CSS 画素）。
+ * speed(n)：以降を n 倍の早送りに。camera(rect)：今から rect へ寄る（引く）。
+ */
+async function record(page, base) {
   const cdp = await page.createCDPSession();
-  const frames = [];
-  let speed = 1;
+  const clip = { base, frames: [], speeds: [{ t: now(), speed: 1 }], cameras: [], pointer: [], presses: [], end: 0 };
+  // コマの時刻は描画の時刻。受け取った時刻との差の最小を時計のずれとみなし、手元の時計にそろえる
+  let skew = Infinity;
   cdp.on('Page.screencastFrame', ({ data, metadata, sessionId }) => {
-    frames.push({ data, t: metadata.timestamp, speed });
+    skew = Math.min(skew, now() - metadata.timestamp);
+    clip.frames.push({ data, stamp: metadata.timestamp });
     cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
   });
   // 既定では CSS 画素の大きさで届く。装置画素の大きさを上限に指定して、細部まで写す
@@ -391,44 +431,191 @@ async function record(page) {
     format: 'jpeg', quality: 92, everyNthFrame: 1,
     maxWidth: Math.round(WIDTH * SCALE), maxHeight: Math.round(HEIGHT * SCALE),
   });
-  return {
-    speed(n) { speed = n; },
+  const handle = {
+    speed(n) { clip.speeds.push({ t: now(), speed: n }); },
+    camera(rect) { clip.cameras.push({ t: now(), rect }); },
+    pointer(point) { clip.pointer.push({ t: now(), ...point }); },
+    press(point) { clip.presses.push({ t: now(), ...point }); },
     async stop() {
       await cdp.send('Page.stopScreencast').catch(() => {});
-      frames.push({ ...frames[frames.length - 1], t: Date.now() / 1000, speed });
       await cdp.detach().catch(() => {});
-      return frames;
+      active = null;
+      clip.end = now();
+      for (const frame of clip.frames) frame.t = frame.stamp + (Number.isFinite(skew) ? skew : 0);
+      return clip;
     },
+  };
+  active = handle;
+  handle.pointer(mouse);
+  return handle;
+}
+
+// ---------- 合成 ----------
+
+/**
+ * 記録の時刻（秒）を出力の時刻へ写す関数を作る。等速区間はそのまま、早送り区間は
+ * 速さで割り、さらに一コマの表示を FAST_FRAME_CAP までに詰める（止まっている間を飛ばす）。
+ */
+function timeWarp(clip) {
+  const start = clip.speeds[0].t;
+  const speedAt = (t) => clip.speeds.filter((s) => s.t <= t).at(-1)?.speed ?? 1;
+  // 区切り：各コマの時刻と速さの切り替え時刻
+  const cuts = [...new Set([start, clip.end, ...clip.frames.map((f) => f.t), ...clip.speeds.map((s) => s.t)])]
+    .filter((t) => t >= start && t <= clip.end).sort((a, b) => a - b);
+  const points = [{ src: start, out: 0 }];
+  for (let i = 1; i < cuts.length; i++) {
+    const raw = cuts[i] - cuts[i - 1];
+    const speed = speedAt(cuts[i - 1]);
+    const shown = speed > 1 ? Math.min(raw / speed, FAST_FRAME_CAP) : raw;
+    points.push({ src: cuts[i], out: points.at(-1).out + shown });
+  }
+  const toOut = (t) => {
+    if (t <= points[0].src) return 0;
+    for (let i = 1; i < points.length; i++) {
+      if (t <= points[i].src) {
+        const a = points[i - 1];
+        const b = points[i];
+        return a.out + (b.out - a.out) * ((t - a.src) / Math.max(1e-9, b.src - a.src));
+      }
+    }
+    return points.at(-1).out;
+  };
+  const toSrc = (o) => {
+    for (let i = 1; i < points.length; i++) {
+      if (o <= points[i].out) {
+        const a = points[i - 1];
+        const b = points[i];
+        return a.src + (b.src - a.src) * ((o - a.out) / Math.max(1e-9, b.out - a.out));
+      }
+    }
+    return points.at(-1).src;
+  };
+  return { toOut, toSrc, duration: points.at(-1).out };
+}
+
+// 場面は上の方のトップレベル await から呼ばれるので、ここは巻き上げの効く function 宣言にする
+function easeInOut(k) {
+  return k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+}
+
+function mix(a, b, k) {
+  return {
+    x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k,
+    width: a.width + (b.width - a.width) * k, height: a.height + (b.height - a.height) * k,
   };
 }
 
-/** コマ列を GIF に。早送り区間は表示時間を縮め、最後のコマは少し長く見せる。 */
-async function makeGif(frames, name, { crop, width }) {
-  const dir = mkdtempSync(join(tmpdir(), 'c2md-gif-'));
-  const lines = [];
-  // ffmpeg 4.2 の concat は相対パスを一覧の場所から解決しないので、絶対パスで書く
-  const at = (file) => `file '${join(dir, file).replaceAll('\\', '/')}'`;
-  for (let i = 0; i < frames.length - 1; i++) {
-    const file = `f${String(i).padStart(5, '0')}.jpg`;
-    writeFileSync(join(dir, file), Buffer.from(frames[i].data, 'base64'));
-    const raw = Math.max(0, frames[i + 1].t - frames[i].t);
-    const shown = frames[i].speed > 1 ? Math.min(raw / frames[i].speed, 0.25) : raw;
-    lines.push(at(file), `duration ${Math.max(shown, 0.001).toFixed(3)}`);
+/** 出力時刻 o のカメラの範囲。寄り引きは始まりから CAMERA_SECONDS かけて移る。 */
+function cameraAt(clip, warp, o) {
+  let settled = clip.base;
+  let from = clip.base;
+  let to = clip.base;
+  let startedAt = -Infinity;
+  for (const move of clip.cameras) {
+    const at = warp.toOut(move.t);
+    if (at > o) break;
+    // 前の移動の途中から次へ移れるよう、その時点の位置を起点にする
+    settled = mix(from, to, easeInOut(Math.min(1, (at - startedAt) / CAMERA_SECONDS)));
+    from = settled;
+    to = move.rect;
+    startedAt = at;
   }
-  const last = `f${String(frames.length - 2).padStart(5, '0')}.jpg`;
-  lines.push(at(last), 'duration 2.5', at(last));
-  writeFileSync(join(dir, 'list.txt'), lines.join('\n'));
-  // 切り抜きは CSS 画素で持っている。届いたコマの実際の幅から倍率を出して換算する
-  const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=width', '-of', 'csv=p=0', join(dir, 'f00000.jpg')]);
-  const ratio = Number(probe.stdout.toString().trim()) / WIDTH || 1;
-  const px = (v) => Math.round(v * ratio);
-  const area = crop ? `crop=${px(crop.width)}:${px(crop.height)}:${px(crop.x)}:${px(crop.y)},` : '';
-  const filter = `fps=15,${area}scale=${width}:-2:flags=lanczos,split[a][b];` +
-    '[a]palettegen=max_colors=200:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle';
+  return mix(from, to, easeInOut(Math.min(1, (o - startedAt) / CAMERA_SECONDS)));
+}
+
+/** 記録の時刻 t の光標の位置（前後の記録点を直線で補う）。 */
+function pointerAt(clip, t) {
+  const list = clip.pointer;
+  if (t <= list[0].t) return list[0];
+  for (let i = 1; i < list.length; i++) {
+    if (t <= list[i].t) {
+      const k = (t - list[i - 1].t) / Math.max(1e-9, list[i].t - list[i - 1].t);
+      return { x: list[i - 1].x + (list[i].x - list[i - 1].x) * k, y: list[i - 1].y + (list[i].y - list[i - 1].y) * k };
+    }
+  }
+  return list.at(-1);
+}
+
+/** 記録を 50 fps の GIF に仕上げる。最後の状態は少し長めに見せる。 */
+async function makeGif(clip, name, width) {
+  const warp = timeWarp(clip);
+  const height = Math.round((width * clip.base.height) / clip.base.width / 2) * 2;
+  const hold = 1.2;
+  const total = Math.ceil((warp.duration + hold) * FPS);
+  const dir = mkdtempSync(join(tmpdir(), 'c2md-gif-'));
+  // 描画用のページ。コマは data URL で渡す（file: の画像を canvas に描くと書き出しが禁じられる）
+  const painter = await browser.newPage();
+  await painter.setContent('<canvas></canvas>');
+  await painter.evaluate((w, h) => {
+    const canvas = document.querySelector('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    window.paint = async (job) => {
+      const ctx = canvas.getContext('2d');
+      if (job.frame) {
+        const img = new Image();
+        img.src = `data:image/jpeg;base64,${job.frame}`;
+        await img.decode();
+        window.current = img;
+      }
+      const img = window.current;
+      const k = img.naturalWidth / job.cssWidth;
+      const cam = job.camera;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, cam.x * k, cam.y * k, cam.width * k, cam.height * k, 0, 0, w, h);
+      // CSS 画素 → 出力画素
+      const zoom = w / cam.width;
+      const place = (p) => ({ x: (p.x - cam.x) * zoom, y: (p.y - cam.y) * zoom });
+      const tip = place(job.pointer);
+      // 光標は寄るにつれて少し大きく（等倍には追従させない）。押した瞬間は少し縮む
+      const size = (Math.pow(zoom, 0.55) * job.press * w) / 1000;
+      ctx.save();
+      ctx.translate(tip.x, tip.y);
+      ctx.scale(size * 1.15, size * 1.15);
+      ctx.translate(-3, -2);
+      ctx.shadowColor = 'rgba(0,0,0,.35)';
+      ctx.shadowBlur = 3;
+      ctx.shadowOffsetY = 1;
+      const arrow = new Path2D('M3 2 L3 18 L7.5 13.8 L10.6 20.4 L13.4 19.1 L10.4 12.7 L16.6 12.4 Z');
+      ctx.fillStyle = '#fff';
+      ctx.fill(arrow);
+      ctx.shadowColor = 'transparent';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = '#111';
+      ctx.stroke(arrow);
+      ctx.restore();
+      return canvas.toDataURL('image/jpeg', 0.93).slice('data:image/jpeg;base64,'.length);
+    };
+  }, width, height);
+
+  let shownIndex = -1;
+  for (let n = 0; n < total; n++) {
+    const o = Math.min(n / FPS, warp.duration);
+    const t = warp.toSrc(o);
+    let index = 0;
+    while (index + 1 < clip.frames.length && clip.frames[index + 1].t <= t) index++;
+    const pressed = clip.presses.some((p) => { const d = o - warp.toOut(p.t); return d >= 0 && d < 0.12; });
+    const job = {
+      frame: index !== shownIndex ? clip.frames[index].data : null,
+      cssWidth: WIDTH,
+      camera: cameraAt(clip, warp, o),
+      pointer: pointerAt(clip, t),
+      press: pressed ? 0.88 : 1,
+    };
+    shownIndex = index;
+    const jpeg = await painter.evaluate((job) => window.paint(job), job);
+    writeFileSync(join(dir, `o${String(n).padStart(5, '0')}.jpg`), Buffer.from(jpeg, 'base64'));
+  }
+  await painter.close();
+
+  // 画面の大半は平らな色の UI。色数を絞り、ディザもかけない方が寄り引きのコマが軽い（抖動は模様になって圧縮を損なう）
+  const filter = 'split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle';
   const out = join(OUT, name);
-  const run = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', join(dir, 'list.txt'),
+  const run = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(dir, 'o%05d.jpg'),
     '-filter_complex', filter, '-loop', '0', out]);
   rmSync(dir, { recursive: true, force: true });
   if (run.status !== 0) throw new Error(`ffmpeg が失敗：${run.stderr}`);
-  console.log(`${name}  ${(statSync(out).size / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`${name}  ${(total / FPS).toFixed(1)} s  ${FPS} fps  ${(statSync(out).size / 1024 / 1024).toFixed(2)} MB`);
 }
