@@ -38,7 +38,7 @@ export async function captureSectionImages(sourceUrl, frames, signal, onImage) {
         if (item) {
           item.image = frame.data;
           kept++;
-          onImage?.(item);
+          await onImage?.(item);
         }
       }
       seen += job.images?.length ?? 0;

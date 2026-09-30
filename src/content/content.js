@@ -6,7 +6,6 @@
 import { pickAdapter, siteLabel } from '../adapters/index.js';
 import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
-import { attachFrames } from './visual.js';
 import { buildDoc, fileNameFor } from '../core/format.js';
 import { runSubtitlePipeline, runAsrPipeline, finalize, organize, MissingSourceError, AbortError } from './pipeline.js';
 import { copyText, send } from './messaging.js';
@@ -43,6 +42,8 @@ export class Controller {
     this.imageWorking = false;
     this.polishState = { hasResult: false, running: false, done: 0, total: 0 };
     this.imageCache = new Map();
+    /** @type {Map<number, import('../core/similarity.js').Signature>} 已取画面的灰度签名，按时刻 */
+    this.frameSignatures = new Map();
     this.imagesPending = false;
     this.autoTimer = null;
     // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
@@ -151,14 +152,12 @@ export class Controller {
         warnings: cached.warnings ?? [],
       };
       this.built.segments.forEach((seg, id) => { seg.id = id; });
-      for (const [t, image] of cached.images ?? []) this.imageCache.set(t, image);
+      for (const [t, image] of cached.images ?? []) await this.frames.remember(t, image);
       this.meta = cached.meta;
       this.doc = buildDoc({ ...this.meta, source: cached.stats.source }, cached.sections);
       this.status = 'ready';
       this.polishState.hasResult = Boolean(cached.polished);
-      this.previewSections = attachFrames(this.built.sections, this.settings.imageLevel, this.imageCache);
-      this.imagesPending = this.settings.imageLevel !== 'none' &&
-        this.previewSections.some((section) => section.frames.some((frame) => !this.imageCache.has(frame.t)));
+      this.frames.present();
       if (this.settings.showPanel) this.panel.mount();
       if (this.imagesPending) this.frames.refreshImages();
     }
@@ -200,6 +199,7 @@ export class Controller {
     this.built = null;
     this.previewSections = [];
     this.imageCache.clear();
+    this.frameSignatures.clear();
     this.imageQueue.clear();
     this.imageInFlight.clear();
     this.imagesPending = false;

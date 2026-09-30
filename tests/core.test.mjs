@@ -9,6 +9,7 @@ import { buildMessages, parsePolishResponse, applyPolish, resetPolish, extractJs
 import { seekUrl, toMarkdown, toPlainText, buildDoc, fileNameFor } from '../src/core/format.js';
 import { withDefaults, normalizeSettings, canPolish, canTranscribe, useLocalPolish, maskSecret, setPath, getPath } from '../src/core/settings.js';
 import { attachFrames } from '../src/content/visual.js';
+import { ssim, keepChanged, signatureHeight, SIMILARITY, REPEAT_WINDOW_SECS } from '../src/core/similarity.js';
 import { decodeMediaAudio, FastAudioUnavailable, wavSlice } from '../src/content/fast-audio.js';
 import { captureAudio } from '../src/content/capture.js';
 import { cookieFileFor, cookieHeaderFor } from '../src/background/cookies.js';
@@ -48,6 +49,40 @@ test('图片密度分四档；多档至多每十秒取一个帧时刻，且不�
   const cached = attachFrames(sections, 'few', new Map([[0, 'data:cached']]));
   assert.equal(cached[0].frames[0].image, 'data:cached');
   assert.equal(cached[0].frames[1].image, '');
+});
+
+/** 160×88 的白底「幻灯片」，每个 bars 项是一条黑色横线（行号）。 */
+function slide(bars, { ink = 0, paper = 255, width = 160, height = 88 } = {}) {
+  const data = new Uint8Array(width * height).fill(paper);
+  for (const row of bars) for (let y = row; y < row + 4; y++) for (let x = 12; x < 148; x++) data[y * width + x] = ink;
+  return { width, height, data };
+}
+
+test('SSIM：同一画面为 1，换了一页明显低于 0.85，尺寸不同视为不同', () => {
+  const page = slide([8, 20, 32]);
+  assert.equal(ssim(page, page), 1);
+  assert.ok(ssim(page, slide([8, 20, 32], { ink: 6, paper: 250 })) >= SIMILARITY, '压缩噪声级的亮度差仍是同一页');
+  assert.ok(ssim(page, slide([44, 56, 68, 80])) < SIMILARITY, '换了一页');
+  assert.equal(ssim(page, slide([8], { height: 96 })), 0);
+  assert.equal(signatureHeight(1280, 720), 88);
+  assert.equal(signatureHeight(640, 480), 120);
+});
+
+test('只保留有变化的画面：与近两分钟内保留过的相似就略去，未到的帧照旧等待，每节第一张总保留', () => {
+  const [a, b] = [slide([8, 20, 32]), slide([44, 56, 68, 80])];
+  const signatures = new Map([[0, a], [10, a], [20, b], [40, a], [200, a], [300, a], [310, a]]);
+  const frame = (t, image = `img${t}`) => ({ t, image });
+  const sections = [
+    { t: 0, frames: [frame(0), frame(10), frame(20), frame(30, ''), frame(40), frame(200)] },
+    // 下一章开头仍是同一页：章节开头留一张
+    { t: 300, frames: [frame(300), frame(310), frame(320)] },
+  ];
+  const kept = keepChanged(sections, signatures).map((section) => section.frames.map((f) => f.t));
+  // 10 与 0 相同；30 还没取到，照旧等待；40 在讲师镜头（20）之后切回同一页，0 秒那张还在
+  // 两分钟之内，也略去；200 秒再回到这一页，已隔太久，再给一张；320 有图没签名，宁可多留
+  assert.deepEqual(kept, [[0, 20, 30, 200], [300, 320]]);
+  assert.equal(REPEAT_WINDOW_SECS, 120);
+  assert.equal(keepChanged([sections[1]], new Map())[0], sections[1], '没有可略去的就原样返回');
 });
 
 test('复制纯文本先在点击事件内聚焦并复制', async () => {
