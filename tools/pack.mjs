@@ -41,6 +41,7 @@ const HELPER_FILES = [
   'tools/services.mjs',
   'tools/asr-runtime.mjs',
   'tools/install-lock.mjs',
+  'tools/pip-install.mjs',
   'tools/extension-ids.mjs',
   'tools/host-registration.mjs',
   'tools/native-helper.cs',

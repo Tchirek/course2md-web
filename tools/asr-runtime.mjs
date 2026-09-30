@@ -9,12 +9,13 @@
 // Now every package is pinned (runtime-pins.json → asr-python), and on machines with an NVIDIA GPU
 // the matching cuBLAS / cuDNN come from NVIDIA's own wheels, pinned by SHA-256 (→ cuda-runtime).
 // local-asr.py loads exactly those and checks that it did; otherwise it transcribes on the CPU.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { dataDir } from './helper-data.mjs';
 import { withLock } from './install-lock.mjs';
+import { pipInstall, run } from './pip-install.mjs';
 
 const PINS = JSON.parse(readFileSync(new URL('./runtime-pins.json', import.meta.url), 'utf8'));
 const isWin = process.platform === 'win32';
@@ -177,23 +178,6 @@ async function fetchWheel(python, wheel, dir, env, onProgress) {
   return target;
 }
 
-/** Runs a command; resolves with its exit code. Output goes to onLine (pip's download progress etc.). */
-function run(command, args, { env, onLine = () => {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let tail = '';
-    const take = (chunk) => {
-      const text = chunk.toString();
-      tail = (tail + text).slice(-2000);
-      for (const line of text.split(/\r?\n|\r/)) if (line.trim()) onLine(line.trim());
-    };
-    child.stdout.on('data', take);
-    child.stderr.on('data', take);
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code, tail }));
-  });
-}
-
 async function basePython() {
   const python = process.env.C2MD_PYTHON || (isWin ? 'python' : 'python3');
   const probe = await run(python, ['-c', 'import sys; print("%d.%d" % sys.version_info[:2])']).catch(() => null);
@@ -242,8 +226,9 @@ export async function ensureAsrRuntime({ onState = () => {}, onLine = () => {} }
       writeFileSync(constraints, constraintsText());
       onState('installing', '正在安装本机转录运行库（版本已固定）');
       const pkgs = PINS['asr-python'].packages;
-      const installed = await run(python, ['-m', 'pip', 'install', '--no-cache-dir', '-c', constraints,
-        `faster-whisper==${pkgs['faster-whisper']}`, `ctranslate2==${pkgs.ctranslate2}`], { env, onLine });
+      const installed = await pipInstall(python, ['-c', constraints,
+        `faster-whisper==${pkgs['faster-whisper']}`, `ctranslate2==${pkgs.ctranslate2}`],
+      { env, onLine, onRetry: () => onState('installing', '下载出错，正在重试本机转录运行库的安装') });
       if (installed.code !== 0) throw new Error(`安装本机转录运行库失败：${installed.tail.trim().slice(-400)}`);
       if (gpu) {
         // Kept across interrupted runs so a resumed install continues the download instead of restarting it
