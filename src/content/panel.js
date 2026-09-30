@@ -140,7 +140,8 @@ export class Panel {
       'error' in patch ||
       'polish' in patch ||
       'imagesPending' in patch ||
-      'warnings' in patch;
+      'warnings' in patch ||
+      ['exportReady', 'exportBusy', 'pendingExport', 'exportFlash'].some((key) => key in patch);
     const displayChanged = 'settings' in patch && patch.settings?.imageLevel !== this.state.settings?.imageLevel;
 
     Object.assign(this.state, patch);
@@ -383,7 +384,18 @@ export class Panel {
     const exportReady = this.state.exportReady ??
       (status === 'ready' && (!this.state.imagesPending || settings?.imageLevel === 'none'));
     const armed = Boolean(pendingExport?.[kind]);
-    const node = button(exportFlash?.[kind] ? done : armed ? pending : idle, onClick, variant);
+    const active = exportFlash?.[kind] ? done : armed ? pending : idle;
+    const node = button('', onClick, variant);
+    // 三种文字叠在同一格里、只显示当前那个：按钮宽度始终取最宽的一种，切换时尺寸不变
+    const labels = el('span', 'c2md-button-labels');
+    for (const text of new Set([idle, pending, done])) {
+      const label = el('span');
+      label.textContent = text;
+      if (text !== active) label.setAttribute('aria-hidden', 'true');
+      labels.appendChild(label);
+    }
+    node.appendChild(labels);
+    node.dataset.label = active;
     node.disabled = !exportReady && !exportBusy;
     if (exportReady) return node;
     if (armed) {

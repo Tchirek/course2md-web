@@ -89,7 +89,7 @@ try {
         bodyClientHeight: body.clientHeight,
         horizontalOverflow: scope.scrollWidth - scope.clientWidth,
         primaryBg: primary ? getComputedStyle(primary).backgroundColor : null,
-        primaryText: primary ? primary.textContent : null,
+        primaryText: primary ? primary.dataset.label ?? primary.textContent : null,
       };
     });
 
@@ -241,8 +241,8 @@ try {
         panel.setState({ imagesPending: true });
         const foot = panel.scope.querySelector('.c2md-panel-foot');
         const buttons = [...foot.querySelectorAll('button')];
-        const copy = buttons.find((button) => button.textContent === '复制 Markdown');
-        const save = buttons.find((button) => button.textContent.includes('下载图文'));
+        const copy = buttons.find((button) => button.dataset.label === '复制 Markdown');
+        const save = buttons.find((button) => button.dataset.label?.includes('下载图文'));
         const plain = buttons.find((button) => button.getAttribute('aria-label') === '复制纯文本');
         const pending = [copy?.disabled, save?.disabled, plain?.disabled];
         panel.setState({ imagesPending: false });
@@ -251,6 +251,30 @@ try {
       gate.pending[0] && gate.pending[1] && gate.pending[2] === false
         ? pass('panel/ready 取帧中仅允许复制纯文本')
         : fail('panel/ready', `取帧导出限制错误：${JSON.stringify(gate)}`);
+      // 生成中提前按下复制/下载：按钮文字在「平常／完成后…／已…」间切换，尺寸与位置都不能变
+      const armedSize = await page.evaluate(() => {
+        const panel = window.__selftestPanel;
+        const measure = () => [...panel.scope.querySelectorAll('.c2md-panel-foot .c2md-button')].slice(0, 2)
+          .map((button) => {
+            const r = button.getBoundingClientRect();
+            return `${button.dataset.label}@${r.x.toFixed(2)},${r.y.toFixed(2)} ${r.width.toFixed(2)}x${r.height.toFixed(2)}`;
+          });
+        const none = { copy: false, download: false };
+        const both = { copy: true, download: true };
+        panel.setState({ exportReady: false, exportBusy: true, pendingExport: none, exportFlash: none });
+        const idle = measure();
+        panel.setState({ pendingExport: both });
+        const armed = measure();
+        panel.setState({ exportReady: true, exportBusy: false, pendingExport: none, exportFlash: both });
+        const done = measure();
+        panel.setState({ exportReady: undefined, exportBusy: undefined, pendingExport: undefined, exportFlash: undefined });
+        return { idle, armed, done };
+      });
+      const geometry = (list) => list.map((item) => item.split('@')[1]).join(' | ');
+      const labelsChanged = armedSize.armed[0].startsWith('完成后复制') && armedSize.done[1].startsWith('已保存');
+      labelsChanged && geometry(armedSize.idle) === geometry(armedSize.armed) && geometry(armedSize.idle) === geometry(armedSize.done)
+        ? pass('panel/ready 提前按下复制/下载时按钮尺寸不变')
+        : fail('panel/ready', `提前导出时按钮尺寸变化：${JSON.stringify(armedSize)}`);
       const warning = await page.evaluate(() => {
         const panel = window.__selftestPanel;
         const count = () => [...panel.scope.querySelectorAll('.c2md-panel-status .c2md-meta')]

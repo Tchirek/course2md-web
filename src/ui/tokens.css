@@ -389,6 +389,20 @@
   color: var(--card);
 }
 
+/* 导出按钮的几种文字叠放在同一格，按钮按最宽的那种定宽；只显示当前那种 */
+.c2md-button-labels {
+  display: inline-grid;
+}
+
+.c2md-button-labels > span {
+  grid-area: 1 / 1;
+  text-align: center;
+}
+
+.c2md-button-labels > [aria-hidden="true"] {
+  visibility: hidden;
+}
+
 /* 「完了後に実行」を予約済み：破線枠で待機中を示す。塗りつぶすと書き出せる状態に見えるので使わない */
 .c2md-scope .c2md-button--armed,
 .c2md-scope .c2md-button--armed:hover {
