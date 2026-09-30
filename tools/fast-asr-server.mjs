@@ -8,7 +8,7 @@
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { statSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
@@ -23,6 +23,8 @@ const ASR_PORT = 8081;
 const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
 const BUILTIN_ASR = new Set([`http://127.0.0.1:${ASR_PORT}`, `http://localhost:${ASR_PORT}`]);
 const MAX_BODY = 128 * 1024;
+/** この助手（ポートごと）の一時ファイルの置き場。起動時に空にする。 */
+const TEMP_ROOT = path.join(os.tmpdir(), `c2md-helper-${PORT}`);
 const jobs = new Map();
 const controllers = new Map();
 const videoCache = new Map();
@@ -148,13 +150,47 @@ http.createServer(async (req, res) => {
     res.end(JSON.stringify({ error: String(error?.message ?? error) }));
   }
 }).listen(PORT, '127.0.0.1', () => {
+  // 端口已归本进程：同一端口不会有另一个助手在用这些临时文件
+  sweepStaleTemp();
   process.stdout.write(`course2md 本机提取服务：http://127.0.0.1:${PORT}\n`);
 });
+
+/**
+ * 上一个助手被强制结束时留下的临时文件（下载到一半的媒体、画面缓存、cookie）。
+ * 平时它们在任务结束或一小时后删除；进程提前退出就等不到，所以启动时清一次。
+ * 同步执行，赶在第一个请求之前。
+ */
+function sweepStaleTemp() {
+  rmSync(TEMP_ROOT, { recursive: true, force: true });
+  mkdirSync(TEMP_ROOT, { recursive: true });
+  if (PORT !== 8766) return;
+  // 旧版助手直接放在系统临时目录里（mkdtemp 的 c2md-XXXXXX、c2md-video-XXXXXX），取帧的还夹着登录 cookie
+  for (const name of readdirSync(os.tmpdir())) {
+    if (/^c2md-(?:video-)?[A-Za-z0-9]{6}$/.test(name)) rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
+  }
+}
+
+/**
+ * 调用 yt-dlp。给了浏览器登录态时，cookie 只在 yt-dlp 运行期间存在：写进单独的临时目录，
+ * yt-dlp 一退出（成功、失败或取消）就删掉。以前取帧路径把它和视频缓存放在一起，要等一小时，
+ * 助手在那之前退出的话，登录 cookie 就一直留在临时目录里。
+ */
+async function ytDlp(args, url, cookieFile, signal) {
+  if (!cookieFile) return run('yt-dlp', [...args, '--', url], signal);
+  const dir = await mkdtemp(path.join(TEMP_ROOT, 'cookies-'));
+  try {
+    const cookiePath = path.join(dir, 'cookies.txt');
+    await writeFile(cookiePath, cookieFile, { mode: 0o600 });
+    return await run('yt-dlp', [...args, '--cookies', cookiePath, '--', url], signal);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 async function processFrames(input, source, job, signal) {
   let mediaPath = source.protocol === 'file:' ? fileURLToPath(source) : videoCache.get(source.href)?.file;
   if (!mediaPath) {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-video-'));
+    const dir = await mkdtemp(path.join(TEMP_ROOT, 'video-'));
     try {
       if (source.hostname === 'www.bilibili.com') {
         try {
@@ -169,12 +205,7 @@ async function processFrames(input, source, job, signal) {
         // 截图不需要高码率，H.264 几乎所有 ffmpeg 都能解。没有 H.264 才退回其他编码
         const format = 'bestvideo[height<=720][vcodec^=avc1]/best[height<=720][vcodec^=avc1]/bestvideo[height<=720]/best[height<=720]';
         const args = ['--ignore-config', '--socket-timeout', '12', '--js-runtimes', 'node', '--no-playlist', '-f', format, '-o', path.join(dir, 'input.%(ext)s')];
-        if (input.cookieFile) {
-          const cookiePath = path.join(dir, 'cookies.txt');
-          await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
-          args.push('--cookies', cookiePath);
-        }
-        await run('yt-dlp', [...args, '--', source.href], signal);
+        await ytDlp(args, source.href, input.cookieFile, signal);
         const name = (await readdir(dir)).find((entry) => entry.startsWith('input.') && !entry.endsWith('.part'));
         if (!name) throw new Error('yt-dlp 未取得视频画面');
         mediaPath = path.join(dir, name);
@@ -338,7 +369,7 @@ async function processJob(input, source, endpoint, job, signal) {
   try {
     if (BUILTIN_ASR.has(endpoint.origin)) await startLocalAsr();
     const chunkSeconds = Math.max(5, Math.min(120, Number(input.chunkSeconds) || 30));
-    dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-'));
+    dir = await mkdtemp(path.join(TEMP_ROOT, 'job-'));
     let mediaPath;
     if (source.protocol === 'file:') {
       mediaPath = fileURLToPath(source);
@@ -354,14 +385,9 @@ async function processJob(input, source, endpoint, job, signal) {
         }
       }
       if (!mediaPath) {
-        if (input.cookieFile) {
-          job.message = '正在使用浏览器登录态下载音轨';
-          const cookiePath = path.join(dir, 'cookies.txt');
-          await writeFile(cookiePath, input.cookieFile, { mode: 0o600 });
-          args.push('--cookies', cookiePath);
-        }
+        if (input.cookieFile) job.message = '正在使用浏览器登录态下载音轨';
         try {
-          await run('yt-dlp', [...args, '--', source.href], signal);
+          await ytDlp(args, source.href, input.cookieFile, signal);
         } catch (error) {
           throw new Error(backupError ? `${backupError.message}; ${error.message}` : error.message);
         }
