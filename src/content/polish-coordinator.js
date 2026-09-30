@@ -27,6 +27,8 @@ export class PolishCoordinator {
     const sectionIndexOf = options.sectionIndexOf ?? this.c.built?.sectionIndexOf;
     if (!segments?.length) return;
     if (!this.c.polishAbort || this.c.polishAbort.signal.aborted) this.c.polishAbort = new AbortController();
+    const polishAbort = this.c.polishAbort;
+    const runAbort = this.c.abort;
     const signal = AbortSignal.any([this.c.polishAbort.signal, this.c.abort?.signal].filter(Boolean));
     this.c.polishState = { hasResult: this.c.polishState.hasResult, running: true, done: 0, total: 0 };
     this.c.panel.setState({ polish: this.c.polishState });
@@ -46,16 +48,19 @@ export class PolishCoordinator {
       // 自备 LLM 三次都失败时，静默换成本机润色
       fallback: useLocal ? undefined : { ensure: () => this.ensureLocalPolish(signal) },
       onProgress: () => {
+        if (signal.aborted) return;
         // 分母是视频总时长，恒定不变；分子是已润色内容的时长，圆环只进不退
         this.c.polishState = { ...this.c.polishState, running: true, ...polishProgress(segments, this.c.meta?.duration) };
         this.c.panel.setState({ polish: this.c.polishState });
         this.c.broadcast(false);
       },
       onSegment: (id) => {
+        if (signal.aborted) return;
         this.c.polishState.hasResult = true;
         if (!early && this.c.built?.segments?.[id]) this.c.panel.updateSegment(this.c.built.segments[id]);
       },
       onReset: () => {
+        if (signal.aborted) return;
         if (!early) this.c.panel.setState({ sections: this.c.previewSections });
       },
     });
@@ -71,24 +76,28 @@ export class PolishCoordinator {
       await this.c.saveCache();
     }
     } finally {
-      this.c.polishState.running = false;
-      this.c.panel.setState({ polish: this.c.polishState });
+      // An old request can finish after navigation or a new run starts.
+      if (this.c.polishAbort === polishAbort && this.c.abort === runAbort) {
+        this.c.polishState.running = false;
+        this.c.panel.setState({ polish: this.c.polishState });
+      }
     }
   }
 
   /** 提前润色：转录还在进行时就润已经到手的事件；事件对象就地更新。 */
   startEarlyPolish(events) {
-    this.c.earlyPolish.active = true;
-    this.c.earlyPolish.covered = events.length;
-    this.c.earlyPolish.promise = this.runPolish({
+    const early = this.c.earlyPolish;
+    early.active = true;
+    early.covered = events.length;
+    early.promise = this.runPolish({
       segments: events,
       sectionIndexOf: eventSectionIndexOf(events, this.c.meta),
       resume: true,
       early: true,
     })
-      .then(() => { this.c.earlyPolish.done = true; })
+      .then(() => { early.done = true; })
       .catch(() => {})
-      .finally(() => { this.c.earlyPolish.active = false; });
+      .finally(() => { early.active = false; });
   }
 
   /** 润色是否具备启动条件（自定义模型未配置时不提前开跑）。 */
@@ -105,9 +114,11 @@ export class PolishCoordinator {
   /** 启动本机润色服务并等它就绪；启动进度照常显示。 */
   async localPolishSettings(signal) {
     await this.waitLocalPolish(signal, (message) => {
+      if (signal.aborted) return;
       this.c.stageLabel = message;
       this.c.broadcast();
     });
+    if (signal.aborted) throw new AbortError();
     this.c.stageLabel = '';
     return { ...this.c.settings, llm: this.localPolishLlm() };
   }
