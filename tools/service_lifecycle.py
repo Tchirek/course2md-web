@@ -48,6 +48,35 @@ class IdleWatch:
                 return
 
 
+def memory_hint():
+    """How much memory the system can still hand out (RAM plus page file), for out-of-memory messages.
+
+    A model that fails to load for lack of memory looks like a crash or a cryptic assertion
+    (MKL, ggml, CUDA each word it differently). The number tells the user what to do about it.
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
+                            ("total_phys", ctypes.c_ulonglong), ("avail_phys", ctypes.c_ulonglong),
+                            ("total_page", ctypes.c_ulonglong), ("avail_page", ctypes.c_ulonglong),
+                            ("total_virtual", ctypes.c_ulonglong), ("avail_virtual", ctypes.c_ulonglong),
+                            ("avail_extended", ctypes.c_ulonglong)]
+
+            status = Status()
+            status.length = ctypes.sizeof(Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return f"系统当前可用内存（含虚拟内存）约 {status.avail_page / 2**30:.1f} GB；请关闭一些程序，或在系统设置里增大虚拟内存"
+        else:
+            available = os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+            return f"系统当前可用内存约 {available / 2**30:.1f} GB；请关闭一些程序后重试"
+    except Exception:
+        pass
+    return "请关闭一些程序，或增大虚拟内存后重试"
+
+
 def idle_message(what):
     span = f"{IDLE_SECONDS / 60:g} 分钟" if IDLE_SECONDS >= 60 else f"{IDLE_SECONDS:g} 秒"
     return f"{span}未使用，已释放{what}；下次使用时会自动重新加载"

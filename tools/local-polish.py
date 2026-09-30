@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from pins import PINS, VerifiedFiles
-from service_lifecycle import IdleWatch, idle_message, popen_bound
+from service_lifecycle import IdleWatch, idle_message, memory_hint, popen_bound
 
 ROOT = Path(os.environ['C2MD_POLISH_HOME'])
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -238,8 +238,9 @@ def llama_failure(log_path):
     except OSError:
         return '没有留下日志'
     text = '\n'.join(lines)
-    if re.search(r'out of memory|bad allocation|failed to allocate|unable to allocate', text, re.I):
-        return '内存或显存不足。关掉占内存的程序，或等转录服务空闲释放后再试'
+    # ggml reports a failed host allocation only as an assertion on the buffer it did not get
+    if re.search(r'out of memory|bad allocation|failed to allocate|unable to allocate|mem_buffer != NULL', text, re.I):
+        return f'内存或显存不足（{memory_hint()}）'
     if re.search(r"address already in use|couldn't bind", text, re.I):
         return '端口 8083 被占用（可能有残留的 llama-server）'
     errors = [line.split(' E ', 1)[-1].strip() for line in lines if ' E ' in line]

@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from pins import PINS, VerifiedFiles
-from service_lifecycle import IdleWatch, idle_message
+from service_lifecycle import IdleWatch, idle_message, memory_hint
 
 
 def state(name, message=""):
@@ -181,8 +181,7 @@ def describe(error):
     text = str(error).strip()
     # MKL / CUDA report exhausted memory in their own words; all get the same actionable message
     if isinstance(error, MemoryError) or any(word in text.lower() for word in MEMORY_WORDS):
-        return ("内存不足：系统可用内存（含虚拟内存）已耗尽，请关闭一些程序或增大虚拟内存后重试"
-                + (f"（{text}）" if text else ""))
+        return f"内存不足（{memory_hint()}）" + (f"：{text}" if text else "")
     return f"{type(error).__name__}: {text}" if text else type(error).__name__
 
 
