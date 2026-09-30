@@ -180,7 +180,7 @@ export async function chapters(info) {
       if (!Number.isFinite(t)) return null;
       return { title: String(p?.content ?? '').trim(), t };
     })
-    .filter(Boolean);
+    .filter((c) => c !== null);
 }
 
 /** @returns {HTMLVideoElement|null} */

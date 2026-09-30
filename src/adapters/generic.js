@@ -45,11 +45,13 @@ export async function meta() {
 /**
  * `<track>` 元素。带 `src` 的可以直接取；已有 cues 的（同一页面里播放器解析过的）
  * 由内容脚本本地读取，不需要网络。
+ * @returns {Promise<import('./index.js').Track[]>}
  */
 export async function tracks() {
   const el = video();
   if (!el) return [];
 
+  /** @type {import('./index.js').Track[]} */
   const out = [];
   const seen = new Set();
 
@@ -72,7 +74,6 @@ export async function tracks() {
         end: c.endTime,
         text: /** @type {VTTCue} */ (c).text,
       })),
-      fetch: null,
     });
   }
 

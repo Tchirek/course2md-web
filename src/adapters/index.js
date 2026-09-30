@@ -6,6 +6,7 @@ import * as generic from './generic.js';
 import { parseSubtitle, parseBilibili, normalizeChapters, languageLabel } from '../core/subtitles.js';
 import { SOURCE } from '../core/model.js';
 
+/** @type {Adapter[]} */
 const ADAPTERS = [youtube, bilibili, generic];
 
 /**
@@ -25,7 +26,22 @@ const ADAPTERS = [youtube, bilibili, generic];
  * @property {{start: number, end: number, text: string}[]} [inlineCues]
  */
 
+/**
+ * The shape every site adapter exports (youtube.js, bilibili.js and generic.js are checked against it).
+ * @typedef {object} Adapter
+ * @property {string} id
+ * @property {string} label
+ * @property {(loc: Location) => boolean} matches
+ * @property {() => Promise<VideoMeta>} meta
+ * @property {(info: VideoMeta, opts?: {onProgress?: (message: string) => void}) => Promise<Track[]>} tracks
+ * @property {(info: VideoMeta) => Promise<{title: string, t: number}[]>} chapters
+ * @property {() => HTMLVideoElement|null} video
+ * @property {(seconds: number) => Promise<boolean>} seek
+ * @property {() => number|null|Promise<number|null>} currentTime
+ */
+
 /** 当前页面的适配器（generic 永远匹配，所以一定会有结果）。 */
+/** @returns {Adapter} */
 export function pickAdapter(loc = location) {
   return ADAPTERS.find((a) => a.matches(loc)) ?? generic;
 }

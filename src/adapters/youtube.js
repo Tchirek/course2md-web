@@ -80,6 +80,7 @@ export async function meta() {
 /**
  * @param {unknown} [_info]
  * @param {{onProgress?: (message: string) => void}} [options] 広告待ちなど時間のかかる段階の進捗表示
+ * @returns {Promise<import('./index.js').Track[]>}
  */
 export async function tracks(_info, { onProgress } = {}) {
   const pr = await playerResponse();
@@ -152,7 +153,7 @@ export async function chapters() {
         t: ms / 1000,
       };
     })
-    .filter(Boolean);
+    .filter((c) => c !== null);
 }
 
 /** 当前页面上的 video 元素。 */
