@@ -8,15 +8,34 @@ import { SOURCE } from '../core/model.js';
 
 const ADAPTERS = [youtube, bilibili, generic];
 
+/**
+ * 适配器给出的视频信息：展示用的 Meta，外加拼接口用的编号（B 站的 aid/cid 等）。
+ * @typedef {import('../core/format.js').Meta & {videoId?: string, aid?: number, cid?: number,
+ *   chapters?: {title: string, t: number}[]}} VideoMeta
+ */
+
+/**
+ * 一条字幕轨。fetch 是去哪取（内容脚本自己取，见 readTrack）；inlineCues 是页面已经解析好的 textTracks。
+ * @typedef {object} Track
+ * @property {string} id
+ * @property {string} language
+ * @property {string} [label]
+ * @property {'manual'|'automatic'|'unknown'} kind
+ * @property {{url: string, as: 'text'|'json'}} [fetch]
+ * @property {{start: number, end: number, text: string}[]} [inlineCues]
+ */
+
 /** 当前页面的适配器（generic 永远匹配，所以一定会有结果）。 */
 export function pickAdapter(loc = location) {
   return ADAPTERS.find((a) => a.matches(loc)) ?? generic;
 }
 
+/** @param {string} siteId */
 export function adapterFor(siteId) {
   return ADAPTERS.find((a) => a.id === siteId) ?? generic;
 }
 
+/** @param {string} siteId */
 export function siteLabel(siteId) {
   return adapterFor(siteId).label;
 }
@@ -28,7 +47,7 @@ export function siteLabel(siteId) {
  * 页面同源/同站点范围内，cookie 与 Referer 天然正确，也不需要额外 host 权限。
  * LLM 与 ASR 的请求才走后台服务 worker——那个必须绕开页面的 CSP。
  *
- * @param {object} track  由 adapter.tracks() 给出
+ * @param {Track} track  由 adapter.tracks() 给出
  * @returns {Promise<import('../core/model.js').TranscriptEvent[]>}
  */
 export async function readTrack(track) {
@@ -70,6 +89,7 @@ export async function readTrack(track) {
   return parseSubtitle(text);
 }
 
+/** @param {number} sec */
 function msToStamp(sec) {
   const s = Math.max(0, Number(sec) || 0);
   const h = Math.floor(s / 3600);
@@ -84,7 +104,7 @@ function msToStamp(sec) {
  * 优先级：用户指定语言 > 页面语言 > 中文 > 英语 > 人工字幕优于自动字幕。
  * 这与 course2md 的 sort_tracks 是同一套取向。
  *
- * @param {object[]} tracks
+ * @param {Track[]} tracks
  * @param {{preferLang?:string, allowAuto?:boolean, pageLang?:string}} opts
  */
 export function pickTrack(tracks, opts = {}) {
@@ -95,7 +115,7 @@ export function pickTrack(tracks, opts = {}) {
   const pageLang = normalizeLang(opts.pageLang);
   const allowAuto = opts.allowAuto !== false;
 
-  const rank = (t) => {
+  const rank = (/** @type {Track} */ t) => {
     const lang = normalizeLang(t.language);
     let score = 0;
     if (prefer && lang.startsWith(prefer)) score -= 1000;
@@ -111,11 +131,15 @@ export function pickTrack(tracks, opts = {}) {
   return [...usable].sort((a, b) => rank(a) - rank(b))[0];
 }
 
+/** @param {unknown} code */
 function normalizeLang(code) {
   return String(code ?? '').trim().toLowerCase().replace('_', '-');
 }
 
-/** 轨道的展示名（下拉里用）。 */
+/**
+ * 轨道的展示名（下拉里用）。
+ * @param {Track} track
+ */
 export function trackLabel(track) {
   const parts = [languageLabel(track.language)];
   if (track.label && track.label !== track.language) parts.push(track.label);

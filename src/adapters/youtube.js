@@ -12,6 +12,7 @@ export function matches(loc) {
   return /(^|\.)youtube\.com$/.test(loc.hostname) && loc.pathname === '/watch';
 }
 
+/** @param {Location} loc */
 export function videoIdFrom(loc) {
   return new URLSearchParams(loc.search).get('v') ?? '';
 }
@@ -20,7 +21,8 @@ export function videoIdFrom(loc) {
  * 拿播放器响应。两条路径：
  *  1. MAIN world 桥（SPA 跳转后仍是最新的）
  *  2. 页面里的 `ytInitialPlayerResponse` 脚本标签（桥不可用时的兜底）
- * @returns {Promise<object|null>}
+ * 播放器的 JSON 是 YouTube 的内部格式，不给它定类型，读的地方都用可选链兜底。
+ * @returns {Promise<any>}
  */
 async function playerResponse() {
   const viaBridge = await callPage('yt.playerResponse');
@@ -86,6 +88,7 @@ export async function tracks(_info, { onProgress } = {}) {
   const usable = list.filter((t) => t && typeof t.baseUrl === 'string');
   if (!usable.length) return [];
 
+  /** @type {Record<string, unknown>|null} */
   let token = null;
   if (usable.some(needsToken)) {
     const videoId = String(pr?.videoDetails?.videoId ?? videoIdFrom(location));
@@ -113,6 +116,7 @@ export async function tracks(_info, { onProgress } = {}) {
     });
 }
 
+/** @param {{baseUrl: string}} track */
 function needsToken(track) {
   try {
     return (new URL(track.baseUrl).searchParams.get('exp') ?? '').split(',').includes('xpe');
@@ -121,6 +125,10 @@ function needsToken(track) {
   }
 }
 
+/**
+ * @param {string} baseUrl
+ * @param {Record<string, unknown>|null} token 页面桥取到的 pot 等参数
+ */
 function timedTextUrl(baseUrl, token) {
   const url = new URL(baseUrl);
   url.searchParams.set('fmt', 'json3');
@@ -153,7 +161,10 @@ export function video() {
   return /** @type {HTMLVideoElement|null} */ (document.querySelector('video.html5-main-video')) ?? document.querySelector('video');
 }
 
-/** 跳转到指定秒。优先用播放器 API，失败则退回 video.currentTime。 */
+/**
+ * 跳转到指定秒。优先用播放器 API，失败则退回 video.currentTime。
+ * @param {number} seconds
+ */
 export async function seek(seconds) {
   const ok = await callPage('yt.seek', [seconds]);
   if (ok) return true;

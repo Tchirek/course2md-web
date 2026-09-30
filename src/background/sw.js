@@ -32,7 +32,7 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'llm.stream') return;
   const abort = new AbortController();
   port.onDisconnect.addListener(() => abort.abort());
-  const post = (message) => { try { port.postMessage(message); } catch { /* 页面已离开 */ } };
+  const post = (/** @type {object} */ message) => { try { port.postMessage(message); } catch { /* 页面已离开 */ } };
   port.onMessage.addListener(async (payload) => {
     try {
       const reply = await chat({ ...payload, signal: abort.signal, onDelta: (delta) => post({ delta }) });
@@ -43,6 +43,11 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+/**
+ * 消息名 → 处理函数。payload 是内容脚本、弹窗、设置页发来的 JSON，在这条边界上不定类型，
+ * 各处理函数自己校验要用的字段。
+ * @type {Record<string, (payload: any, message: any, sender: chrome.runtime.MessageSender) => unknown>}
+ */
 const HANDLERS = {
   'settings.load': () => loadSettings(),
   'settings.save': (payload) => saveSettings(payload.patch ?? {}),
@@ -152,15 +157,22 @@ const HANDLERS = {
   'audio.extensions': () => supportedAudioExtensions(),
 };
 
+/** @param {'start'|'status'} action */
 function localAsr(action) {
   return localHelperRequest(`/asr/${action}`, action === 'start' ? 'POST' : 'GET', 1200);
 }
 
+/** @param {'start'|'status'} action */
 function localPolish(action) {
   return localHelperRequest(`/polish/${action}`, action === 'start' ? 'POST' : 'GET', 1500);
 }
 
 /** ヘルパーが動いていなければホスト経由で一度だけ起こして再試行する。それでも失敗するなら「未起動」ではないので、そのまま報告し起動を繰り返さない。 */
+/**
+ * @param {string} route
+ * @param {string} method
+ * @param {number} timeout 毫秒
+ */
 async function localHelperRequest(route, method, timeout) {
   await ensureLocalHelper();
   let response;
@@ -168,14 +180,16 @@ async function localHelperRequest(route, method, timeout) {
     response = await helperFetch(route, { method, signal: AbortSignal.timeout(timeout) });
   } catch (error) {
     // 令牌之类有明确原因的错误原样抛出；超时与连接失败才说成「没有应答」
-    if (error?.name !== 'TimeoutError' && error?.name !== 'TypeError') throw error;
-    throw new Error(`本机助手已在运行，但 ${route} 没有应答：${error?.message ?? error}`);
+    const failure = /** @type {{name?: string, message?: string}} */ (error);
+    if (failure?.name !== 'TimeoutError' && failure?.name !== 'TypeError') throw error;
+    throw new Error(`本机助手已在运行，但 ${route} 没有应答：${failure?.message ?? error}`);
   }
   if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
   return response.json();
 }
 
 const HELPER = 'http://127.0.0.1:8766';
+/** @type {string|null} */
 let helperToken = null;
 
 /**
@@ -185,11 +199,13 @@ let helperToken = null;
 async function knownHelperToken() {
   if (helperToken) return helperToken;
   try {
-    helperToken = (await chrome.storage.session.get('helperToken')).helperToken ?? null;
+    const stored = (await chrome.storage.session.get('helperToken')).helperToken;
+    helperToken = typeof stored === 'string' ? stored : null;
   } catch { /* 读不到就当没有 */ }
   return helperToken;
 }
 
+/** @param {string} token */
 async function rememberHelperToken(token) {
   helperToken = token;
   await chrome.storage.session.set({ helperToken: token }).catch(() => {});
@@ -198,6 +214,10 @@ async function rememberHelperToken(token) {
 /**
  * 发往本机助手的请求（/health 以外）：带上访问令牌。令牌对不上（例如重装后换了）
  * 就经原生宿主取新令牌，只重试一次。
+ */
+/**
+ * @param {string} route
+ * @param {RequestInit & {headers?: Record<string, string>}} [init]
  */
 async function helperFetch(route, init = {}) {
   const send = async () => fetch(`${HELPER}${route}`, {
@@ -224,6 +244,7 @@ const HELPER_HOST = 'com.course2md.helper';
 /** インストーラが既定で登録する拡張 ID。実際の ID が異なる場合は、案内に実 ID を含める。 */
 const DEFAULT_EXTENSION_ID = 'icceajppndlehndkedbflgimdbinmjcf';
 
+/** @param {number} timeout 毫秒 */
 function helperHealthy(timeout) {
   return fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(timeout) })
     .then((response) => response.ok, () => false);
@@ -235,10 +256,11 @@ async function ensureLocalHelper() {
   await wakeLocalHelper();
 }
 
-let wakingHelper;
+/** @type {Promise<void>|null} */
+let wakingHelper = null;
 /** ネイティブメッセージングホスト経由でローカルヘルパーを起動する。失敗時は漠然とした「起動できない」ではなく、どこで途切れたかを示すエラーを投げる。 */
 function wakeLocalHelper() {
-  wakingHelper ??= new Promise((resolve, reject) => {
+  wakingHelper ??= new Promise((/** @type {(token: unknown) => void} */ resolve, reject) => {
     chrome.runtime.sendNativeMessage(HELPER_HOST, { action: 'start' }, (reply) => {
       const failure = chrome.runtime.lastError?.message;
       if (failure) return reject(new Error(hostFailure(failure)));
@@ -249,13 +271,14 @@ function wakeLocalHelper() {
     });
   }).then(async (token) => {
     // 旧版宿主不带令牌；此时照旧继续，旧版助手也不要求令牌
-    if (/^[0-9a-f]{64}$/.test(token ?? '')) await rememberHelperToken(token);
+    if (typeof token === 'string' && /^[0-9a-f]{64}$/.test(token)) await rememberHelperToken(token);
     // ホストは起動を確認済みだが、拡張側からも確かめる。ポートを別のプログラムが握っている場合もここで分かる
     if (!await helperHealthy(2000)) throw new Error('本机宿主报告助手已启动，但扩展访问不到 127.0.0.1:8766。');
   }).finally(() => { wakingHelper = null; });
   return wakingHelper;
 }
 
+/** @param {string} message chrome.runtime.lastError 的原话 */
 function hostFailure(message) {
   if (/not found/i.test(message)) {
     return `本机助手未注册，或注册指向的文件已不存在。请在项目目录运行 ${installCommand()}。`;
@@ -275,6 +298,7 @@ function installCommand() {
  *
  * service worker 里没有 URL.createObjectURL，所以走 data: URL。
  * Markdown 是纯文本，base64 之后体积可控。
+ * @param {{filename?: string, text?: string, mime?: string}} file
  */
 async function saveFile({ filename, text, mime = 'text/markdown' }) {
   const safeName = sanitizeFilename(filename || 'notes.md');
@@ -290,6 +314,10 @@ async function saveFile({ filename, text, mime = 'text/markdown' }) {
   return { downloadId: id, filename: safeName };
 }
 
+/**
+ * 图文讲义：frames/ 下的截图与引用它们的 course.md，放在同一个文件夹里。
+ * @param {{folder?: string, markdown?: string, images?: unknown[]}} bundle
+ */
 export async function saveBundle({ folder, markdown, images }) {
   if (!Array.isArray(images) || !images.length || images.length > 5000) throw new Error('截图数量不正确');
   const name = `${sanitizeFilename(folder || 'course').replace(/\.md$/i, '')}-${Date.now().toString(36)}`;
@@ -312,6 +340,7 @@ export async function saveBundle({ folder, markdown, images }) {
   return { saved: true, folder: name, images: images.length };
 }
 
+/** @param {unknown} name */
 export function sanitizeFilename(name) {
   const cleaned = String(name)
     .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
@@ -321,6 +350,7 @@ export function sanitizeFilename(name) {
   return cleaned || 'notes.md';
 }
 
+/** @param {Uint8Array} bytes */
 function bytesToBase64(bytes) {
   let binary = '';
   const step = 0x8000; // 分块避免超出参数上限
@@ -330,7 +360,10 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-/** 消息里的音频是 ArrayBuffer 或普通数组，统一成 Uint8Array。 */
+/**
+ * 消息里的音频是 base64、ArrayBuffer 或普通数组，统一成 Uint8Array。
+ * @param {any} audio
+ */
 function toBytes(audio) {
   if (typeof audio === 'string') return Uint8Array.from(atob(audio), (char) => char.charCodeAt(0));
   if (audio instanceof Uint8Array) return audio;
@@ -340,8 +373,9 @@ function toBytes(audio) {
   return new Uint8Array(0);
 }
 
+/** @param {unknown} error */
 function describeError(error) {
-  const message = String(error?.message ?? error);
+  const message = String(/** @type {{message?: unknown}} */ (error)?.message ?? error);
   return message.length > 400 ? `${message.slice(0, 400)}…` : message;
 }
 

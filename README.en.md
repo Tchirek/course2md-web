@@ -234,7 +234,7 @@ Zero build: no bundler, no build output. Content scripts load ESM with dynamic `
 npm run check        # manifest self-check + type check + unit tests + layout assertions, all at once (same as CI)
 npm test             # unit tests only (pure logic, node --test)
 npm run check:manifest # manifest self-check: referenced files exist, the module closure is reachable from pages, permissions line up
-npm run typecheck    # tsc --checkJs over src/, strict for src/core (the code stays JS, zero build)
+npm run typecheck    # tsc --checkJs over src/, strict for core / adapters / background (the code stays JS, zero build)
 npm run check:layout # geometry assertions only: panel layout, button fills, no horizontal overflow
 npm run check:sites  # run the real extension on real YouTube / Bilibili pages (needs network, not in CI)
 npm run check:image  # check the four image densities against a real video with three scene changes

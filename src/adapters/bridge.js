@@ -6,6 +6,7 @@ const REPLY_TIMEOUT_MS = 1500;
 let seq = 0;
 const pending = new Map();
 let ready = false;
+/** @type {(() => void)[]} */
 const readyWaiters = [];
 
 window.addEventListener('message', (event) => {

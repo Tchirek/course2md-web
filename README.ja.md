@@ -234,7 +234,7 @@ course2md の「ローカル録画」の場面です。
 npm run check        # マニフェスト自己点検＋型検査＋単体テスト＋レイアウト検証を一度に（CI と同じ）
 npm test             # 単体テストだけ（純粋なロジック、node --test）
 npm run check:manifest # マニフェスト自己点検：参照先のファイルがある、モジュールの閉包がページから取れる、権限が合っている
-npm run typecheck    # tsc --checkJs で src/ を検査、src/core は strict（コードは JS のまま、ビルド不要）
+npm run typecheck    # tsc --checkJs で src/ を検査、core / adapters / background は strict（コードは JS のまま、ビルド不要）
 npm run check:layout # 幾何の検証だけ：パネルのレイアウト、ボタンの塗り、横はみ出しが無いこと
 npm run check:sites  # 本物の YouTube / Bilibili のページで本物の拡張を動かす（ネットワークが必要、CI には入れない）
 npm run check:image  # 場面が三回変わる実際の動画で、画像密度の四段階を確かめる

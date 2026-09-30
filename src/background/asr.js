@@ -51,7 +51,7 @@ export async function transcribe({
   const bytes = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
   if (!bytes.byteLength) return { ok: false, error: '音频切片是空的。' };
 
-  const attempt = async (responseFormat) => {
+  const attempt = async (/** @type {string} */ responseFormat) => {
     const form = new FormData();
     form.append('file', new Blob([/** @type {BlobPart} */ (bytes)], { type: mimeType }), fileName);
     form.append('model', model || 'whisper-1');
@@ -79,7 +79,8 @@ export async function transcribe({
     // 期限切れ（TimeoutError）は「已取消」ではなく超時として伝える
     if (signal?.aborted) return { ok: false, error: '已取消' };
     // 400/422 多半是服务端不认识 verbose_json，退回 json 再试一次
-    if (err?.status === 400 || err?.status === 422) {
+    const status = /** @type {{status?: number}} */ (err)?.status;
+    if (status === 400 || status === 422) {
       try {
         return { ok: true, data: await attempt('json') };
       } catch (retryErr) {
@@ -90,27 +91,34 @@ export async function transcribe({
   }
 }
 
-/** 把一次转写响应变成可用的结果；拿不到 segments 就交给调用方兜底。 */
+/**
+ * 把一次转写响应变成可用的结果；拿不到 segments 就交给调用方兜底。
+ * @param {any} data 服务的 JSON（各家格式不一）
+ * @returns {{text: string, segments: {start: number, end: number, text: string}[]}}
+ */
 export function parseAsrResponse(data) {
   if (!data || typeof data !== 'object') return { text: '', segments: [] };
 
   if (Array.isArray(data.segments) && data.segments.length) {
     const segments = data.segments
-      .map((s) => {
+      .map((/** @type {any} */ s) => {
         const start = Number(s?.start);
         const end = Number(s?.end);
         const text = String(s?.text ?? '').trim();
         if (!text || !Number.isFinite(start)) return null;
         return { start, end: Number.isFinite(end) && end >= start ? end : start, text };
       })
-      .filter(Boolean);
-    if (segments.length) return { text: segments.map((s) => s.text).join(' '), segments };
+      .filter((/** @type {{start: number, end: number, text: string}|null} */ s) => s !== null);
+    if (segments.length) return { text: segments.map((/** @type {{text: string}} */ s) => s.text).join(' '), segments };
   }
 
   return { text: String(data.text ?? '').trim(), segments: [] };
 }
 
-/** 本机服务的连通性探测。设置页的「测试连接」用它。 */
+/**
+ * 本机服务的连通性探测。设置页的「测试连接」用它。
+ * @param {{endpoint: string, apiKey?: string, model?: string}} args
+ */
 export async function testEndpoint({ endpoint, apiKey, model }) {
   const url = String(endpoint ?? '').trim();
   if (!url) return { ok: false, message: '还没填写端点地址。' };
@@ -123,7 +131,7 @@ export async function testEndpoint({ endpoint, apiKey, model }) {
     const json = await timedRequest(`${base}/models`, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} }, 10_000,
       async (res) => (res.ok ? res.json() : null));
     if (json) {
-      const ids = (json?.data ?? []).map((m) => m?.id).filter(Boolean);
+      const ids = (json?.data ?? []).map((/** @type {any} */ m) => m?.id).filter(Boolean);
       if (ids.length) {
         return {
           ok: true,
@@ -142,13 +150,13 @@ export async function testEndpoint({ endpoint, apiKey, model }) {
   const probe = await transcribe({
     endpoint: url,
     apiKey,
-    model,
+    model: model ?? '',
     audio: silentWav(0.1),
     mimeType: 'audio/wav',
     fileName: 'probe.wav',
   });
   if (probe.ok) return { ok: true, message: '转写请求成功，服务可用。' };
-  return { ok: false, message: probe.error, hint: probe.hint };
+  return { ok: false, message: probe.error ?? '转写请求失败', hint: probe.hint };
 }
 
 /** 生成一段 16kHz / 单声道 / 16bit 的静音 WAV，用于连通性实测。 */
@@ -158,7 +166,7 @@ export function silentWav(seconds = 0.1, sampleRate = 16000) {
   const buffer = new ArrayBuffer(44 + dataBytes);
   const view = new DataView(buffer);
 
-  const writeAscii = (offset, text) => {
+  const writeAscii = (/** @type {number} */ offset, /** @type {string} */ text) => {
     for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
   };
 
@@ -180,14 +188,19 @@ export function silentWav(seconds = 0.1, sampleRate = 16000) {
   return new Uint8Array(buffer);
 }
 
+/**
+ * @param {unknown} err
+ * @param {string} url
+ */
 function describe(err, url) {
-  const message = String(err?.message ?? err);
+  const message = String(/** @type {{message?: unknown}} */ (err)?.message ?? err);
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
     return `连不上 ${url}。确认本机服务已在运行，且地址与端口正确。`;
   }
   return message;
 }
 
+/** @param {string} url */
 function connectionHint(url) {
   return (
     `请确认 ${url} 对应的服务正在运行。` +
@@ -196,6 +209,7 @@ function connectionHint(url) {
   );
 }
 
+/** @param {Response} res */
 async function readError(res) {
   try {
     const text = await res.text();

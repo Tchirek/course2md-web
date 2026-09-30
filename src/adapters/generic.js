@@ -123,6 +123,7 @@ export async function chapters() {
   }
 }
 
+/** @param {number} seconds */
 export async function seek(seconds) {
   const el = video();
   if (!el) return false;

@@ -17,6 +17,12 @@ export const label = '哔哩哔哩';
 
 const API = 'https://api.bilibili.com/x/player/v2';
 
+/**
+ * B 站接口的 JSON（或二进制）。格式是 B 站的内部格式，不给它定类型，读的地方都用可选链兜底。
+ * @param {string} url
+ * @param {boolean} [binary]
+ * @returns {Promise<any>}
+ */
 async function biliFetch(url, binary = false) {
   try {
     const response = await fetch(url, { credentials: 'include', headers: { Accept: binary ? 'application/octet-stream' : 'application/json' } });
@@ -35,6 +41,7 @@ export function matches(loc) {
   return /(^|\.)bilibili\.com$/.test(loc.hostname) && loc.pathname.startsWith('/video/');
 }
 
+/** @param {Location} loc */
 function bvidFrom(loc) {
   const m = loc.pathname.match(/\/video\/(BV[0-9A-Za-z]+)/);
   return m ? m[1] : '';
@@ -89,7 +96,11 @@ export async function meta() {
   };
 }
 
-/** 播放器接口返回的 subtitle 与 view_points；失败时返回 null 而不是抛。 */
+/**
+ * 播放器接口返回的 subtitle 与 view_points；失败时返回 null 而不是抛。
+ * @param {import('./index.js').VideoMeta} info
+ * @returns {Promise<any>}
+ */
 async function playerV2(info) {
   if (!info.aid || !info.cid) return null;
   try {
@@ -101,28 +112,37 @@ async function playerV2(info) {
   }
 }
 
+/**
+ * @param {import('./index.js').VideoMeta} info
+ * @returns {Promise<import('./index.js').VideoMeta>}
+ */
 async function subtitleInfo(info) {
   if (!info.videoId) return info;
   try {
     const data = (await biliFetch(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(info.videoId)}`))?.data;
-    const page = Number(new URL(info.url).searchParams.get('p')) || 1;
+    const page = Number(new URL(info.url ?? location.href).searchParams.get('p')) || 1;
     return { ...info, aid: Number(data?.aid) || info.aid || 0, cid: Number(data?.pages?.[page - 1]?.cid ?? data?.cid) || info.cid || 0 };
   } catch { return info; }
 }
 
+/** @param {import('./index.js').VideoMeta} info */
 async function subtitleTracks(info) {
-  const query = new URLSearchParams({ aid: String(info.aid), bvid: info.videoId, cid: String(info.cid) });
+  const query = new URLSearchParams({ aid: String(info.aid), bvid: info.videoId ?? '', cid: String(info.cid) });
   let json;
   try {
     json = await biliFetch(`https://api.bilibili.com/x/player/wbi/v2?${query}`);
   } catch (error) {
     // 「字幕なし」と混同させない。代わりの取得元はないので理由をそのまま伝える
-    throw new MissingSourceError(`B 站字幕接口暂时不可用（${error?.message ?? error}）。`, { brief: 'B 站字幕接口暂时不可用' });
+    throw new MissingSourceError(`B 站字幕接口暂时不可用（${error instanceof Error ? error.message : error}）。`, { brief: 'B 站字幕接口暂时不可用' });
   }
   const tracks = json?.code === 0 ? json?.data?.subtitle?.subtitles : null;
   return { tracks: Array.isArray(tracks) ? tracks : [], needLogin: Boolean(json?.data?.need_login_subtitle) };
 }
 
+/**
+ * @param {import('./index.js').VideoMeta} info
+ * @returns {Promise<import('./index.js').Track[]>}
+ */
 export async function tracks(info) {
   const current = await subtitleInfo(info ?? {});
   // ページのリソース一覧にある字幕 URL は使わない。プレーヤー自身は暗号化パスで取得するため、
@@ -136,7 +156,7 @@ export async function tracks(info) {
 
   return list
     .filter((t) => t && typeof t.subtitle_url === 'string' && t.subtitle_url)
-    .map((t, i) => ({
+    .map((/** @type {any} */ t, /** @type {number} */ i) => /** @type {import('./index.js').Track} */ ({
       id: String(t.id ?? t.lan ?? i),
       language: String(t.lan ?? ''),
       label: String(t.lan_doc ?? t.lan ?? `字幕 ${i + 1}`),
@@ -144,9 +164,12 @@ export async function tracks(info) {
       // subtitle_url 常以 // 开头，补上协议
       fetch: { url: t.subtitle_url.startsWith('//') ? `https:${t.subtitle_url}` : t.subtitle_url, as: 'json' },
     }))
-    .filter((track, index, all) => all.findIndex((item) => item.fetch.url === track.fetch.url) === index);
+    .filter((track, index, all) => all.findIndex((item) => item.fetch?.url === track.fetch?.url) === index);
 }
-/** 章节 = 视频看点（view_points）。 */
+/**
+ * 章节 = 视频看点（view_points）。
+ * @param {import('./index.js').VideoMeta} info
+ */
 export async function chapters(info) {
   const data = await playerV2(info ?? {});
   const points = data?.view_points;
@@ -169,6 +192,7 @@ export function video() {
   );
 }
 
+/** @param {number} seconds */
 export async function seek(seconds) {
   const el = video();
   if (!el) return false;

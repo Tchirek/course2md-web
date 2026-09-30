@@ -14,6 +14,11 @@ const MAX_ATTEMPTS = 3;
 const REQUEST_TIMEOUT_MS = 120_000;
 
 /**
+ * 成功时一定有 content；失败时一定有 error，retryable 表示值不值得再试。
+ * @typedef {{ok: true, content: string, usage?: object} | {ok: false, error: string, retryable: boolean}} ChatResult
+ */
+
+/**
  * 发一次对话请求。
  *
  * 重试策略：网络错误与 429/5xx 重试；4xx（除 429）是请求本身的问题，
@@ -27,7 +32,7 @@ const REQUEST_TIMEOUT_MS = 120_000;
  * @param {(delta: string) => void} [args.onDelta] 渡すとストリーミングになり、断片ごとに届ける
  * @param {AbortSignal} [args.signal]
  * @param {number} [args.timeoutMs] 無応答で打ち切るまでの時間（テスト用に短くできる）
- * @returns {Promise<{ok:boolean, content?:string, usage?:object, error?:string, retryable?:boolean}>}
+ * @returns {Promise<ChatResult>}
  */
 export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, timeoutMs = REQUEST_TIMEOUT_MS }) {
   const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
@@ -41,12 +46,14 @@ export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, 
   const unsafe = plaintextKeyProblem(endpoint, apiKey);
   if (unsafe) return { ok: false, error: unsafe, retryable: false };
 
+  /** @type {Record<string, string>} */
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   const attempts = onDelta ? 1 : MAX_ATTEMPTS;
   let lastError = '未知错误';
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    /** @type {{ok: boolean, content?: unknown, usage?: object, error?: string, retryable?: boolean}} */
     let outcome;
     try {
       outcome = await timedRequest(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal }, timeoutMs,
@@ -64,7 +71,8 @@ export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, 
       // 利用者の取消だけは即座に終える。期限切れと接続失敗は再試行の対象
       // （以前は期限切れも AbortError 扱いで「已取消」になり、再試行されなかった）
       if (signal?.aborted) return { ok: false, error: '已取消', retryable: false };
-      outcome = { ok: false, error: err?.name === 'TimeoutError' ? err.message : describeFetchError(err, endpoint), retryable: true };
+      const error = /** @type {{name?: string, message?: string}} */ (err);
+      outcome = { ok: false, error: error?.name === 'TimeoutError' ? String(error.message) : describeFetchError(err, endpoint), retryable: true };
     }
     if (outcome.ok) {
       if (typeof outcome.content !== 'string') {
@@ -72,7 +80,7 @@ export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, 
       }
       return { ok: true, content: outcome.content, usage: outcome.usage };
     }
-    lastError = outcome.error;
+    lastError = outcome.error ?? lastError;
     if (!outcome.retryable) return { ok: false, error: lastError, retryable: false };
     // 最後の試行の後は待たずに返す
     if (attempt < attempts) await backoff(attempt);
@@ -80,8 +88,14 @@ export async function chat({ baseUrl, apiKey, model, messages, signal, onDelta, 
   return { ok: false, error: lastError, retryable: true };
 }
 
+/**
+ * 读 SSE 流，拼出全文；每收到一片就交给 onDelta，并续上无应答期限。
+ * @param {Response} res
+ * @param {(delta: string) => void} onDelta
+ * @param {() => void} keepAlive
+ */
 async function readStream(res, onDelta, keepAlive) {
-  const reader = res.body.getReader();
+  const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const decoder = new TextDecoder();
   let pending = '';
   let content = '';
@@ -112,9 +126,13 @@ async function readStream(res, onDelta, keepAlive) {
   return content;
 }
 
-/** 把 fetch 的失败翻译成用户能照着修的提示。 */
+/**
+ * 把 fetch 的失败翻译成用户能照着修的提示。
+ * @param {unknown} err
+ * @param {string} endpoint
+ */
 export function describeFetchError(err, endpoint) {
-  const message = String(err?.message ?? err);
+  const message = String(/** @type {{message?: unknown}} */ (err)?.message ?? err);
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
     return (
       `连不上 ${endpoint}。检查地址是否正确；` +
@@ -125,6 +143,7 @@ export function describeFetchError(err, endpoint) {
   return message;
 }
 
+/** @param {Response} res */
 async function readErrorBody(res) {
   try {
     const text = await res.text();
@@ -142,6 +161,7 @@ async function readErrorBody(res) {
   }
 }
 
+/** @param {number} attempt 第几次（从 1 起） */
 function backoff(attempt) {
   // 简单指数退避：400ms / 1200ms
   const ms = 400 * 3 ** (attempt - 1);
@@ -152,7 +172,7 @@ function backoff(attempt) {
  * 探测一个端点是否可用：拉一次 /models，失败就退化成发一条最小对话请求。
  * 设置页的「测试连接」用它。
  *
- * @param {object} args 同 chat
+ * @param {{baseUrl: string, apiKey: string, model: string}} args 同 chat
  * @returns {Promise<{ok:boolean, message:string, models?:string[]}>}
  */
 export async function testConnection({ baseUrl, apiKey, model }) {
@@ -164,7 +184,7 @@ export async function testConnection({ baseUrl, apiKey, model }) {
     const json = await timedRequest(`${base}/models`, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} }, 15_000,
       async (res) => (res.ok ? res.json() : null));
     if (json) {
-      const ids = (json?.data ?? []).map((m) => m?.id).filter(Boolean);
+      const ids = (json?.data ?? []).map((/** @type {any} */ m) => m?.id).filter(Boolean);
       if (ids.length && model && !ids.includes(model)) {
         return {
           ok: true,
@@ -188,5 +208,5 @@ export async function testConnection({ baseUrl, apiKey, model }) {
     ],
   });
   if (probe.ok) return { ok: true, message: `对话请求成功，模型回复：${probe.content.trim().slice(0, 40)}` };
-  return { ok: false, message: probe.error };
+  return { ok: false, message: 'error' in probe ? probe.error : '' };
 }

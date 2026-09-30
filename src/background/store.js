@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS, withDefaults, normalizeSettings } from '../core/setti
 
 const KEY = 'settings';
 
-/** @returns {Promise<object>} 已补齐默认值的设置 */
+/** @returns {Promise<import('../core/settings.js').Settings>} 已补齐默认值的设置 */
 export async function loadSettings() {
   const stored = await chrome.storage.local.get(KEY);
   return withDefaults(stored?.[KEY]);
@@ -27,6 +27,10 @@ export async function resetSettings() {
   return settings;
 }
 
+/**
+ * @param {Record<string, any>} base 就地修改
+ * @param {unknown} patch
+ */
 function deepMerge(base, patch) {
   if (!patch || typeof patch !== 'object') return base;
   for (const [key, value] of Object.entries(patch)) {
@@ -43,7 +47,10 @@ function deepMerge(base, patch) {
   return base;
 }
 
-/** 设置变化广播给所有打开的标签页与弹窗，让 UI 立刻跟上。 */
+/**
+ * 设置变化广播给所有打开的标签页与弹窗，让 UI 立刻跟上。
+ * @param {(settings: import('../core/settings.js').Settings) => void} handler
+ */
 export function onSettingsChanged(handler) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes[KEY]) return;

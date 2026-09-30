@@ -6,6 +6,7 @@
 //! 「超時」と「利用者の取消」を取り違えない。
 
 export class TimeoutError extends Error {
+  /** @param {number} ms */
   constructor(ms) {
     super(`请求超时（${Math.round(ms / 1000)} 秒没有响应）`);
     this.name = 'TimeoutError';
@@ -26,6 +27,7 @@ export class TimeoutError extends Error {
  */
 export async function timedRequest(url, init, ms, consume) {
   const deadline = new AbortController();
+  /** @type {ReturnType<typeof setTimeout>|undefined} */
   let timer;
   const keepAlive = () => {
     clearTimeout(timer);
