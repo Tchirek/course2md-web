@@ -1,6 +1,33 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/banner-dark.svg">
+  <img alt="course2md：视频 → 图文讲义" src="docs/media/banner-light.svg" width="100%">
+</picture>
+
+**简体中文** · [English](README.en.md) · [日本語](README.ja.md)
+
+[![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
+![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
+![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
+![Zero build](https://img.shields.io/badge/build-zero--step-246a50?style=flat-square)
+![tsc --checkJs](https://img.shields.io/badge/types-tsc%20----checkJs-3178c6?style=flat-square&logo=typescript&logoColor=white)
+![Local-first ASR](https://img.shields.io/badge/ASR-local--first-246a50?style=flat-square)
+[![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/main)
+
+</div>
+
 # course2md — 浏览器插件版
 
 把视频页面变成**带画面、时间戳、跳转和可选校对**的讲义。图文下载包含 `course.md` 与 `frames/` 截图。
+
+<p align="center">
+  <img src="docs/media/demo-launch.gif" alt="点标题末尾的 ↗，浮窗先出文字，再补上课件截图" width="880">
+  <br>
+  <sub>点标题末尾的 ↗ 即开始：几秒内先出文字，截图随后补齐（等截图的那段已快进）</sub>
+</p>
 
 这是 [mizorewww/course2md](https://github.com/mizorewww/course2md) 的浏览器版本：
 它把「视频 → 图文讲义」搬进浏览器。平台字幕与可直接读取的普通视频不需要外部工具；
@@ -22,7 +49,64 @@ YouTube、B 站的快速音轨提取可选用 `yt-dlp` 和 `ffmpeg`。文字来�
 - 还在生成时也能点复制或下载：按钮变成虚线框的「完成后复制」「完成后下载」，全部完成（含截图与润色）的一刻自动执行；再点一次取消。
 - 扩展代码更新后没重新加载时，从页面发起的生成会先自动重新加载扩展、刷新页面，再接着生成。
 
+<table>
+  <tr>
+    <th width="50%">还在生成就点复制、下载：完成的一刻自动执行</th>
+    <th width="50%">图片密度随时切换：无／少／默认／多</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/media/demo-deferred.gif" alt="生成中点复制与下载，按钮变为虚线框的「完成后复制」「完成后下载」，完成时显示「已复制」「已保存」"></td>
+    <td align="center"><img src="docs/media/demo-density.gif" alt="在浮窗里依次切换图片密度"></td>
+  </tr>
+</table>
+
+### 生成的讲义
+
+图文下载得到一个文件夹：
+
+```text
+<视频标题>/
+├── course.md
+└── frames/
+    ├── slide_0001.jpg
+    ├── slide_0002.jpg
+    └── …
+```
+
+`course.md` 的开头（真实输出节选，长段落从中截断）：
+
+```markdown
+# 2. Branching and Iteration
+
+- 作者：MIT OpenCourseWare
+- 时长：43:30
+- 来源：[https://www.youtube.com/watch?v=0jljZRnHwOI](https://www.youtube.com/watch?v=0jljZRnHwOI)
+- 文字来源：平台字幕 · 97 段
+- 由 course2md-web 生成
+
+---
+
+## [00:00](https://www.youtube.com/watch?v=0jljZRnHwOI&t=0)
+
+![视频 00:00 的截图](frames/slide_0001.jpg)
+
+[00:00](https://www.youtube.com/watch?v=0jljZRnHwOI&t=0) The following content is provided under a Creative Commons license. …
+
+[00:31](https://www.youtube.com/watch?v=0jljZRnHwOI&t=31) PROFESSOR: All right. Let's get started, everyone. So, good afternoon. Welcome to the second lecture of 60001 and also of 600. …
+
+![视频 01:00 的截图](frames/slide_0002.jpg)
+
+[01:00](https://www.youtube.com/watch?v=0jljZRnHwOI&t=60) And I think the main takeaway from the last lecture is really that a computer only does what it is told, right? …
+```
+
 ## 显示与处理
+
+浮窗可以拖到屏幕最右边吸附成全高侧栏，配色跟随系统深浅色：
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/panel-dark.png">
+  <img alt="吸附成全高侧栏的浮窗，左边是正在播放的课程，右边是带截图与时间戳的讲义" src="docs/media/panel-light.png">
+</picture>
 
 | 选项 | 默认 | 行为 |
 | --- | --- | --- |
@@ -151,6 +235,7 @@ npm run check:sites  # 在真实 YouTube / B 站页面上跑真扩展（需要�
 npm run check:image  # 用三次场景变化的实际视频检查四档图片密度
 npm run shots        # 各状态截图 → tools/shots/
 npm run pack         # 先跑完整检查，通过才打出两个发布包到 dist/
+npm run media        # 在真实 YouTube 页面上用本扩展录制 README 的演示素材 → docs/media/
 npm run icons        # 重新生成扩展图标（自己栅格化 + 自己编码 PNG，无原生依赖）
 npm run serve        # 自测服务器：http://127.0.0.1:8787/tools/selftest.html
 ```
@@ -182,3 +267,7 @@ manifest 里出现，`web_accessible_resources` 覆盖不到就会在运行时�
 MIT，全文见 `LICENSE`。第三方组件（随包分发的与运行时下载的）及其许可列在 `THIRD_PARTY_NOTICES.md`。
 设计令牌取自 kill-ai-slop（Apache-2.0），数值原样保留，出处写在
 `src/ui/tokens.css` 的注释里。繁简转换使用 opencc-js，许可文件随 `src/vendor/` 提供。
+
+README 里的动图与截图都由 `npm run media` 用本扩展在真实 YouTube 页面上录制，没有合成画面。
+演示课程为 MIT OpenCourseWare《6.0001 Introduction to Computer Science and Programming in Python》（Fall 2016，Dr. Ana Bell），
+按 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) 使用。
