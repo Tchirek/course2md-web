@@ -14,6 +14,7 @@ import { imageBundle, markdownOf, plainTextOf } from './exporter.js';
 import { loadSession, saveSession, sessionKey } from './session-cache.js';
 import { PolishCoordinator } from './polish-coordinator.js';
 import { FrameLoader } from './frame-loader.js';
+import { ensureFreshCode, extensionGone, resumeAfterExtensionReload, takeResumeRequest } from './freshness.js';
 
 const POLL_MS = 1500;
 /** 提前润色起步的最少事件数：攒够一点内容就开始，不等转录全部结束。 */
@@ -45,6 +46,8 @@ export class Controller {
     this.autoTimer = null;
     // 点过「生成笔记」后才允许切换视频自动生成；关闭浮窗即失效
     this.autoRunArmed = false;
+    // 只作用于下一次生成的临时选择（如标题旁的按钮指定优先用平台字幕），不改设置
+    this.nextRunOverrides = null;
     this.panelDismissed = false;
     this.polishAbort = null;
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
@@ -145,6 +148,18 @@ export class Controller {
       if (this.imagesPending) this.frames.refreshImages();
     }
     this.broadcast();
+
+    // 扩展重新加载时没做完的生成：页面刷新后接着做
+    const resume = takeResumeRequest(this.urlKey);
+    if (resume) {
+      this.nextRunOverrides = resume.overrides ?? null;
+      this.autoRunArmed = true;
+      this.status = 'loading';
+      this.panelDismissed = false;
+      this.panel.mount();
+      this.panel.setState(this.panelState());
+      this.scheduleAutoRun();
+    }
   }
 
   currentUrlKey() {
@@ -302,6 +317,8 @@ export class Controller {
   async run() {
     if (this.status === 'running') return { status: 'running' };
     clearTimeout(this.autoTimer);
+    const overrides = this.nextRunOverrides ?? {};
+    this.nextRunOverrides = null;
 
     this.abort?.abort();
     this.imageAbort?.abort();
@@ -330,6 +347,10 @@ export class Controller {
     this.panelDismissed = false;
     this.panel.mount();
     this.broadcast();
+
+    // 后台若还是旧代码（改了文件却没重载扩展），新旧不合会出各种怪错：先重载扩展、刷新页面再接着生成
+    if (await ensureFreshCode()) return this.resumeAfterReload(overrides);
+    if (runAbort.signal.aborted || this.abort !== runAbort) return { status: 'stale' };
 
     try {
       const meta = await this.safeMeta(adapter);
@@ -363,7 +384,7 @@ export class Controller {
       };
 
       let built;
-      if (this.settings.source === 'asr') {
+      if ((overrides.source ?? this.settings.source) === 'asr') {
         built = await runAsrPipeline(common);
       } else {
         try {
@@ -414,6 +435,8 @@ export class Controller {
       this.finalizingPolish = false;
     } catch (error) {
       if (this.abort !== runAbort) return { status: 'stale' };
+      // 途中扩展被重新加载（例如后台发现自己是旧代码而自行重载）：刷新页面接着生成
+      if (extensionGone()) return this.resumeAfterReload(overrides);
       if (error instanceof AbortError || runAbort.signal.aborted) {
         this.status = 'idle';
         this.error = null;
@@ -436,6 +459,16 @@ export class Controller {
     return { status: this.status, error: this.error };
   }
 
+
+  /** 扩展正在重新加载：面板说明缘由，扩展起来后刷新页面、接着生成。 */
+  resumeAfterReload(overrides) {
+    this.status = 'running';
+    this.stageLabel = '扩展已更新，正在重新加载页面后继续';
+    this.stageRatio = null;
+    this.panel.setState({ status: 'running', stageLabel: this.stageLabel, stageRatio: null });
+    resumeAfterExtensionReload({ page: this.urlKey, overrides });
+    return { status: 'running' };
+  }
 
   /** 关闭浮窗：自动生成随之失效，直到用户再次手动点生成。 */
   closePanel() {

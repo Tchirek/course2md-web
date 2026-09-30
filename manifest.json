@@ -57,6 +57,8 @@
         "src/ui/*.css",
         "src/ui/controls.js",
         "src/ui/icons.js",
+        "src/ui/freshness.html",
+        "src/ui/freshness.js",
         "src/vendor/opencc-t2cn.js"
       ],
       "matches": ["<all_urls>"]

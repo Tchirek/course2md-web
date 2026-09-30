@@ -44,14 +44,19 @@ export async function recordLoadedCode() {
 }
 
 /**
- * ディスク上のコードが読み込み時から変わっていれば拡張を読み込み直す。直すなら true。
- * 記録が無い（指紋を記録しない旧版で読み込まれた）ときも読み込み直す。循環しないよう 60 秒に一回まで。
+ * ディスク上のコードが読み込み時から変わっているか。記録が無い（指紋を記録しない旧版で
+ * 読み込まれた）ときも変わったとみなす。循環しないよう、直前 60 秒に読み込み直していれば false。
  */
-export async function reloadIfCodeChanged() {
+export async function codeIsStale() {
   if (!isUnpacked()) return false;
   const { loadedCode, lastCodeReload = 0 } = await chrome.storage.local.get(['loadedCode', 'lastCodeReload']);
   if (Date.now() - Number(lastCodeReload) < 60_000) return false;
-  if (loadedCode === await codeFingerprint()) return false;
+  return loadedCode !== await codeFingerprint();
+}
+
+/** 古ければ拡張を読み込み直す。直すなら true。 */
+export async function reloadIfCodeChanged() {
+  if (!await codeIsStale()) return false;
   await chrome.storage.local.set({ lastCodeReload: Date.now() });
   chrome.runtime.reload();
   return true;
