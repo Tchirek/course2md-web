@@ -105,16 +105,21 @@ B 站走 `api.bilibili.com/x/player/wbi/v2` 的 `subtitle.subtitle_url`。`/x/pl
 内容脚本的源就是页面本身，一切天然正确，也不需要额外的 host 权限。只有 LLM 和 ASR
 的请求才走后台——那两个必须绕开页面的 `connect-src` CSP。
 
-**滚动字幕去重是个真问题。** YouTube 自动字幕是滑动窗口式的：
+**滚动字幕按整行收拢，只在真滚动的字幕里做。** YouTube 自动字幕的 VTT 是「行送」式的：
+每条 cue 把上一条的末行原样重复在第一行，第二行才是新词（中间还夹着 10ms 的停留 cue）：
 
 ```
-大家好 / 大家好今天 / 今天讲线性代数
+the following content is provided under
+the following content is provided under / a Creative Commons license your support
 ```
 
-只比较前缀不够——第三条与第二条共享的是**边界**「今天」。所以 `dedupeRolling` 既处理
-包含关系，也做后缀-前缀重叠合并，并要求重叠至少 2 个字符（否则「好」+「好奇」这种
-恰好同字开头但其实是两句话的情况会被误合并，直接丢字）。只在时间紧邻（< 0.6 秒）时
-合并，避免删掉讲师真的重复讲的话。
+重复一定是**整行**的。早先按字符找「前一条的结尾 = 后一条的开头」来拼接，人工字幕里首尾
+相接的两句也会被拼上（"So this is the plan" + "and then…" → "pland then…"），实测
+README 按 7 词一条切成 cue 有 2.7% 的边界被改坏；插件实际取的 json3 也被改坏 30 处。
+所以 `collapseCues` 先从 cue 序列本身判断是否滚动（相邻 cue 半数以上重复上一条的整行），
+是才去掉重复的行，空白 cue 视为清屏；否则与原版一样只合并时间上接续的同一句。json3、
+B 站 JSON、timedtext XML 本身不重复，一律不合并。43 分钟的实物课程上，VTT 收拢后与同一
+轨道的 json3 逐词一致，人工字幕式的切分（中英文）一字不改。
 
 ### 本地模型转录
 

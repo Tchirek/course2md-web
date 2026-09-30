@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 
 import {
   parseVtt, parseSrt, parseJson3, parseTimedTextXml, parseBilibili, overrunsDuration,
-  parseSubtitle, dedupeRolling, cleanCueText, parseCueTime, normalizeChapters,
+  parseSubtitle, looksRolling, cleanCueText, parseCueTime, normalizeChapters,
   parseChaptersVtt, languageLabel,
 } from '../src/core/subtitles.js';
+import { readFileSync } from 'node:fs';
 import { coalesce } from '../src/core/paragraphs.js';
 import { planChunks } from '../src/core/chunk.js';
 import { buildMessages, parsePolishResponse, applyPolish } from '../src/core/prompt.js';
@@ -68,46 +69,150 @@ cue-1
   assert.equal(events[1].end, 5);
 });
 
-test('parseVtt 合并 YouTube 自动字幕的滑动窗口重复', () => {
-  // 真实形态：同一句话被切成时间重叠的若干条，相邻两条共享边界
-  const vtt = `WEBVTT
+// 实物：MIT OpenCourseWare 6.0001 第 2 讲（CC BY-NC-SA 4.0）YouTube 自动字幕的 VTT 原样摘录。
+// 每条 cue 把上一条的末行原样重复在第一行、第二行才是新词，中间夹着 10ms 的「停留」cue；
+// 空白 cue 表示画面清空（其后再说一次的 okay 是真的重复）。期望值取自同一轨道的 json3 原文。
+const YOUTUBE_AUTO_VTT = [
+  'WEBVTT',
+  'Kind: captions',
+  'Language: en',
+  '',
+  '00:00:00.680 --> 00:00:02.550 align:start position:0%',
+  ' ',
+  'the<00:00:00.840><c> following</c><00:00:01.319><c> content</c><00:00:01.760><c> is</c><00:00:02.000><c> provided</c><00:00:02.320><c> under</c>',
+  '',
+  '00:00:02.550 --> 00:00:02.560 align:start position:0%',
+  'the following content is provided under',
+  ' ',
+  '',
+  '00:00:02.560 --> 00:00:05.269 align:start position:0%',
+  'the following content is provided under',
+  'a<00:00:02.720><c> Creative</c><00:00:03.120><c> Commons</c><00:00:03.560><c> license</c><00:00:04.560><c> your</c><00:00:04.839><c> support</c>',
+  '',
+  '00:00:05.269 --> 00:00:05.279 align:start position:0%',
+  'a Creative Commons license your support',
+  ' ',
+  '',
+  '00:00:05.279 --> 00:00:07.389 align:start position:0%',
+  'a Creative Commons license your support',
+  'will<00:00:05.480><c> help</c><00:00:05.680><c> MIT</c><00:00:06.120><c> open</c><00:00:06.440><c> courseware</c><00:00:07.000><c> continue</c>',
+  '',
+  '00:00:07.389 --> 00:00:07.399 align:start position:0%',
+  'will help MIT open courseware continue',
+  ' ',
+  '',
+  '00:09:28.110 --> 00:09:28.120 align:start position:0%',
+  ' ',
+  ' ',
+  '',
+  '00:09:28.120 --> 00:09:32.110 align:start position:0%',
+  ' ',
+  'okay',
+  '',
+  '00:09:32.110 --> 00:09:32.120 align:start position:0%',
+  ' ',
+  ' ',
+  '',
+  '00:09:32.120 --> 00:09:34.269 align:start position:0%',
+  ' ',
+  'okay',
+  '',
+  '00:09:34.269 --> 00:09:34.279 align:start position:0%',
+  'okay',
+  ' ',
+  '',
+  '00:09:34.279 --> 00:09:36.790 align:start position:0%',
+  'okay',
+  'so<00:09:35.279><c> printing</c><00:09:35.640><c> things</c><00:09:35.800><c> out</c><00:09:35.920><c> to</c><00:09:36.079><c> the</c><00:09:36.240><c> console</c><00:09:36.560><c> is</c>',
+  '',
+].join('\n');
 
-00:00:01.000 --> 00:00:02.000
-<c>大家好</c>
+const words = (events) => events.map((e) => e.text).join(' ').split(/\s+/).filter(Boolean);
 
-00:00:02.000 --> 00:00:03.000
-<c>大家好</c><c>今天</c>
-
-00:00:03.000 --> 00:00:04.000
-<c>今天</c><c>讲线性代数</c>
-
-00:00:05.000 --> 00:00:06.000
-完全不同的一句
-`;
-  const events = parseVtt(vtt);
-  assert.equal(events.length, 2, '前三条应合并成一条');
-  assert.equal(events[0].text, '大家好今天讲线性代数');
-  assert.equal(events[0].start, 1, '合并后起点取最早的');
-  assert.equal(events[0].end, 4, '合并后终点取最晚的');
-  assert.equal(events[1].text, '完全不同的一句');
+test('parseVtt 按行收拢 YouTube 自动字幕的滚动重复，结果与 json3 原文逐词一致', () => {
+  const events = parseVtt(YOUTUBE_AUTO_VTT);
+  assert.equal(
+    words(events).join(' '),
+    'the following content is provided under a Creative Commons license your support ' +
+    'will help MIT open courseware continue okay okay so printing things out to the console is',
+  );
+  // 每条新行是一条事件，从它出现的那一刻开始；停留 cue 只把结束时间顺延
+  assert.deepEqual(events.slice(0, 3).map((e) => [e.start, e.end]), [[0.68, 2.56], [2.56, 5.279], [5.279, 7.399]]);
 });
 
-test('dedupeRolling 只在重叠足够长时才合并', () => {
-  // 只共享一个「好」字，不足以判定为同一次滚动
-  const events = dedupeRolling([
-    { start: 0, end: 1, text: '好' },
-    { start: 1.1, end: 2, text: '好奇' },
-  ]);
-  assert.equal(events.length, 2, '单字重叠应视为无关');
+test('人手字幕首尾相接也不会被拼接：评审给出的三组与逐字重叠', () => {
+  const pairs = [
+    ['So this is the plan', 'and then we iterate'],
+    ['we are going to', 'together build this'],
+    ['这是第一个问题', '问题的关键在于'],
+    ['with the', 'them today'],
+  ];
+  for (const [a, b] of pairs) {
+    const srt = `1\n00:00:00,000 --> 00:00:02,000\n${a}\n\n2\n00:00:02,000 --> 00:00:04,000\n${b}\n`;
+    assert.deepEqual(parseSrt(srt).map((e) => e.text), [a, b]);
+  }
 });
 
-test('dedupeRolling 不会删掉讲师真的重复讲的话', () => {
-  // 间隔 5 秒的两次「很好」，不是滚动字幕，必须都保留
-  const events = dedupeRolling([
-    { start: 0, end: 1, text: '很好' },
-    { start: 6, end: 7, text: '很好' },
+test('把真实正文切成首尾相接的 cue，解析后一字不差（英文按词、中文按字）', () => {
+  const two = (n) => String(n).padStart(2, '0');
+  const stamp = (t) => `${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)},000`;
+  const cuesOf = (units, size, joiner) => {
+    let srt = '';
+    for (let i = 0, n = 1; i < units.length; i += size, n++) {
+      srt += `${n}\n${stamp((n - 1) * 2)} --> ${stamp(n * 2)}\n${units.slice(i, i + size).join(joiner)}\n\n`;
+    }
+    return srt;
+  };
+  // 标签与实体会被字幕清理掉，先去掉，只留正文
+  const en = readFileSync(new URL('../README.en.md', import.meta.url), 'utf8')
+    .replace(/<[^>]*>|&[#\w]+;|[<>]/g, ' ').split(/\s+/).filter(Boolean);
+  for (const size of [5, 7, 9]) {
+    assert.deepEqual(words(parseSrt(cuesOf(en, size, ' '))), en, `英文 ${size} 词一条`);
+  }
+  const zh = [...readFileSync(new URL('../README.md', import.meta.url), 'utf8').replace(/[\s\x00-\x7f]/g, '')];
+  for (const size of [8, 12, 16]) {
+    assert.equal(parseSrt(cuesOf(zh, size, '')).map((e) => e.text).join(''), zh.join(''), `中文 ${size} 字一条`);
+  }
+});
+
+test('逐字展开的字幕（同一行越写越长）只在词边界处收拢', () => {
+  const growing = parseSrt([
+    '1\n00:00:00,000 --> 00:00:01,000\n大家好\n',
+    '2\n00:00:01,000 --> 00:00:02,000\n大家好今天\n',
+    '3\n00:00:02,000 --> 00:00:03,000\n大家好今天讲线性代数\n',
+  ].join('\n'));
+  assert.deepEqual(growing.map((e) => [e.text, e.start, e.end]), [['大家好今天讲线性代数', 0, 3]]);
+  // "to" 并不是 "together" 的一个词：不能当作同一行的延长
+  const cues = [
+    { start: 0, end: 1, lines: ['we are going to'] },
+    { start: 1, end: 2, lines: ['we are going together'] },
+    { start: 2, end: 3, lines: ['build this'] },
+  ];
+  assert.equal(looksRolling(cues), false);
+});
+
+test('不滚动的字幕只合并时间上接续的同一句（与原版 subtitle.rs 一致）', () => {
+  const srt = '1\n00:00:01,000 --> 00:00:02,000\n机器学习是\n\n2\n00:00:02,000 --> 00:00:03,000\n机器学习是\n\n' +
+    '3\n00:00:03,000 --> 00:00:04,000\n一门人工智能分支\n\n4\n00:00:09,000 --> 00:00:10,000\n一门人工智能分支\n';
+  const events = parseSrt(srt);
+  assert.deepEqual(events.map((e) => [e.text, e.start, e.end]), [
+    ['机器学习是', 1, 3],
+    ['一门人工智能分支', 3, 4],
+    // 隔了 5 秒又说一次，是讲师真的重复，必须保留
+    ['一门人工智能分支', 9, 10],
   ]);
-  assert.equal(events.length, 2);
+});
+
+test('json3 不做任何合并：事件时间重叠是二行显示，不是重复', () => {
+  const events = parseJson3({
+    events: [
+      { tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'okay' }] },
+      { tStartMs: 2000, dDurationMs: 4000, segs: [{ utf8: 'okay' }] },
+      { tStartMs: 3000, dDurationMs: 4000, segs: [{ utf8: 'with the' }] },
+      { tStartMs: 4000, dDurationMs: 4000, segs: [{ utf8: 'them today' }] },
+    ],
+  });
+  assert.deepEqual(events.map((e) => e.text), ['okay', 'okay', 'with the', 'them today']);
 });
 
 // ---------- SRT ----------

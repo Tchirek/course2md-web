@@ -56,34 +56,11 @@ export function parseCueTime(value) {
 
 /**
  * WebVTT。处理 NOTE/STYLE/REGION 块、cue 标识行、时间轴后的定位设置、
- * 以及 YouTube 自动字幕的滚动重复（`<c>` 逐词高亮会产生同一句反复出现）。
+ * 以及 YouTube 自动字幕的滚动重复（见 collapseCues）。
  * @param {string} text
  */
 export function parseVtt(text) {
-  const body = String(text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const events = [];
-  // 块之间用空行分隔；NOTE/STYLE/REGION 整块丢弃
-  for (const block of body.split(/\n{2,}/)) {
-    const lines = block.split('\n').filter((l) => l.trim() !== '');
-    if (!lines.length) continue;
-    if (/^(NOTE|STYLE|REGION|WEBVTT)\b/i.test(lines[0].trim())) continue;
-
-    // cue id 行可有可无，时间轴行是第一条含 --> 的行
-    const timeIdx = lines.findIndex((l) => l.includes('-->'));
-    if (timeIdx < 0) continue;
-    const [rawStart, rest] = lines[timeIdx].split('-->');
-    const start = parseCueTime(rawStart);
-    // 时间轴后面可能跟 "align:start position:0%" 之类的设置，取第二段里的第一个时间
-    const endToken = rest.trim().split(/\s+/)[0];
-    const end = parseCueTime(endToken);
-    if (start === null || end === null) continue;
-
-    const textLines = lines.slice(timeIdx + 1);
-    const cleaned = cleanCueText(textLines.join('\n'));
-    if (cleaned === '') continue;
-    events.push({ start, end, text: cleaned });
-  }
-  return dedupeRolling(events);
+  return collapseCues(readCues(text, true));
 }
 
 /**
@@ -91,27 +68,48 @@ export function parseVtt(text) {
  * @param {string} text
  */
 export function parseSrt(text) {
+  return collapseCues(readCues(text, false));
+}
+
+/**
+ * @typedef {{start:number, end:number, lines:string[]}} Cue
+ */
+
+/**
+ * VTT / SRT の cue を読む。本文は行ごとに整え、空行は落とす（行の区切りは滚动の判定に使う）。
+ * 本文が空の cue も残す：流れる字幕ではそれが「画面を消した」印になる。
+ * @param {string} text
+ * @param {boolean} vtt NOTE/STYLE/REGION/WEBVTT のブロックを読み飛ばすか
+ * @returns {Cue[]}
+ */
+function readCues(text, vtt) {
   const body = String(text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const events = [];
+  const cues = [];
+  // 块之间用空行分隔
   for (const block of body.split(/\n{2,}/)) {
     const lines = block.split('\n').filter((l) => l.trim() !== '');
     if (!lines.length) continue;
+    if (vtt && /^(NOTE|STYLE|REGION|WEBVTT)\b/i.test(lines[0].trim())) continue;
+    // cue id 行可有可无，时间轴行是第一条含 --> 的行
     const timeIdx = lines.findIndex((l) => l.includes('-->'));
     if (timeIdx < 0) continue;
     const [rawStart, rest] = lines[timeIdx].split('-->');
     const start = parseCueTime(rawStart);
+    // 时间轴后面可能跟 "align:start position:0%" 之类的设置，取第二段里的第一个时间
     const end = parseCueTime(rest.trim().split(/\s+/)[0]);
     if (start === null || end === null) continue;
-    const cleaned = cleanCueText(lines.slice(timeIdx + 1).join('\n'));
-    if (cleaned === '') continue;
-    events.push({ start, end, text: cleaned });
+    cues.push({ start, end, lines: lines.slice(timeIdx + 1).map(cleanCueText).filter((line) => line !== '') });
   }
-  return dedupeRolling(events);
+  return cues;
 }
 
 /**
  * YouTube json3（`baseUrl + &fmt=json3`）。
  * 没有 segs 的事件是定位/换行事件，跳过。
+ *
+ * 去重はしない。自動字幕の json3 も一語ずつ新しい文字だけを運び、同じ文字を二度は運ばない
+ * （二行表示のため時間は前後の事件と重なるが、それは表示の都合で繰り返しではない）。
+ * 実物の 43 分の講義で確かめた：以前の重なり併合は json3 に 30 か所の誤りを作っていた。
  * @param {string|object} input
  */
 export function parseJson3(input) {
@@ -133,12 +131,13 @@ export function parseJson3(input) {
       text,
     });
   }
-  return dedupeRolling(events);
+  return events;
 }
 
 /**
  * 旧式 timedtext XML：`<text start="1.5" dur="2">…</text>`。
  * 用正则而不是 DOMParser——这个格式是扁平的，正则够用且能在 Node 里测。
+ * json3 と同じ中身の旧形式なので、同じく去重はしない。
  * @param {string} text
  */
 export function parseTimedTextXml(text) {
@@ -160,7 +159,7 @@ export function parseTimedTextXml(text) {
       text: cleaned,
     });
   }
-  return dedupeRolling(events);
+  return events;
 }
 
 function attr(attrs, name) {
@@ -189,7 +188,8 @@ export function parseBilibili(input) {
       text,
     });
   }
-  return dedupeRolling(sortByStart(events));
+  // 一文ずつの字幕で、流れる形式ではない
+  return sortByStart(events);
 }
 
 /**
@@ -214,74 +214,140 @@ export function parseSubtitle(text) {
 }
 
 /**
- * 滚动字幕去重。
+ * VTT / SRT の cue を事件にまとめる。
  *
- * YouTube 自动字幕、部分平台 VTT 是「滑动窗口」式的：同一句话会被切成若干条
- * 时间上重叠的 cue 连续出现，例如
- *     大家好 / 大家好今天 / 今天讲线性代数
- * 只做前缀比较不够——第三条与第二条共享的是**边界**「今天」，不是前缀。
- * 所以这里既处理包含关系，也做后缀-前缀重叠合并。
+ * YouTube 自動字幕の VTT は「行送り」式に流れる：各 cue は前の cue の最後の行をそのまま
+ * 一行目に繰り返し、二行目に新しい語を足す（間に 10ms の「保持」cue が挟まる）。
+ *     the following content is provided under
+ *     the following content is provided under / a Creative Commons license your support
+ * 繰り返しは必ず**行単位**で起きる。以前は文字単位で「前の末尾 = 次の先頭」を探して繋いでいたが、
+ * 人手の字幕では首尾が接しているだけの別々の文まで繋ぎ（"So this is the plan" + "and then…"
+ * → "pland then…"、README を 7 語ずつ切った cue で 2.7% の境目）、YouTube の VTT でも本当の
+ * 繰り返し（"okay okay"）を落としていた。
  *
- * 两道保险，避免把讲师真的重复的话删掉：
- *  1. 只在时间紧邻（间隔 < 0.6s）时合并；
- *  2. 重叠至少要 2 个字符，否则视为无关，各留各的。
+ * そこで二段構え：
+ *  1. 流れる字幕かどうかを cue 列そのものから判定する（looksRolling）。人手の字幕は前の行を
+ *     繰り返さないので、ここで弾かれる。
+ *  2. 流れる字幕なら、前の cue に出ていた行（または語の切れ目で伸びた行）だけを落とす。
+ *     そうでなければ原版 course2md と同じく、時間の切れ目なく続く同一文だけを一つにする。
+ * @param {Cue[]} cues
  */
-export function dedupeRolling(events) {
+export function collapseCues(cues) {
+  return looksRolling(cues) ? collapseRolling(cues) : mergeRepeats(cues);
+}
+
+/** 流れる字幕の隣り合う cue とみなす最大の間隔（実物は 0）。 */
+const ROLLING_GAP_SECS = 0.6;
+
+/**
+ * 隣り合う cue の半数以上（かつ 2 組以上）が前の行を繰り返していれば、流れる字幕。
+ * 実物の YouTube 自動字幕では 2006 組中 1914 組が当てはまる。
+ * @param {Cue[]} cues
+ */
+export function looksRolling(cues) {
+  let pairs = 0;
+  let repeats = 0;
+  for (let i = 1; i < cues.length; i++) {
+    const prev = cues[i - 1];
+    const cue = cues[i];
+    if (!prev.lines.length || !cue.lines.length || cue.start < prev.start || cue.start - prev.end >= ROLLING_GAP_SECS) continue;
+    pairs++;
+    if (repeatedLines(prev.lines, cue.lines) || extendsLine(prev.lines.at(-1), cue.lines[0])) repeats++;
+  }
+  return repeats >= 2 && repeats * 2 >= pairs;
+}
+
+/** @param {Cue[]} cues */
+function collapseRolling(cues) {
+  /** @type {{start:number, end:number, text:string}[]} */
   const out = [];
-  for (const ev of events) {
-    const prev = out[out.length - 1];
-    if (prev && ev.start - prev.end < ROLLING_GAP_SECS && ev.start >= prev.start) {
-      const merged = mergeRolling(prev.text, ev.text);
-      if (merged !== null) {
-        prev.text = merged;
-        prev.end = Math.max(prev.end, ev.end);
-        continue;
+  // 今画面に出ている行（直前の cue の行）
+  /** @type {string[]} */
+  let shown = [];
+  for (const cue of cues) {
+    const prev = out.at(-1);
+    let fresh = cue.lines;
+    if (!fresh.length) {
+      // 画面が消えた：次の cue の行はどれも新しい（実物では、消えた後にもう一度言った "okay" がこの形）
+      shown = [];
+      continue;
+    }
+    if (prev && cue.start >= prev.start) {
+      const repeated = repeatedLines(shown, fresh);
+      fresh = fresh.slice(repeated);
+      const last = shown.at(-1);
+      if (!repeated && last !== undefined && extendsLine(last, fresh[0])) {
+        // 一行が語の切れ目で伸びた（逐次表示の字幕）：伸びた分だけ前の事件に足す
+        prev.text = `${prev.text}${fresh[0].slice(last.length)}`.replace(/\s+/g, ' ');
+        prev.end = Math.max(prev.end, cue.end);
+        fresh = fresh.slice(1);
       }
     }
-    out.push({ ...ev });
+    shown = cue.lines;
+    if (!fresh.length) {
+      if (prev) prev.end = Math.max(prev.end, cue.end);
+      continue;
+    }
+    out.push({ start: cue.start, end: cue.end, text: fresh.join(' ') });
   }
   return out;
 }
 
-/** 判定为同一句滚动重复的最大时间间隔。 */
-const ROLLING_GAP_SECS = 0.6;
-/** 认作同一次滚动的最小重叠字符数。 */
-const MIN_OVERLAP_CHARS = 2;
+/**
+ * 流れない字幕：時間の切れ目なく続く同一文だけを一つにする（原版 subtitle.rs と同じ）。
+ * @param {Cue[]} cues
+ */
+function mergeRepeats(cues) {
+  /** @type {{start:number, end:number, text:string}[]} */
+  const out = [];
+  for (const cue of cues) {
+    if (!cue.lines.length) continue;
+    const text = cue.lines.join(' ');
+    const prev = out.at(-1);
+    if (prev && prev.text === text && cue.start >= prev.start && cue.start <= prev.end) {
+      prev.end = Math.max(prev.end, cue.end);
+      continue;
+    }
+    out.push({ start: cue.start, end: cue.end, text });
+  }
+  return out;
+}
 
 /**
- * 合并两条候选文本；无关时返回 null。
- *
- * 每种合并都要「共享部分 >= 2 个字符」才算数——否则「好」+「好奇」这种
- * 恰好同字开头但其实是两句话的情况会被误合并，直接丢字。
- * @param {string} a 已累积的文本
- * @param {string} b 新文本
+ * shown の末尾 k 行と lines の先頭 k 行が一致する最大の k（行送りで繰り返された行の数）。
+ * @param {string[]} shown
+ * @param {string[]} lines
  */
-function mergeRolling(a, b) {
-  if (a === b) return a;
-  const A = [...a];
-  const B = [...b];
-  const aa = A.join('');
-  const bb = B.join('');
-
-  let shared = 0;
-  const maxPrefix = Math.min(A.length, B.length);
-  while (shared < maxPrefix && A[shared] === B[shared]) shared++;
-
-  // 前缀延长：短的那条必须本身够长，才承认它是被延长的同一句
-  if (shared === A.length && A.length >= MIN_OVERLAP_CHARS) return bb;
-  if (shared === B.length && B.length >= MIN_OVERLAP_CHARS) return aa;
-
-  // 包含关系
-  if (A.length >= MIN_OVERLAP_CHARS && bb.includes(aa)) return bb;
-  if (B.length >= MIN_OVERLAP_CHARS && aa.includes(bb)) return aa;
-
-  // 滑动窗口：找最大的 k，使 a 的后缀恰好等于 b 的前缀
-  for (let k = Math.min(A.length, B.length); k >= MIN_OVERLAP_CHARS; k--) {
-    if (A.slice(A.length - k).join('') === B.slice(0, k).join('')) {
-      return aa + B.slice(k).join('');
-    }
+function repeatedLines(shown, lines) {
+  for (let k = Math.min(shown.length, lines.length); k > 0; k--) {
+    let same = true;
+    for (let i = 0; i < k && same; i++) same = shown[shown.length - k + i] === lines[i];
+    if (same) return k;
   }
-  return null;
+  return 0;
+}
+
+/**
+ * line が prev をそのまま伸ばしたものか。伸びた所が語の切れ目でなければ別の語
+ * （"going to" → "going together"）なので認めない。
+ * @param {string|undefined} prev
+ * @param {string|undefined} line
+ */
+function extendsLine(prev, line) {
+  if (!prev || !line || prev.length < 2 || line.length <= prev.length || !line.startsWith(prev)) return false;
+  return wordBoundary(prev[prev.length - 1], line[prev.length]);
+}
+
+/** 語を空白で区切らない文字（漢字・かな・タイ文字）。これらの間はどこでも語の切れ目になりうる。 */
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
+const SEPARATOR = /[\s\p{P}]/u;
+
+/**
+ * @param {string} before
+ * @param {string} after
+ */
+function wordBoundary(before, after) {
+  return SEPARATOR.test(before) || SEPARATOR.test(after) || (UNSPACED.test(before) && UNSPACED.test(after));
 }
 
 function sortByStart(events) {
