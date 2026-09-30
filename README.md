@@ -268,6 +268,6 @@ MIT，全文见 `LICENSE`。第三方组件（随包分发的与运行时下载�
 设计令牌取自 kill-ai-slop（Apache-2.0），数值原样保留，出处写在
 `src/ui/tokens.css` 的注释里。繁简转换使用 opencc-js，许可文件随 `src/vendor/` 提供。
 
-README 里的动图与截图都由 `npm run media` 用本扩展在真实 YouTube 页面上录制，没有合成画面。
+README 里的动图与截图都由 `npm run media` 用本扩展在真实 YouTube 页面上录制，页面内容都是现场生成的真实结果；动图里的光标与镜头推拉是后期按真实操作的位置与时刻合成的。
 演示课程为 MIT OpenCourseWare《6.0001 Introduction to Computer Science and Programming in Python》（Fall 2016，Dr. Ana Bell），
 按 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) 使用。

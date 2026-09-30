@@ -44,7 +44,7 @@ const HELPER_FILES = [
   'tools/check-local-polish.mjs',
 ];
 /** 两个包都附带：说明、本项目许可与第三方许可声明。 */
-const LEGAL_FILES = ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'];
+const LEGAL_FILES = ['README.md', 'README.en.md', 'README.ja.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'];
 const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:uninstall', 'local:check-host', 'check:local-polish'];
 
 // ---------- 0. 完整检查：测试不过就不许出门 ----------
