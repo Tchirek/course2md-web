@@ -64,7 +64,10 @@ export function sortEvents(events) {
     .map(([e]) => e);
 }
 
-/** 事件列表覆盖的时长（末条 end - 首条 start），用于进度与估算。 */
+/**
+ * 事件列表覆盖的时长（末条 end - 首条 start），用于进度与估算。
+ * @param {TranscriptEvent[]} events
+ */
 export function spanSeconds(events) {
   if (!events.length) return 0;
   const first = events[0].start;
@@ -72,7 +75,10 @@ export function spanSeconds(events) {
   return Math.max(0, last - first);
 }
 
-/** 事件总字符数。 */
+/**
+ * 事件总字符数。
+ * @param {TranscriptEvent[]} events
+ */
 export function totalChars(events) {
   return events.reduce((n, e) => n + [...e.text].length, 0);
 }

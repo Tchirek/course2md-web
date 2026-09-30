@@ -12,7 +12,7 @@ export function fmtTs(sec) {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const ss = s % 60;
-  const pad = (n) => String(n).padStart(2, '0');
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
   return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`;
 }
 
@@ -44,7 +44,11 @@ export function parseTimestamp(value) {
   return result;
 }
 
-/** 把秒数夹到 [0, max] 内；非有限值归 0。 */
+/**
+ * 把秒数夹到 [0, max] 内；非有限值归 0。
+ * @param {unknown} sec
+ * @param {number} max
+ */
 export function clampTime(sec, max) {
   const n = Number(sec);
   if (!Number.isFinite(n) || n < 0) return 0;

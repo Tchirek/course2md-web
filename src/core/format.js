@@ -31,17 +31,57 @@ export function seekUrl(sourceUrl, sec) {
 }
 
 /**
+ * 视频元信息（适配器给出；取不到的字段缺省）。
+ * @typedef {object} Meta
+ * @property {string} [title]
+ * @property {string} [uploader]
+ * @property {number} [duration]
+ * @property {string} [url]
+ * @property {string} [site]
+ * @property {string} [language]
+ * @property {string} [source] 文字来源（model.js 的 SOURCE）
+ */
+
+/**
+ * 一张画面：t 是讲述时刻；image 是数据地址或导出时的相对路径，还没取到时为空。
+ * @typedef {{t: number, image?: string}} Frame
+ */
+
+/**
+ * @typedef {object} DocSection
+ * @property {string} [title]
+ * @property {number} t
+ * @property {number} [end]
+ * @property {import('./model.js').Segment[]} segments
+ * @property {Frame[]} [frames] 图文导出时才有
+ */
+
+/**
+ * 生成时的显示选项，由 finalize（content/organize.js）记进文档，随结构化 JSON 导出。
+ * @typedef {{showTimestamps?: boolean, imageLevel?: string, polished?: boolean}} DocOptions
+ */
+
+/**
  * @typedef {object} Doc
  * @property {number} schemaVersion
  * @property {{name:string, version:string}} generator
- * @property {object} meta
- * @property {object[]} sections
+ * @property {Required<Meta> & DocOptions} meta
+ * @property {DocSection[]} sections
+ */
+
+/**
+ * @typedef {object} RenderOptions
+ * @property {boolean} [timestamps] 是否显示讲述时刻
+ * @property {boolean} [links]      时刻是否带跳转链接
+ * @property {boolean} [frontMatter] 是否写 YAML front matter
+ * @property {boolean} [images]      各節で取れた画面を段落の前に挟むか
  */
 
 /**
  * 组装结构化文档。
- * @param {object} meta  { title, uploader, duration, url, site, language }
- * @param {{title?:string, t:number, end:number, segments:object[]}[]} sections
+ * @param {Meta} meta
+ * @param {{title?:string, t:number, end:number, segments:import('./model.js').Segment[]}[]} sections
+ * @returns {Doc}
  */
 export function buildDoc(meta, sections) {
   return {
@@ -63,6 +103,7 @@ export function buildDoc(meta, sections) {
       segments: s.segments
         .filter((seg) => seg.state !== 'skipped')
         .map((seg) => {
+          /** @type {import('./model.js').Segment} */
           const out = { start: seg.start, end: seg.end, text: seg.text };
           if (seg.raw) out.raw = seg.raw;
           return out;
@@ -79,11 +120,7 @@ export function buildDoc(meta, sections) {
  * 代码格式——等宽字体在 markdown 里是给代码用的。
  *
  * @param {Doc} doc
- * @param {object} [opts]
- * @param {boolean} [opts.timestamps] 是否显示讲述时刻
- * @param {boolean} [opts.links]      时刻是否带跳转链接
- * @param {boolean} [opts.frontMatter] 是否写 YAML front matter
- * @param {boolean} [opts.images]      各節で取れた画面を段落の前に挟むか
+ * @param {RenderOptions} [opts]
  */
 export function toMarkdown(doc, opts = {}) {
   const timestamps = opts.timestamps !== false;
@@ -139,8 +176,8 @@ export function toMarkdown(doc, opts = {}) {
 
 /**
  * 纯文本（贴进聊天窗口、笔记软件时用）。不含任何标记符号。
- * @param {Pick<Doc, 'meta'|'sections'>} doc meta と sections しか使わない
- * @param {object} [opts] 同 toMarkdown
+ * @param {{meta: Meta, sections: DocSection[]}} doc meta と sections しか使わない
+ * @param {RenderOptions} [opts] 同 toMarkdown
  */
 export function toPlainText(doc, opts = {}) {
   const timestamps = opts.timestamps !== false;
@@ -157,23 +194,42 @@ export function toPlainText(doc, opts = {}) {
   return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
 }
 
-/** 结构化 JSON，字段名与 course2md 的 structured.json 对齐。 */
+/**
+ * 结构化 JSON，字段名与 course2md 的 structured.json 对齐。
+ * @param {Doc} doc
+ * @param {{pretty?: boolean}} [opts]
+ */
 export function toJson(doc, opts = {}) {
   return `${JSON.stringify(doc, opts.pretty === false ? undefined : null, 2)}\n`;
 }
 
+/**
+ * @param {number} sec
+ * @param {string} url
+ * @param {boolean} links
+ */
 function stamp(sec, url, links) {
   const label = fmtTs(sec);
   if (links && url) return `[${label}](${seekUrl(url, sec)})`;
   return `[${label}]`;
 }
 
+/**
+ * @param {string} title
+ * @param {number} sec
+ * @param {string} url
+ * @param {boolean} timestamps
+ * @param {boolean} links
+ */
 function heading(title, sec, url, timestamps, links) {
   if (!timestamps) return inline(title);
   return `${stamp(sec, url, links)} ${inline(title)}`;
 }
 
-/** 标题行只 strip 换行与行首 `#`（防伪造标题），其余不转义——最坏是渲染偏差。 */
+/**
+ * 标题行只 strip 换行与行首 `#`（防伪造标题），其余不转义——最坏是渲染偏差。
+ * @param {unknown} s
+ */
 function inline(s) {
   return String(s ?? '')
     .replace(/[\r\n]+/g, ' ')
@@ -181,10 +237,12 @@ function inline(s) {
     .trim();
 }
 
+/** @param {unknown} s */
 function yamlString(s) {
   return JSON.stringify(inline(s));
 }
 
+/** @param {Doc} doc */
 function countSegments(doc) {
   return doc.sections.reduce(
     (n, s) => n + s.segments.filter((x) => x.state !== 'skipped').length,
@@ -192,11 +250,16 @@ function countSegments(doc) {
   );
 }
 
+/** @param {unknown} source */
 export function sourceLabel(source) {
   return source === 'asr' ? '本地模型转录' : '平台字幕';
 }
 
-/** 文件名安全的标题。 */
+/**
+ * 文件名安全的标题。
+ * @param {unknown} title
+ * @param {string} [ext]
+ */
 export function fileNameFor(title, ext = 'md') {
   const base = String(title ?? '')
     .replace(/[\\/:*?"<>|\r\n\t]+/g, ' ')

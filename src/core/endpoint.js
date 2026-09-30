@@ -1,6 +1,9 @@
 //! 利用者が設定する外部エンドポイントの安全確認。
 
-/** この機械の中で完結する宛先（回環アドレス）か。 */
+/**
+ * この機械の中で完結する宛先（回環アドレス）か。
+ * @param {string} url
+ */
 export function isLoopbackUrl(url) {
   let hostname;
   try {
@@ -15,6 +18,8 @@ export function isLoopbackUrl(url) {
 /**
  * API key を暗号化されない http で機械の外へ送る設定なら、その理由を返す。問題なければ空文字。
  * 同じ LAN の中でも平文の Bearer は盗み見られるので、回環アドレス以外は https を求める。
+ * @param {string} url
+ * @param {string} [apiKey]
  */
 export function plaintextKeyProblem(url, apiKey) {
   if (!apiKey) return '';

@@ -25,7 +25,10 @@ const TRIM_CHARS = new Set([
   ' ',
 ]);
 
-/** 整条是否只是语气词 / 无实义片段。 */
+/**
+ * 整条是否只是语气词 / 无实义片段。
+ * @param {unknown} text
+ */
 export function isStandaloneFiller(text) {
   const chars = [...String(text)];
   let start = 0;
@@ -60,19 +63,22 @@ export function appendText(prev, next) {
  *     所以这里不会改坏正文。
  * @param {string} text
  */
-export function dedupeRepeats(text) {
+export function dedupeRepeats(/** @type {unknown} */ text) {
   const collapsed = collapseWholeStringLoop(String(text));
   // 允许一次重复（口语本就重复），第三次起折叠掉，连同它前面的空白
   return collapsed.replace(/(\S+)(\s+\1){1,}/gu, '$1$2');
 }
 
-/** 整条是否为一个短模式的重复；是则只留一份。 */
+/**
+ * 整条是否为一个短模式的重复；是则只留一份。
+ * @param {string} text
+ */
 function collapseWholeStringLoop(text) {
   const chars = [...String(text).trim()];
   const n = chars.length;
   if (n < 12) return text;
 
-  const isPeriod = (p) => {
+  const isPeriod = (/** @type {number} */ p) => {
     if (n % p !== 0) return false;
     for (let i = p; i < n; i++) if (chars[i] !== chars[i % p]) return false;
     return true;
@@ -103,7 +109,10 @@ export function coalesce(events, opts = {}) {
   const maxChars = opts.maxChars ?? MAX_PARAGRAPH_CHARS;
   const dropFillers = opts.dropFillers !== false;
 
+  /** @type {import('./model.js').Segment[]} */
   const segments = [];
+  /** 組み立て中の段落（allPolished：含まれる事件がすべて整形済みか） */
+  /** @type {(import('./model.js').Segment & {allPolished?: boolean})|null} */
   let cur = null;
 
   const flush = () => {
@@ -161,7 +170,8 @@ export function coalesce(events, opts = {}) {
  *
  * @param {import('./model.js').TranscriptEvent[]} events
  * @param {number[]} boundaries 升序的时间边界（幻灯片/章节时刻）
- * @param {object} [opts] 传给 coalesce；另支持 opts.mediaEnd 作为末段终点
+ * @param {{gapSecs?: number, maxChars?: number, dropFillers?: boolean, mediaEnd?: number}} [opts]
+ *   传给 coalesce；另支持 opts.mediaEnd 作为末段终点
  * @returns {{t:number, end:number, segments:import('./model.js').Segment[]}[]}
  */
 export function partitionByBoundaries(events, boundaries, opts = {}) {
@@ -172,9 +182,10 @@ export function partitionByBoundaries(events, boundaries, opts = {}) {
   const buckets = marks.map((t, i) => ({
     t,
     end: i + 1 < marks.length ? marks[i + 1] : Infinity,
-    segments: [],
+    segments: /** @type {import('./model.js').TranscriptEvent[]} */ ([]),
   }));
 
+  /** @type {import('./model.js').TranscriptEvent[]} */
   const accepted = [];
   for (const e of events) {
     const ev = normalizeEvent(e);
@@ -192,7 +203,7 @@ export function partitionByBoundaries(events, boundaries, opts = {}) {
     buckets[idx].segments.push(ev);
   }
 
-  const lastEnd = Number.isFinite(opts.mediaEnd)
+  const lastEnd = opts.mediaEnd !== undefined && Number.isFinite(opts.mediaEnd)
     ? opts.mediaEnd
     : Math.max(0, ...accepted.map((e) => e.end));
 

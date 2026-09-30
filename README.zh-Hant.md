@@ -234,7 +234,7 @@ course2md 的「本地錄製」場景。
 npm run check        # 清單自檢 + 型別檢查 + 單元測試 + 佈局斷言，一次跑完（CI 同款）
 npm test             # 只跑單元測試（純邏輯，node --test）
 npm run check:manifest # 清單自檢：引用的檔案都在、模組閉包可被頁面取到、權限對得上
-npm run typecheck    # tsc --checkJs 檢查 src/（程式碼仍是 JS，零建置）
+npm run typecheck    # tsc --checkJs 檢查 src/，其中 src/core 按 strict 檢查（程式碼仍是 JS，零建置）
 npm run check:layout # 只跑幾何斷言：面板佈局、按鈕底色、無橫向溢位
 npm run check:sites  # 在真實 YouTube / B 站頁面上跑真擴充功能（需要網路，不進 CI）
 npm run check:image  # 用三次場景變化的實際影片檢查四個圖片密度檔位

@@ -13,8 +13,7 @@ const ENTRY = 'src/background/sw.js';
 export async function codeFingerprint() {
   const seen = new Map();
   const queue = [chrome.runtime.getURL(ENTRY)];
-  while (queue.length) {
-    const url = queue.shift();
+  for (let url = queue.shift(); url !== undefined; url = queue.shift()) {
     if (seen.has(url)) continue;
     const text = await (await fetch(url, { cache: 'no-store' })).text();
     seen.set(url, text);

@@ -19,6 +19,10 @@ export const DEFAULT_INSTRUCTION = `你是视频逐字稿校对器。输入的�
 export const LIGHT_INSTRUCTION = `只修正标点、断句、空格、明显重复和繁简及格式错误。尽量保留原词原句；不重写句子，不删减观点，不新增事实。每条都保留实质内容。`;
 export const DEEP_INSTRUCTION = `${DEFAULT_INSTRUCTION}\n在每条文本内部主动拆分长句、合并重复表述、调整语序并补充必要衔接，必要时用换行按主题分段，使口语更接近文章。保留每条的讲述时刻与全部观点；不得擅自总结、删减观点或新增事实。`;
 
+/**
+ * @param {string} [level] light | standard | deep
+ * @param {string} [custom] 用户自定义指令（非空就用它）
+ */
 export function instructionFor(level, custom = '') {
   if (custom?.trim()) return custom;
   return level === 'light' ? LIGHT_INSTRUCTION : level === 'deep' ? DEEP_INSTRUCTION : DEFAULT_INSTRUCTION;
@@ -41,7 +45,7 @@ id 必须与输入完全一致、不得增删条目、不得改变顺序、不�
  * @param {object} args
  * @param {import('./model.js').Segment[]} args.segments 全量段落
  * @param {import('./chunk.js').Chunk} args.chunk
- * @param {object} args.meta 视频元信息 { title, uploader, durationLabel }
+ * @param {{title?: string, uploader?: string, durationLabel?: string}} args.meta 视频元信息
  * @param {string} [args.instruction] 用户自定义指令
  * @param {string} [args.glossary] 术语表（每行一条），用于纠正专名拼写
  * @param {string} [args.langHint] 语言提示
@@ -156,7 +160,10 @@ export function applyPolish(segments, ids, polished) {
   return { applied: true, removed };
 }
 
-/** 恢复全部段落到未润色状态。 */
+/**
+ * 恢复全部段落到未润色状态。
+ * @param {import('./model.js').Segment[]} segments
+ */
 export function resetPolish(segments) {
   for (const seg of segments) {
     if (seg.raw) seg.text = seg.raw;
@@ -171,6 +178,8 @@ export function resetPolish(segments) {
  * 不随批次切换或新转出的内容而变；分子是已润色段落的时长和。
  * 事件合并成段落时时间守恒，所以口径切换也不会重定基。
  * 拿不到时长元数据时退回按已见时间线计（分母随内容增长，属降级）。
+ * @param {{start?: number, end?: number, state?: string}[]|null|undefined} segments
+ * @param {number} [duration] 视频总时长（秒）
  */
 export function polishProgress(segments, duration = 0) {
   let done = 0;

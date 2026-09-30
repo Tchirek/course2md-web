@@ -16,7 +16,10 @@ export function pickAudioMime() {
   return '';
 }
 
-/** mime -> 文件扩展名。 */
+/**
+ * mime -> 文件扩展名。
+ * @param {unknown} mime
+ */
 export function extensionForMime(mime) {
   const m = String(mime ?? '').toLowerCase();
   if (m.includes('webm')) return 'webm';

@@ -47,9 +47,12 @@ export function planChunks(segments, opts = {}) {
   /** 续润模式：state 已是 polished 的段落跳过，只规划剩下的。 */
   const onlyUnpolished = opts.onlyUnpolished === true;
 
+  /** @type {Chunk[]} */
   const chunks = [];
+  /** @type {number[]} */
   let ids = [];
   let chars = 0;
+  /** @type {unknown} */
   let section = null;
   /** 下一块可用的只读上下文；换章节时清空。 */
   let nextContext = '';
@@ -96,7 +99,11 @@ export function planChunks(segments, opts = {}) {
   return chunks;
 }
 
-/** 取字符串尾部 n 个字符（按码点计，不会切坏 emoji/汉字）。 */
+/**
+ * 取字符串尾部 n 个字符（按码点计，不会切坏 emoji/汉字）。
+ * @param {unknown} text
+ * @param {number} n
+ */
 export function tailOf(text, n) {
   const chars = [...String(text)];
   if (chars.length <= n) return chars.join('');

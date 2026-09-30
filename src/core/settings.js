@@ -61,15 +61,21 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto',
 };
 
+/** @typedef {typeof DEFAULT_SETTINGS} Settings */
+
 /** 内置润色模型：FireRedPunc 修正标点，疑难句交给 Qwen3.5-2B。 */
 export const LOCAL_POLISH = {
   baseUrl: 'http://127.0.0.1:8082/v1',
   model: 'FireRedPunc+Qwen3.5-2B',
 };
 
-/** 深合并默认值，保证读到的设置永远字段齐全。 */
+/**
+ * 深合并默认值，保证读到的设置永远字段齐全。
+ * @param {unknown} stored 存储里的设置（可能是旧版、残缺或被手改过的）
+ * @returns {Settings}
+ */
 export function withDefaults(stored) {
-  const settings = deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {});
+  const settings = /** @type {Settings & Record<string, unknown>} */ (deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {}));
   delete settings.clickToSeek; // 旧版开关由 showTimestamps 取代
   delete settings.autoRun; // 旧版开关：现在切换视频一律自动生成
   if (settings.asr.endpoint === 'http://127.0.0.1:8080/v1/audio/transcriptions' && settings.asr.model === 'small') {
@@ -78,6 +84,10 @@ export function withDefaults(stored) {
   return settings;
 }
 
+/**
+ * @param {Record<string, any>} base 就地修改
+ * @param {unknown} patch
+ */
 function deepMerge(base, patch) {
   if (!patch || typeof patch !== 'object') return base;
   for (const [key, value] of Object.entries(patch)) {
@@ -101,10 +111,11 @@ function deepMerge(base, patch) {
 /**
  * 归一化并夹取用户输入。存前调用一次，坏值不会进存储。
  * 返回值同时带 `ok` 与 `notes`，供设置页把问题说清楚。
- * @param {object} raw
+ * @param {unknown} raw
  */
 export function normalizeSettings(raw) {
   const s = withDefaults(raw);
+  /** @type {string[]} */
   const notes = [];
 
   s.source = s.source === 'asr' ? 'asr' : 'subtitle';
@@ -132,22 +143,33 @@ export function normalizeSettings(raw) {
   return { settings: s, notes };
 }
 
-/** 润色是否具备可运行的条件。 */
+/**
+ * 润色是否具备可运行的条件。
+ * @param {Pick<Settings, 'polish'|'llm'>} s
+ */
 export function canPolish(s) {
   return Boolean(s.polish && isHttpUrl(s.llm.baseUrl) && s.llm.model);
 }
 
+/**
+ * 用本机润色：明确选了本机，或没有选自备模型又没填全自备模型。
+ * @param {Pick<Settings, 'polishEngine'|'llm'>} s
+ */
 export function useLocalPolish(s) {
   return s.polishEngine === 'local' ||
     (s.polishEngine !== 'custom' && (!s.llm.baseUrl || !s.llm.model));
 }
 
-/** ASR 是否具备可运行的条件。 */
+/**
+ * ASR 是否具备可运行的条件。
+ * @param {Pick<Settings, 'source'|'asr'>} s
+ */
 export function canTranscribe(s) {
   if (s.source !== 'asr') return true;
   return isHttpUrl(s.asr.endpoint);
 }
 
+/** @param {unknown} value */
 export function isHttpUrl(value) {
   try {
     const url = new URL(String(value));
@@ -157,6 +179,12 @@ export function isHttpUrl(value) {
   }
 }
 
+/**
+ * @param {unknown} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback 不是数时用它
+ */
 function clampInt(value, min, max, fallback) {
   const n = Math.floor(Number(value));
   if (!Number.isFinite(n)) return fallback;
@@ -166,21 +194,33 @@ function clampInt(value, min, max, fallback) {
 /** 设置里需要脱敏展示的字段。 */
 export const SECRET_KEYS = ['llm.apiKey', 'asr.apiKey'];
 
-/** 取嵌套字段。 */
+/**
+ * 取嵌套字段。
+ * @param {any} obj
+ * @param {string} path 'a.b.c'
+ */
 export function getPath(obj, path) {
   return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 }
 
-/** 以 'a.b.c' 路径写值（就地修改）。 */
+/**
+ * 以 'a.b.c' 路径写值（就地修改）。
+ * @param {Record<string, any>} obj
+ * @param {string} path
+ * @param {unknown} value
+ */
 export function setPath(obj, path, value) {
   const keys = path.split('.');
-  const last = keys.pop();
+  const last = /** @type {string} */ (keys.pop());
   const target = keys.reduce((o, k) => (o[k] ??= {}), obj);
   target[last] = value;
   return obj;
 }
 
-/** 脱敏：只留尾 4 位。 */
+/**
+ * 脱敏：只留尾 4 位。
+ * @param {unknown} value
+ */
 export function maskSecret(value) {
   const s = String(value ?? '');
   if (!s) return '';

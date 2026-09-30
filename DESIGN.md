@@ -327,7 +327,9 @@ service worker 用 `"type": "module"`，扩展页面用 `<script type="module">`
    模块不在 manifest 里出现，覆盖不到就会在运行时报跨源错误。它在开发中确实抓到过一次
    真实缺陷：面板引用的 `src/ui/controls.js` 没有对页面授权。
 3. **`npm run typecheck`** —— `tsc --checkJs` 检查 `src/`，代码仍是 JS，不引入构建步骤；
-   JSDoc 与实现对不上时直接报错。
+   JSDoc 与实现对不上时直接报错。纯逻辑层 `src/core` 另按 `strict` 检查（`tsconfig.core.json`）：
+   隐式 any 与可能为 null 的访问都不放过。其余目录还没到这一步，开 `strict` 全仓仍有五百余处要补，
+   按目录逐步收紧。
 4. **`npm run check:layout`** —— 几何断言（见第 5 节末尾），含「切换图片档位时正在读的行
    纹丝不动」的逐像素检查。
 5. **`npm run check:sites`** —— 在真实 YouTube / B 站页面上加载真扩展生成笔记（人工字幕、

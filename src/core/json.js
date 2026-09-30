@@ -103,6 +103,7 @@ export function readInlineJson(scriptText, varName) {
   return null;
 }
 
+/** @param {unknown} s */
 export function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
