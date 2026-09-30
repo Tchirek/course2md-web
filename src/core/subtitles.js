@@ -384,12 +384,13 @@ function safeJson(text) {
  * 独立に照合できるので、終端が長さ + 5% + 10 秒を超える字幕は別動画のものとみなす。
  * 長さが不明（0 やライブ）の場合は判定しない。
  * @param {{start:number, end:number}[]} events
- * @param {number} duration 動画の長さ（秒）
+ * @param {number} [duration] 動画の長さ（秒）
  */
 export function overrunsDuration(events, duration) {
-  if (!(Number(duration) > 0) || !events.length) return false;
+  const length = Number(duration);
+  if (!(length > 0) || !events.length) return false;
   const last = events.reduce((max, e) => Math.max(max, Number(e.end) || 0, Number(e.start) || 0), 0);
-  return last > duration * 1.05 + 10;
+  return last > length * 1.05 + 10;
 }
 
 /**

@@ -80,7 +80,7 @@ export function seekUrl(sourceUrl, sec) {
 /**
  * 组装结构化文档。
  * @param {Meta} meta
- * @param {{title?:string, t:number, end:number, segments:import('./model.js').Segment[]}[]} sections
+ * @param {DocSection[]} sections
  * @returns {Doc}
  */
 export function buildDoc(meta, sections) {

@@ -123,7 +123,7 @@ export function tailOf(text, n) {
  * @param {(item:T, index:number)=>Promise<R>} worker
  * @param {(done:number, total:number, result:R|{error:unknown, index:number})=>void} [onProgress]
  *   worker が例外を投げたとき、第 3 引数は {error, index}
- * @returns {Promise<R[]>} 与 items 等长、顺序一致；worker 抛错时该位置为 null
+ * @returns {Promise<(R|null)[]>} 与 items 等长、顺序一致；worker 抛错时该位置为 null
  */
 export async function mapPool(items, limit, worker, onProgress) {
   const size = Math.max(1, Math.min(Math.floor(limit) || 1, items.length || 1));

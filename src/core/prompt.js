@@ -132,7 +132,7 @@ export function parsePolishResponse(content) {
  *
  * @param {import('./model.js').Segment[]} segments
  * @param {number[]} ids
- * @param {{id:number, text:string}[]} polished
+ * @param {{id:number, text:string}[]|null} polished parsePolishResponse 的结果（解析不了时为 null）
  * @returns {{applied:boolean, removed:number}}
  */
 export function applyPolish(segments, ids, polished) {

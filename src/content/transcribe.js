@@ -9,17 +9,11 @@ import { organize, simplifyBilibili } from './organize.js';
 /**
  * 用本机模型转录音频再组织成文档。
  *
- * @param {object} args
- * @param {object} args.adapter
- * @param {object} args.meta
- * @param {object} args.settings
- * @param {(stage:string, info?:object)=>void} [args.onProgress]
- * @param {AbortSignal} [args.signal]
- * @param {(seconds:number)=>void} [args.seek]
- * @param {(events:object[])=>void} [args.onPartial] 文字起こしの途中で、得られたイベントを順次渡す
+ * @param {import('./pipeline.js').PipelineArgs} args
  * @returns {Promise<import('./pipeline.js').PipelineResult>}
  */
 export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPartial, signal }) {
+  /** @type {string[]} */
   const warnings = [];
   const asr = settings.asr;
 
@@ -40,6 +34,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
     if (started.value?.state === 'error') throw new Error(started.value.message);
   }
 
+  /** @type {import('../core/model.js').TranscriptEvent[]} */
   const events = [];
   let fastError = '';
   if (/^(https?:|file:)/.test(meta.url || '')) {
@@ -99,7 +94,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         if (fastJobId) chrome.runtime.sendMessage({ type: 'asr.fast.cancel', payload: { id: fastJobId } }).catch(() => {});
         throw new AbortError();
       }
-      fastError = String(error?.message ?? error);
+      fastError = String(/** @type {{message?: string}} */ (error)?.message ?? error);
       warnings.push(`本机快速提取失败：${fastError}`);
       if (events.length) {
         events.length = 0;
@@ -108,8 +103,11 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
       // 没运行辅助服务时继续尝试浏览器可读媒体。
     }
   }
+  /** @type {Set<Promise<void>>} */
   const pending = new Set();
+  /** @type {unknown} 最先失败的那一片的错误，之后的切片不再送出 */
   let failure = null;
+  /** @type {import('./capture.js').CaptureOptions} */
   const options = {
     chunkSeconds: asr.chunkSeconds,
     playbackRate: asr.playbackRate,
@@ -189,6 +187,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
   };
 }
 
+/** @param {Uint8Array} bytes */
 function bytesToBase64(bytes) {
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) {

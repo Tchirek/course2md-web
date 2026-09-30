@@ -5,7 +5,15 @@ import { buildMessages, parsePolishResponse, applyPolish, resetPolish, instructi
 import { LOCAL_POLISH } from '../core/settings.js';
 import { AbortError } from '../core/errors.js';
 
-/** 通过后台发一次 LLM 对话请求。 */
+/** @typedef {{baseUrl: string, apiKey: string, model: string, instruction?: string, glossary?: string}} LlmConfig 一次润色请求要用的模型配置 */
+
+/**
+ * 通过后台发一次 LLM 对话请求。
+ * @param {{baseUrl: string, apiKey: string, model: string, messages: {role: string, content: string}[]}} payload
+ * @param {(delta: string) => void} onDelta 流式到达的片段
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{content: string}>} 后台发来的最后一条消息
+ */
 async function llmChat(payload, onDelta, signal) {
   return new Promise((resolve, reject) => {
     const port = chrome.runtime.connect({ name: 'llm.stream' });
@@ -27,15 +35,15 @@ async function llmChat(payload, onDelta, signal) {
  * 润色。分块并行，块内 id 严格对应（详见 core/chunk.js 与 core/prompt.js 的说明）。
  *
  * @param {object} args
- * @param {object[]} args.segments 平坦段落（会被就地修改）
+ * @param {import('../core/model.js').Segment[]} args.segments 平坦段落（会被就地修改）
  * @param {number[]} args.sectionIndexOf
- * @param {object} args.meta
- * @param {object} args.settings
+ * @param {{title?: string, uploader?: string, language?: string}} args.meta
+ * @param {import('../core/settings.js').Settings} args.settings
  * @param {(done:number,total:number)=>void} [args.onProgress]
  * @param {(id:number)=>void} [args.onSegment] 段落の整形結果を書き戻したらすぐ知らせる（浮窓を段落ごとに更新）
  * @param {()=>void} [args.onReset] 整形の状態を初期化したとき、または続きから整形を始めるときに知らせる
  * @param {AbortSignal} [args.signal]
- * @param {{ensure:()=>Promise<object>}} [args.fallback] 自备 LLM 三次失败后的本地回落；ensure 返回本机模型的 LLM 配置
+ * @param {{ensure:()=>Promise<LlmConfig>}} [args.fallback] 自备 LLM 三次失败后的本地回落；ensure 返回本机模型的 LLM 配置
  * @param {boolean} [args.resume] 续润：跳过已润色的段落，只处理剩下的
  * @returns {Promise<{chunks:number, polished:number, failed:number, removed:number, errors:string[], firstError:string}>}
  */
@@ -57,13 +65,14 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
   }
   onProgress?.(0, chunks.length);
 
+  /** @type {string[]} */
   const errors = [];
   let firstError = '';
   let polished = 0;
   let removed = 0;
 
   /** 把一块流式覆盖过的段落还原回原文。 */
-  const revertSeen = (seen) => {
+  const revertSeen = (/** @type {Set<number>} */ seen) => {
     for (const id of seen) {
       const seg = segments[id];
       if (seg.raw) seg.text = seg.raw;
@@ -73,7 +82,11 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
     }
   };
 
-  /** 一块的完整一次尝试：流式覆盖 -> 校验 -> 应用。失败时还原流式痕迹。 */
+  /**
+   * 一块的完整一次尝试：流式覆盖 -> 校验 -> 应用。失败时还原流式痕迹。
+   * @param {import('../core/chunk.js').Chunk} chunk
+   * @param {LlmConfig} llmConfig
+   */
   const attemptChunk = async (chunk, llmConfig) => {
     if (signal?.aborted) throw new AbortError();
     const messages = buildMessages({
@@ -86,6 +99,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
     });
     let streamed = '';
     let consumed = 0;
+    /** @type {Set<number>} */
     const seen = new Set();
     let reply;
     try { reply = await llmChat({
@@ -130,13 +144,16 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
 
   // 本地回落：懒启动一次，之后串行执行，不与自备 LLM 的并发叠加。
   const usingLocal = String(llm.baseUrl ?? '').replace(/\/+$/, '') === LOCAL_POLISH.baseUrl;
+  /** @type {Promise<LlmConfig|null>|null} */
   let fallbackReady = null;
+  /** @type {unknown} */
   let fallbackEnsureError = null;
   let fallbackQueue = Promise.resolve();
-  const ensureFallback = () => {
+  /** @param {{ensure:()=>Promise<LlmConfig>}} source */
+  const ensureFallback = (source) => {
     if (!fallbackReady) {
       fallbackReady = Promise.resolve()
-        .then(() => fallback.ensure())
+        .then(() => source.ensure())
         .catch((error) => {
           fallbackEnsureError = error;
           return null;
@@ -150,6 +167,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
     llm.concurrency,
     async (chunk) => {
       // 一块最多尝试三次；都用自备 LLM 失败后，静默换成本机润色
+      /** @type {unknown} */
       let lastError = new Error('模型未返回可用文本');
       for (let attempt = 1; attempt <= 3; attempt++) {
         try { return await attemptChunk(chunk, llm); } catch (error) {
@@ -158,13 +176,13 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
         }
       }
       if (!usingLocal && fallback) {
-        const fallbackLlm = await ensureFallback();
+        const fallbackLlm = await ensureFallback(fallback);
         if (fallbackLlm) {
           const task = fallbackQueue.then(() => attemptChunk(chunk, fallbackLlm));
           fallbackQueue = task.then(() => {}, () => {});
           return task;
         }
-        if (fallbackEnsureError) throw new Error(`本机润色未启动：${String(fallbackEnsureError?.message ?? fallbackEnsureError)}`);
+        if (fallbackEnsureError) throw new Error(`本机润色未启动：${String(/** @type {{message?: string}} */ (fallbackEnsureError)?.message ?? fallbackEnsureError)}`);
       }
       throw lastError;
     },
