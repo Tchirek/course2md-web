@@ -28,6 +28,7 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const HELPER_FILES = [
   'tools/fast-asr-server.mjs',
   'tools/bilibili-audio.mjs',
+  'tools/speech-segments.mjs',
   'tools/launch-local-polish.mjs',
   'tools/qwen-asr.py',
   'tools/runtime_download.py',

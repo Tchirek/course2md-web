@@ -9,11 +9,12 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
+import { SILENCE_FILTER, invertSilence, parseSilences, pcmData, rmsOfFile, speechSegments, wavFile } from './speech-segments.mjs';
 import { dataDir, ensureHelperToken, tokenPath } from './helper-data.mjs';
 import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
 
@@ -387,85 +388,130 @@ async function processJob(input, source, endpoint, job, signal) {
       }
     }
     job.message = '正在切分音轨';
-    await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', mediaPath, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'segment', '-segment_time', String(chunkSeconds), path.join(dir, 'part-%05d.wav')], signal);
-    const files = (await readdir(dir)).filter((name) => /^part-\d+\.wav$/.test(name)).sort();
-    if (!files.length) throw new Error('ffmpeg 未产出音频切片');
-    job.total = files.length;
-    // The device the service runs on, remembered here: after a GPU failure the service reports only the error
-    let serviceDevice = null;
-    if (BUILTIN_ASR.has(endpoint.origin)) {
-      await waitForLocalAsr(job, signal);
-      serviceDevice = asrStatus.device;
-      if (asrStatus.note) job.warnings.push(asrStatus.note);
-    }
-    const events = job.events;
-    let restarts = 0;
-    for (let i = 0; i < files.length; i++) {
-      if (signal.aborted) throw new Error('已取消');
-      job.message = `正在转写 ${i + 1}/${files.length} 片`;
-      const bytes = await readFile(path.join(dir, files[i]));
-      const request = (format) => {
-        const form = new FormData();
-        form.set('file', new Blob([bytes], { type: 'audio/wav' }), files[i]);
-        form.set('model', String(input.model || 'whisper-1'));
-        form.set('response_format', format);
-        form.set('temperature', '0');
-        if (input.prompt) form.set('prompt', String(input.prompt).slice(0, 200));
-        if (input.language) form.set('language', String(input.language));
-        return fetch(endpoint, {
-          method: 'POST',
-          headers: input.apiKey ? { authorization: `Bearer ${input.apiKey}` } : {},
-          body: form,
-          signal,
-        });
-      };
-      const attempt = async () => {
-        let reply = await request('verbose_json');
-        if (reply.status === 400 || reply.status === 422) reply = await request('json');
-        if (reply.ok) return reply;
-        throw new Error(`HTTP ${reply.status} ${errorText(await reply.text())}`);
-      };
-      let reply;
-      try {
-        reply = await attempt();
-      } catch (error) {
-        if (signal.aborted) throw error;
-        // 内蔵 ASR はメモリや CUDA の失敗で使えなくなる（その場合は自ら終了する）。
-        // 新しいプロセスなら CUDA コンテキストも作り直されるので、同じ切片を一度だけやり直す
-        if (!BUILTIN_ASR.has(endpoint.origin) || restarts >= 3) throw new Error(`ASR 第 ${i + 1} 片失败：${error.message}`);
-        restarts++;
-        if (serviceDevice === 'cuda') {
-          // A GPU failure tends to repeat on the same input. Finish the job on the CPU instead of failing it
-          asrDevice = 'cpu';
-          job.message = `显卡转录出错，正在改用 CPU 重试第 ${i + 1} 片`;
-          job.warnings.push(`显卡转录第 ${i + 1} 片出错，已改用 CPU 继续（较慢）：${error.message.slice(0, 160)}`);
-        } else {
-          job.message = `本机转录服务出错（${error.message}），正在重启后重试第 ${i + 1} 片`;
-        }
-        await restartLocalAsr(job, signal);
+    const audioPath = path.join(dir, 'audio.wav');
+    await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', mediaPath, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', audioPath], signal);
+    const audio = await open(audioPath, 'r');
+    try {
+      // 内蔵の Qwen3-ASR は 20 秒ずつ受け取る（原版の max_speech と同じ）。自前の ASR には設定の長さまで
+      const maxSpeech = BUILTIN_ASR.has(endpoint.origin) ? Math.min(chunkSeconds, 20) : chunkSeconds;
+      const segments = await speechPlan(audio, audioPath, maxSpeech, signal);
+      job.total = segments.length;
+      // The device the service runs on, remembered here: after a GPU failure the service reports only the error
+      let serviceDevice = null;
+      if (BUILTIN_ASR.has(endpoint.origin)) {
+        await waitForLocalAsr(job, signal);
         serviceDevice = asrStatus.device;
+        if (asrStatus.note) job.warnings.push(asrStatus.note);
+      }
+      const data = pcmData(await readHead(audio));
+      const events = job.events;
+      let restarts = 0;
+      for (let i = 0; i < segments.length; i++) {
+        if (signal.aborted) throw new Error('已取消');
+        job.message = `正在转写 ${i + 1}/${segments.length} 段`;
+        const segment = segments[i];
+        const from = Math.floor(segment.cutStart * 16000) * 2;
+        const pcm = Buffer.alloc(Math.max(0, Math.min(data.bytes, Math.ceil(segment.cutEnd * 16000) * 2) - from));
+        await audio.read(pcm, 0, pcm.length, data.offset + from);
+        const bytes = wavFile(pcm);
+        const request = (format) => {
+          const form = new FormData();
+          form.set('file', new Blob([bytes], { type: 'audio/wav' }), `part-${String(i).padStart(5, '0')}.wav`);
+          form.set('model', String(input.model || 'whisper-1'));
+          form.set('response_format', format);
+          form.set('temperature', '0');
+          if (input.prompt) form.set('prompt', String(input.prompt).slice(0, 200));
+          if (input.language) form.set('language', String(input.language));
+          return fetch(endpoint, {
+            method: 'POST',
+            headers: input.apiKey ? { authorization: `Bearer ${input.apiKey}` } : {},
+            body: form,
+            signal,
+          });
+        };
+        const attempt = async () => {
+          let reply = await request('verbose_json');
+          if (reply.status === 400 || reply.status === 422) reply = await request('json');
+          if (reply.ok) return reply;
+          throw new Error(`HTTP ${reply.status} ${errorText(await reply.text())}`);
+        };
+        let reply;
         try {
           reply = await attempt();
-        } catch (retryError) {
-          if (signal.aborted) throw retryError;
-          throw new Error(`ASR 第 ${i + 1} 片失败（已重启本机转录服务重试）：${retryError.message}`);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          // 内蔵 ASR はメモリや CUDA の失敗で使えなくなる（その場合は自ら終了する）。
+          // 新しいプロセスなら CUDA コンテキストも作り直されるので、同じ切片を一度だけやり直す
+          if (!BUILTIN_ASR.has(endpoint.origin) || restarts >= 3) throw new Error(`ASR 第 ${i + 1} 段失败：${error.message}`);
+          restarts++;
+          if (serviceDevice === 'cuda') {
+            // A GPU failure tends to repeat on the same input. Finish the job on the CPU instead of failing it
+            asrDevice = 'cpu';
+            job.message = `显卡转录出错，正在改用 CPU 重试第 ${i + 1} 段`;
+            job.warnings.push(`显卡转录第 ${i + 1} 段出错，已改用 CPU 继续（较慢）：${error.message.slice(0, 160)}`);
+          } else {
+            job.message = `本机转录服务出错（${error.message}），正在重启后重试第 ${i + 1} 段`;
+          }
+          await restartLocalAsr(job, signal);
+          serviceDevice = asrStatus.device;
+          try {
+            reply = await attempt();
+          } catch (retryError) {
+            if (signal.aborted) throw retryError;
+            throw new Error(`ASR 第 ${i + 1} 段失败（已重启本机转录服务重试）：${retryError.message}`);
+          }
         }
-      }
-      const value = await reply.json();
-      const start = i * chunkSeconds;
-      if (Array.isArray(value.segments) && value.segments.length) {
-        for (const segment of value.segments) {
-          if (segment.text) events.push({ start: start + Number(segment.start || 0), end: start + Number(segment.end || 0), text: segment.text });
+        const value = await reply.json();
+        // 応答の時刻は切り出した音声の頭（無音の余白を含む）から数える。発話の範囲に収める
+        const within = (t) => Math.min(segment.end, Math.max(segment.start, segment.cutStart + (Number(t) || 0)));
+        if (Array.isArray(value.segments) && value.segments.length) {
+          for (const part of value.segments) {
+            if (part.text) events.push({ start: within(part.start), end: within(part.end), text: part.text });
+          }
+        } else if (value.text) {
+          events.push({ start: segment.start, end: segment.end, text: value.text });
         }
-      } else if (value.text) {
-        events.push({ start, end: start + chunkSeconds, text: value.text });
+        job.done = i + 1;
       }
-      job.done = i + 1;
+      return { events, chunks: segments.length };
+    } finally {
+      await audio.close();
     }
-    return { events, chunks: files.length };
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * 音声のどこを送るか：無音で区切った発話（原版と同じ規則、speech-segments.mjs）。
+ * 無音検出が発話を一つも見つけないのに音はある（声がとても小さい録音など）ときは、
+ * 何も書かずに終わるより全体を発話として扱う。
+ * @param {import('node:fs/promises').FileHandle} audio
+ */
+async function speechPlan(audio, audioPath, maxSpeech, signal) {
+  const data = pcmData(await readHead(audio));
+  const duration = data.bytes / 32000;
+  const log = await run('ffmpeg', ['-hide_banner', '-nostdin', '-i', audioPath, '-af', SILENCE_FILTER, '-f', 'null', '-'], signal, { log: true });
+  const rms = await rmsOfFile(audio, data);
+  const segments = speechSegments(invertSilence(duration, parseSilences(log)), maxSpeech, rms, duration);
+  if (segments.length || !rms.some((value) => value >= 0.005)) return segments;
+  return speechSegments([[0, duration]], maxSpeech, rms, duration);
+}
+
+/**
+ * WAV の先頭と PCM の位置。長さ欄が実際より長い（書きかけ等）ときはファイルの大きさに合わせる。
+ * @param {import('node:fs/promises').FileHandle} audio
+ */
+async function readHead(audio) {
+  const head = Buffer.alloc(4096);
+  const { bytesRead } = await audio.read(head, 0, head.length, 0);
+  const { size } = await audio.stat();
+  const data = pcmData(head.subarray(0, bytesRead));
+  const bytes = Math.max(0, Math.min(data.bytes, size - data.offset)) & ~1;
+  // pcmData が読み直すための先頭：長さ欄を実際の値に書き換えておく
+  const fixed = Buffer.from(head.subarray(0, bytesRead));
+  fixed.writeUInt32LE(bytes, data.offset - 4);
+  return fixed;
 }
 
 /** 本機 ASR のプロセスを終わらせてから起動し直し、準備完了まで待つ。 */
@@ -512,18 +558,30 @@ async function readBody(req) {
   return body;
 }
 
-function run(command, args, signal) {
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @param {AbortSignal} signal
+ * @param {{log?: boolean}} [options] log: stderr を全部返す（ffmpeg の無音検出の結果はそこに出る）
+ * @returns {Promise<string>}
+ */
+function run(command, args, signal, { log = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     const onAbort = () => child.kill();
     signal.addEventListener('abort', onAbort, { once: true });
     if (signal.aborted) onAbort();
     let errorText = '';
-    child.stderr.on('data', (chunk) => { errorText = (errorText + chunk).slice(-1200); });
+    let full = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      errorText = (errorText + chunk).slice(-1200);
+      if (log && full.length < 32 * 1024 * 1024) full += chunk;
+    });
     child.on('error', reject);
     child.on('exit', (code) => {
       signal.removeEventListener('abort', onAbort);
-      code === 0 ? resolve() : reject(new Error(signal.aborted ? "已取消" : `${command} 失败：${errorText || exitReason(command, code)}`));
+      code === 0 ? resolve(full) : reject(new Error(signal.aborted ? "已取消" : `${command} 失败：${errorText || exitReason(command, code)}`));
     });
   });
 }
