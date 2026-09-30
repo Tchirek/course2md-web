@@ -272,7 +272,7 @@ function collapseRolling(cues) {
       shown = [];
       continue;
     }
-    if (prev && cue.start >= prev.start) {
+    if (prev && cue.start >= prev.start && cue.start - prev.end < ROLLING_GAP_SECS) {
       const repeated = repeatedLines(shown, fresh);
       fresh = fresh.slice(repeated);
       const last = shown.at(-1);

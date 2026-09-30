@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import {
   parseVtt, parseSrt, parseJson3, parseTimedTextXml, parseBilibili, overrunsDuration,
-  parseSubtitle, looksRolling, cleanCueText, parseCueTime, normalizeChapters,
+  parseSubtitle, collapseCues, looksRolling, cleanCueText, parseCueTime, normalizeChapters,
   parseChaptersVtt, languageLabel,
 } from '../src/core/subtitles.js';
 import { readFileSync } from 'node:fs';
@@ -14,6 +14,18 @@ import { buildMessages, parsePolishResponse, applyPolish } from '../src/core/pro
 import { buildDoc, toMarkdown, toJson } from '../src/core/format.js';
 
 // ---------- 基础解析 ----------
+
+test('滚动字幕中的长停顿之后，同一句再次出现仍然保留', () => {
+  const cues = [
+    { start: 0, end: 1, lines: ['hello'] },
+    { start: 1, end: 2, lines: ['hello', 'world'] },
+    { start: 2, end: 3, lines: ['world', 'again'] },
+    { start: 10, end: 11, lines: ['again'] },
+  ];
+  assert.equal(looksRolling(cues), true);
+  assert.deepEqual(collapseCues(cues).map((e) => [e.start, e.text]),
+    [[0, 'hello'], [1, 'world'], [2, 'again'], [10, 'again']]);
+});
 
 test('parseCueTime 接受点/逗号小数与省略小时', () => {
   assert.equal(parseCueTime('00:01:05.500'), 65.5);
