@@ -346,12 +346,14 @@ export class Panel {
     const foot = el('div', 'c2md-panel-foot');
     const { status, settings } = this.state;
     const ready = status === 'ready';
-    const exportReady = ready && (!this.state.imagesPending || settings?.imageLevel === 'none');
-
-    const copy = button('复制 Markdown', () => this.handlers.onCopy?.(), 'primary');
-    copy.disabled = !exportReady;
-    const save = button(settings?.imageLevel === 'none' ? '保存文字 .md' : '下载图文 .md', () => this.handlers.onDownload?.());
-    save.disabled = !exportReady;
+    const copy = this.exportButton('copy', {
+      idle: '复制 Markdown', pending: '完成后复制', done: '已复制', variant: 'primary',
+      onClick: () => this.handlers.onCopy?.(),
+    });
+    const save = this.exportButton('download', {
+      idle: settings?.imageLevel === 'none' ? '保存文字 .md' : '下载图文 .md', pending: '完成后下载', done: '已保存',
+      onClick: () => this.handlers.onDownload?.(),
+    });
 
     foot.append(copy, save);
 
@@ -368,5 +370,30 @@ export class Panel {
     foot.appendChild(copyText);
 
     return foot;
+  }
+
+  /**
+   * 書き出しボタン。作成中でも押せて、押すと「完了後に実行」の予約になる（破線枠で示し、
+   * もう一度押すと取り消し）。完了した瞬間に自動で実行し、結果をしばらく表示する。
+   * @param {'copy'|'download'} kind
+   * @param {{ idle: string, pending: string, done: string, variant?: string, onClick: () => void }} labels
+   */
+  exportButton(kind, { idle, pending, done, variant, onClick }) {
+    const { status, settings, exportBusy, pendingExport, exportFlash } = this.state;
+    const exportReady = this.state.exportReady ??
+      (status === 'ready' && (!this.state.imagesPending || settings?.imageLevel === 'none'));
+    const armed = Boolean(pendingExport?.[kind]);
+    const node = button(exportFlash?.[kind] ? done : armed ? pending : idle, onClick, variant);
+    node.disabled = !exportReady && !exportBusy;
+    if (exportReady) return node;
+    if (armed) {
+      node.classList.add('c2md-button--armed');
+      node.setAttribute('aria-pressed', 'true');
+      node.title = '生成完成后自动执行；再点一次取消';
+    } else if (exportBusy) {
+      node.setAttribute('aria-pressed', 'false');
+      node.title = '还在生成：点一下，完成后自动执行';
+    }
+    return node;
   }
 }

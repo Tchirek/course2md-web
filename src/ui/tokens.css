@@ -389,6 +389,16 @@
   color: var(--card);
 }
 
+/* 「完了後に実行」を予約済み：破線枠で待機中を示す。塗りつぶすと書き出せる状態に見えるので使わない */
+.c2md-scope .c2md-button--armed,
+.c2md-scope .c2md-button--armed:hover {
+  background: var(--card);
+  border-style: dashed;
+  border-color: var(--mark);
+  color: var(--mark);
+  filter: none;
+}
+
 /* 次级动作：只有文字，悬停给一条下划线 */
 .c2md-button--quiet {
   border-color: transparent;

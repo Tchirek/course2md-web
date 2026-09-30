@@ -48,6 +48,12 @@ export class Controller {
     this.autoRunArmed = false;
     // 只作用于下一次生成的临时选择（如标题旁的按钮指定优先用平台字幕），不改设置
     this.nextRunOverrides = null;
+    // 内容がまだできていないときに押された複製・保存。できた瞬間に実行する（もう一度押すと取り消し）。
+    // ブラウザの「ダウンロード完了後に開く」と同じ考え方
+    this.pendingExport = { copy: false, download: false };
+    // 実行し終えた書き出し。該当ボタンにしばらく「已复制」「已保存」を出す（両方同時に終わりうるので別々に持つ）
+    this.exportFlash = { copy: false, download: false };
+    this.exportFlashTimers = {};
     this.panelDismissed = false;
     this.polishAbort = null;
     this.earlyPolish = { active: false, done: false, promise: null, covered: 0 };
@@ -62,9 +68,9 @@ export class Controller {
     this.panel = new Panel({
       onSettings: (patch) => this.patchSettings(patch),
       onSeek: (sec) => this.seek(sec),
-      onCopy: () => this.copyMarkdown(),
+      onCopy: () => this.requestExport('copy'),
       onCopyText: () => this.copyPlainText(),
-      onDownload: () => this.download(),
+      onDownload: () => this.requestExport('download'),
       onRerun: () => {
         this.autoRunArmed = true;
         return this.run();
@@ -178,6 +184,7 @@ export class Controller {
     this.polishAbort?.abort();
     clearTimeout(this.autoTimer);
     this.urlKey = key;
+    this.pendingExport = { copy: false, download: false };
     // 换视频了：清干净，避免把上一个视频的笔记留在屏幕上
     this.adapter = pickAdapter();
     this.built = null;
@@ -287,10 +294,19 @@ export class Controller {
   }
 
   panelState() {
-    return { ...this.summaryState(), error: this.error || this.imageError, sections: this.previewSections };
+    return {
+      ...this.summaryState(),
+      error: this.error || this.imageError,
+      sections: this.previewSections,
+      exportReady: this.exportReady(),
+      exportBusy: this.exportBusy(),
+      pendingExport: { ...this.pendingExport },
+      exportFlash: { ...this.exportFlash },
+    };
   }
 
   broadcast(updatePanel = true) {
+    this.flushPendingExport();
     if (updatePanel) this.panel.setState(this.panelState());
     // 弹窗可能开着，也可能没开；没开时这个 sendMessage 会静默失败
     chrome.runtime.sendMessage({ type: 'c2md.state', payload: this.summaryState() }).catch(() => {});
@@ -517,6 +533,55 @@ export class Controller {
 
   plainText() {
     return plainTextOf(this.meta, this.built?.sections ?? this.liveSections, this.settings);
+  }
+
+  /** 今すぐ書き出せるか：成稿があり、添える画像もそろっている。 */
+  exportReady() {
+    return this.status === 'ready' && Boolean(this.doc) &&
+      !(this.imagesPending && this.settings.imageLevel !== 'none');
+  }
+
+  /** まだ内容を作っている最中か（文字起こし・画像取得・润色）。この間の書き出しは予約になる。 */
+  exportBusy() {
+    if (this.status === 'running' || this.status === 'loading') return true;
+    return this.status === 'ready' && (!this.exportReady() || this.polishState.running || this.finalizingPolish);
+  }
+
+  /** 浮窓の複製・保存：書き出せるならすぐ実行、作成中なら「完了後に実行」を切り替える。 */
+  async requestExport(kind) {
+    if (this.exportReady()) return this.runExport(kind);
+    if (!this.exportBusy()) return false;
+    this.pendingExport[kind] = !this.pendingExport[kind];
+    this.panel.setState(this.panelState());
+    return false;
+  }
+
+  async runExport(kind) {
+    const ok = kind === 'copy' ? await this.copyMarkdown() : (await this.download())?.saved !== false;
+    if (ok) {
+      this.exportFlash[kind] = true;
+      clearTimeout(this.exportFlashTimers[kind]);
+      this.exportFlashTimers[kind] = setTimeout(() => {
+        this.exportFlash[kind] = false;
+        this.panel.setState(this.panelState());
+      }, 1800);
+      this.panel.setState(this.panelState());
+    }
+    return ok;
+  }
+
+  /** 状態が変わるたびに確かめる：予約が実行できるなら実行し、失敗・取り消しなら破棄する。 */
+  flushPendingExport() {
+    const kinds = /** @type {('copy'|'download')[]} */ (['copy', 'download']).filter((kind) => this.pendingExport[kind]);
+    if (!kinds.length) return;
+    if (this.status === 'error' || this.status === 'idle') {
+      this.pendingExport = { copy: false, download: false };
+      return;
+    }
+    // 润色の終了までを「完了」とみなす。そうしないと润色前の稿を複製してしまう
+    if (!this.exportReady() || this.exportBusy()) return;
+    this.pendingExport = { copy: false, download: false };
+    for (const kind of kinds) this.runExport(kind);
   }
 
   async copyMarkdown() {
