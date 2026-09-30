@@ -1,75 +1,13 @@
 {
-  "asr-python": {
-    "note": "The transcription service runs in its own virtual environment (data dir/asr/venv). Every package is pinned so the environment is the same on every machine and never drifts with new releases. Versions with wheels for CPython 3.10-3.13 on Windows, Linux and macOS.",
-    "python": ">=3.10,<3.14",
-    "packages": {
-      "faster-whisper": "1.2.1",
-      "ctranslate2": "4.8.1",
-      "av": "16.0.1",
-      "onnxruntime": "1.23.2",
-      "tokenizers": "0.23.1",
-      "huggingface_hub": "1.23.0",
-      "hf-xet": "1.5.1",
-      "numpy": "2.2.6",
-      "pyyaml": "6.0.3",
-      "tqdm": "4.67.1",
-      "filelock": "3.20.0",
-      "fsspec": "2025.12.0",
-      "packaging": "24.2",
-      "httpx": "0.28.1",
-      "httpcore": "1.0.9",
-      "h11": "0.16.0",
-      "anyio": "4.14.2",
-      "idna": "3.7",
-      "certifi": "2025.1.31",
-      "typing_extensions": "4.15.0",
-      "click": "8.5.0",
-      "colorama": "0.4.6",
-      "coloredlogs": "15.0.1",
-      "humanfriendly": "10.0",
-      "pyreadline3": "3.5.6",
-      "flatbuffers": "25.12.19",
-      "protobuf": "7.35.1",
-      "sympy": "1.13.1",
-      "mpmath": "1.3.0"
-    },
-    "license": "faster-whisper: MIT; CTranslate2: MIT"
-  },
-  "cuda-runtime": {
-    "note": "CTranslate2 4.8.1 is built with CUDA 12.8 (PTX ISA 8.7) and bundles cudnn64_9.dll 9.10.2 on Windows. Its cuBLAS and the rest of cuDNN must be at least as new and all of cuDNN one version; borrowing an older copy (e.g. the cuBLAS 12.1 inside PyTorch) fails on some matrix shapes with CUBLAS_STATUS_NOT_SUPPORTED. Installed only on machines with an NVIDIA GPU.",
-    "wheels": {
-      "nvidia-cublas-cu12": {
-        "version": "12.8.4.1",
-        "files": {
-          "win32-x64": {
-            "name": "nvidia_cublas_cu12-12.8.4.1-py3-none-win_amd64.whl",
-            "size": 568,
-            "sha256": "47e9b82132fa8d2b4944e708049229601448aaad7e6f296f630f2d1a32de35af"
-          },
-          "linux-x64": {
-            "name": "nvidia_cublas_cu12-12.8.4.1-py3-none-manylinux_2_27_x86_64.whl",
-            "size": 594,
-            "sha256": "8ac4e771d5a348c551b2a426eda6193c19aa630236b418086020df5ba9667142"
-          }
-        }
-      },
-      "nvidia-cudnn-cu12": {
-        "version": "9.10.2.21",
-        "files": {
-          "win32-x64": {
-            "name": "nvidia_cudnn_cu12-9.10.2.21-py3-none-win_amd64.whl",
-            "size": 693,
-            "sha256": "c6288de7d63e6cf62988f0923f96dc339cea362decb1bf5b3141883392a7d65e"
-          },
-          "linux-x64": {
-            "name": "nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl",
-            "size": 707,
-            "sha256": "949452be657fa16687d0930933f032835951ef0892b37d2d53824d1a84dc97a8"
-          }
-        }
-      }
-    },
-    "license": "NVIDIA Software License Agreement (redistributable CUDA libraries)"
+  "qwen-asr": {
+    "note": "Speech recognition model shared with the original course2md: same repository, files and folder layout (<model dir>/llama-qwen3-1.7b/). Files already present there are used only if they match these hashes; otherwise they are left untouched.",
+    "repo": "ggml-org/Qwen3-ASR-1.7B-GGUF",
+    "revision": "36a678687ba7d07a74ca70ccb0e36902e005fb80",
+    "license": "Apache-2.0",
+    "sha256": {
+      "Qwen3-ASR-1.7B-Q8_0.gguf": "58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57",
+      "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf": "46c1d533af3f354ceb37ce855dbceff7da7fa7cf1e6a523df3b13440bd164c0d"
+    }
   },
   "polish-python": {
     "note": "The polish environment (data dir/polish/venv) reuses the system PyTorch (FireRedPunc runs on the CPU) but gets every other package installed into it at these versions, so changes to the system Python cannot break it. Installing transformers without its dependencies used to leave it missing regex and friends.",
@@ -96,17 +34,6 @@
       "colorama": "0.4.6"
     },
     "license": "transformers / tokenizers / safetensors / huggingface_hub: Apache-2.0"
-  },
-  "whisper-small": {
-    "repo": "Systran/faster-whisper-small",
-    "revision": "536b0662742c02347bc0e980a01041f333bce120",
-    "license": "MIT",
-    "sha256": {
-      "config.json": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
-      "model.bin": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
-      "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
-      "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
-    }
   },
   "fireredpunc-source": {
     "repo": "FireRedTeam/FireRedASR2S",

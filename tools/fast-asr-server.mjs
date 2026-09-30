@@ -15,11 +15,10 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
 import { dataDir, ensureHelperToken, tokenPath } from './helper-data.mjs';
-import { asrPython, asrRuntimeReady, ensureAsrRuntime } from './asr-runtime.mjs';
 import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
-const ASR_PORT = 8081;
+const ASR_PORT = Number(process.env.C2MD_ASR_PORT) || 8081;
 const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
 const BUILTIN_ASR = new Set([`http://127.0.0.1:${ASR_PORT}`, `http://localhost:${ASR_PORT}`]);
 const MAX_BODY = 128 * 1024;
@@ -30,13 +29,11 @@ const controllers = new Map();
 const videoCache = new Map();
 let asrProcess = null;
 let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
-/** The transcription environment being installed, if it is (one installation at a time). */
-let asrInstall = null;
 /**
  * 'auto' tries the GPU; 'cpu' after a GPU failure in the middle of a job, so the job can finish.
  * Back to 'auto' once the service exits on its own after idling.
  */
-let asrDevice = 'auto';
+let asrDevice = process.env.C2MD_ASR_DEVICE === 'cpu' ? 'cpu' : 'auto';
 let polishProcess = null;
 let polishStatus = { state: 'idle', message: '本机润色尚未启动' };
 ensureHelperToken();
@@ -259,7 +256,6 @@ function exitReason(command, code) {
 
 async function startLocalAsr() {
   if (asrProcess && ['starting', 'downloading', 'loading', 'ready'].includes(asrStatus.state)) return;
-  if (asrInstall) return;
   try {
     const existing = await fetch(ASR_HEALTH, { signal: AbortSignal.timeout(1000) });
     if (existing.ok) {
@@ -267,25 +263,16 @@ async function startLocalAsr() {
       return;
     }
   } catch { /* 尚无本机模型服务，继续启动 */ }
-  if (!asrRuntimeReady()) {
-    // First use, or the pins changed with an update: install the environment, then start (status shows progress)
-    asrStatus = { state: 'installing', message: '正在准备本机转录环境' };
-    asrInstall = ensureAsrRuntime({ onState: (state, message) => { asrStatus = { state, message }; } })
-      .then(() => {
-        asrInstall = null;
-        spawnLocalAsr();
-      }, (error) => {
-        asrInstall = null;
-        asrStatus = { state: 'error', message: String(error?.message ?? error) };
-      });
-    return;
-  }
+  // Concurrent callers may both have awaited the health probe before either one spawned.
+  if (asrProcess) return;
   spawnLocalAsr();
 }
 
 function spawnLocalAsr() {
   asrStatus = { state: 'starting', message: '正在检查本机模型' };
-  const child = spawn(asrPython(), ['-u', fileURLToPath(new URL('./local-asr.py', import.meta.url))], {
+  // Only the standard library: the model and llama.cpp are shared with the original course2md (qwen-asr.py)
+  const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+  const child = spawn(python, ['-u', fileURLToPath(new URL('./qwen-asr.py', import.meta.url))], {
     windowsHide: true,
     env: { ...process.env, C2MD_ASR_PORT: String(ASR_PORT), C2MD_DATA_DIR: dataDir(), C2MD_ASR_DEVICE: asrDevice },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -362,7 +349,7 @@ async function startLocalPolish() {
 }
 
 function readyStatus(health) {
-  return { state: 'ready', device: health.device, note: health.note ?? '', message: `本机转录服务已启动（${health.device === 'cuda' ? '显卡' : 'CPU'}）` };
+  return { state: 'ready', model: health.model, device: health.device, note: health.note ?? '', message: `本机转录服务已启动（${health.device === 'cuda' ? '显卡' : 'CPU'}）` };
 }
 
 async function processJob(input, source, endpoint, job, signal) {

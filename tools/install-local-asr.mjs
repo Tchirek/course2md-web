@@ -4,11 +4,12 @@
 //
 // npm run local:install                          install (or repair) in the current data directory
 // npm run local:install -- --data-dir D:\course2md   move the data directory (models, runtimes, host) there first
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { ensureAsrRuntime } from './asr-runtime.mjs';
-import { LOCATION_FILE, chooseDataDir, dataDir } from './helper-data.mjs';
+import os from 'node:os';
+import { LOCATION_FILE, chooseDataDir, dataDir, defaultDataDir } from './helper-data.mjs';
 import { registerHost } from './host-registration.mjs';
 import { stopServices } from './services.mjs';
 
@@ -24,23 +25,25 @@ const requested = args;
 for (const id of requested) if (!/^[a-p]{32}$/.test(id)) throw new Error(`扩展 ID 格式错误：${id}`);
 if (targetDir) moveDataDir(path.resolve(targetDir));
 
-// The transcription service's own environment, every package pinned (see asr-runtime.mjs).
-// Failing here only affects local transcription: the helper is still installed
-try {
-  const { gpu, note } = await ensureAsrRuntime({
-    onState: (_state, message) => process.stdout.write(`${message}…
-`),
-    onLine: (line) => { if (/^(Collecting|Downloading|Successfully installed)/.test(line)) process.stdout.write(`  ${line}
-`); },
-  });
-  process.stdout.write(`本机转录环境已就绪（${gpu ? '显卡加速' : 'CPU'}）。
-`);
-  if (note) process.stdout.write(`${note}
-`);
-} catch (error) {
-  process.stdout.write(`本机转录环境未装好（不影响助手安装）：${error?.message ?? error}
-`);
+// Local transcription runs the original course2md's Qwen3-ASR model on llama.cpp, from a Python that needs
+// only its standard library (qwen-asr.py). Nothing to install here: the model is found, or fetched, on first
+// use. Failing here only affects local transcription: the helper is still installed
+const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+const qwen = fileURLToPath(new URL('./qwen-asr.py', import.meta.url));
+const pythonEnv = { ...process.env, C2MD_DATA_DIR: dataDir() };
+const check = spawnSync(python, ['-c', 'import sys, tomllib; print("%d.%d" % sys.version_info[:2])'], { encoding: 'utf8', windowsHide: true });
+if (check.status !== 0) {
+  process.stdout.write('本机转录需要 Python 3.11 或更新版本（只用标准库）；装好后无须重跑本命令。本机助手照常安装。\n');
+} else {
+  // A data directory on another drive usually means the system drive is short of space. Unless the original
+  // already has its own choice or its own copy of the model, both programs then keep the model there
+  const moved = path.resolve(dataDir()) !== path.resolve(defaultDataDir());
+  const shared = spawnSync(python, [qwen, moved ? '--configure-models' : '--model-dir', ...(moved ? [path.join(dataDir(), 'models')] : [])],
+    { encoding: 'utf8', windowsHide: true, env: pythonEnv });
+  if (shared.status !== 0) process.stdout.write(`没能确定与原版共用的模型目录（本机助手照常安装）：${(shared.stdout || shared.stderr).trim()}\n`);
+  else process.stdout.write(`本机转录与原版 course2md 共用模型目录：${shared.stdout.trim()}\n`);
 }
+removeWhisper();
 // 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册
 const { host, allowedOrigins, detected, token } = registerHost({ extensionIds: requested });
 
@@ -82,6 +85,29 @@ function wakeThroughHost(command) {
 }
 
 /**
+ * The faster-whisper transcription that the shared Qwen3-ASR replaced: its environment (with the CUDA
+ * libraries) and its model, about 2.5 GB that nothing uses any more. Only those exact paths; the
+ * models folder itself may be the one shared with the original course2md.
+ */
+function removeWhisper() {
+  const whisper = 'models--Systran--faster-whisper-small';
+  const targets = [];
+  for (const base of new Set([dataDir(), defaultDataDir()])) {
+    targets.push(...['venv', 'downloads', 'tmp', 'constraints.txt', '.install.lock'].map((name) => path.join(base, 'asr', name)));
+    targets.push(path.join(base, 'models', whisper), path.join(base, 'models', '.locks', whisper), path.join(base, 'models', 'verified.json'));
+  }
+  // older versions kept the model under ~/.cache on macOS / Linux (now also where the original keeps its models)
+  if (process.platform !== 'win32') {
+    const legacy = path.join(os.homedir(), '.cache', 'course2md', 'models');
+    targets.push(path.join(legacy, whisper), path.join(legacy, '.locks', whisper));
+  }
+  for (const target of targets.filter((item) => existsSync(item))) {
+    rmSync(target, { recursive: true, force: true });
+    process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`);
+  }
+}
+
+/**
  * Moves everything in the current data directory (models, runtimes, host, token) to target and
  * records target as the data directory. The services are stopped first: they hold files open there.
  * The token moves along, so the extension keeps working without being told a new one.
@@ -94,7 +120,9 @@ function moveDataDir(target) {
   mkdirSync(target, { recursive: true });
   const skipped = [];
   for (const name of existsSync(from) ? readdirSync(from) : []) {
-    if (name === LOCATION_FILE) continue;
+    // Shared weights remain at the path recorded by upstream, even when helper data moves.
+    if (name === LOCATION_FILE || name === 'models') continue;
+    if (!/^(asr|polish|native-helper.*|native-host\.mjs|start-helper\.vbs|helper-token|host-fingerprint)$/.test(name)) continue;
     const source = path.join(from, name);
     const destination = path.join(target, name);
     if (existsSync(destination)) {

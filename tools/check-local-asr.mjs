@@ -5,7 +5,7 @@ const status = await (await fetch('http://127.0.0.1:8766/asr/status', { headers:
 if (status.state !== 'ready') throw new Error(status.message);
 const probe = await transcribe({
   endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
-  model: 'small',
+  model: status.model || 'Qwen3-ASR-1.7B',
   audio: silentWav(0.1),
   mimeType: 'audio/wav',
   fileName: 'probe.wav',

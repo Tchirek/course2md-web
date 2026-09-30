@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS = {
     /** 本机 ASR 服务的 OpenAI 兼容转写端点。 */
     endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
     apiKey: '',
-    model: 'whisper-1',
+    model: 'Qwen3-ASR-1.7B',
     /** 语言提示（'' = 自动） */
     language: '',
     /** 送入 ASR 的音频切片长度（秒） */

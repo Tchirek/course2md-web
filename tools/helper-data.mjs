@@ -7,8 +7,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const TOKEN_FILE = 'helper-token';
-/** Downloaded models and runtimes: the parts moved along when the data directory changes. */
-export const DATA_PARTS = ['models', 'asr', 'polish'];
+/**
+ * This project's own runtimes and polish models, removed by `local:uninstall -- --purge`. The speech model
+ * is not among them: it lives in the folder shared with the original course2md (see qwen-asr.py).
+ */
+export const DATA_PARTS = ['asr', 'polish'];
 /** Written in the default directory when the user picks another one (npm run local:install -- --data-dir). */
 export const LOCATION_FILE = 'location.json';
 

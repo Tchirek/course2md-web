@@ -199,7 +199,7 @@ async function startLocalAsr() {
     const granted = await chrome.permissions.request({ origins: ['http://127.0.0.1:8081/*'] });
     if (!granted) throw new Error('没有授予本机转录端点的访问权限。');
     const status = await send({ type: 'asr.local.start' });
-    await commitPatch({ source: 'asr', asr: { endpoint: LOCAL_ASR_ENDPOINT, model: 'small', apiKey: '' } });
+    await commitPatch({ source: 'asr', asr: { endpoint: LOCAL_ASR_ENDPOINT, model: status.model || 'Qwen3-ASR-1.7B', apiKey: '' } });
     fillFields();
     showLocalAsrStatus(status);
   } catch (error) {
@@ -239,9 +239,9 @@ function showLocalPolishStatus(status) {
 }
 
 function showLocalAsrStatus(status) {
-  const running = ['starting', 'downloading', 'loading'].includes(status.state);
+  const running = ['starting', 'installing', 'downloading', 'loading'].includes(status.state);
   const button = /** @type {HTMLButtonElement} */ (document.getElementById('asr-start'));
-  const configured = settings.asr.endpoint === LOCAL_ASR_ENDPOINT && settings.asr.model === 'small';
+  const configured = settings.asr.endpoint === LOCAL_ASR_ENDPOINT;
   button.disabled = running;
   button.textContent = status.state === 'ready' ? configured ? '本机服务已启动 · 检查' : '使用本机转录服务' : '启动本机转录服务';
   if (status.state !== 'idle') flash('asr-result', status.message, status.state === 'ready' ? true : status.state === 'error' ? false : null);
