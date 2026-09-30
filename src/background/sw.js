@@ -12,6 +12,7 @@ import { chat, testConnection as testLlm } from './llm.js';
 import { transcribe, testEndpoint as testAsr, parseAsrResponse } from './asr.js';
 import { supportedAudioExtensions } from '../core/audio-ext.js';
 import { cookieFileFor, cookieHeaderFor } from './cookies.js';
+import { recordLoadedCode, reloadIfCodeChanged } from '../core/build.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handler = HANDLERS[message?.type];
@@ -205,6 +206,8 @@ async function helperFetch(route, init = {}) {
   });
   let response = await send();
   if (response.status !== 401) return response;
+  // 後台のコードがディスク上で更新済みなら、古い後台のまま助手と話さず自分を読み込み直す
+  if (await reloadIfCodeChanged().catch(() => false)) throw new Error('扩展刚更新，已自动重新加载；请刷新页面后重试。');
   helperToken = null;
   await chrome.storage.session.remove('helperToken').catch(() => {});
   // 升级后第一次唤醒的可能还是旧宿主（不交令牌）；新助手启动时已把注册修好，再唤醒一次即可
@@ -344,6 +347,8 @@ function describeError(error) {
 
 // 首次安装时把默认设置落盘，之后所有读取都有完整字段
 chrome.runtime.onInstalled.addListener(async () => {
+  // 読み込み時のコードの指紋。ポップアップが「後台だけ古いまま」を見つけるのに使う
+  recordLoadedCode().catch(() => {});
   const stored = await chrome.storage.local.get('settings');
   if (!stored?.settings) await resetSettings();
 });

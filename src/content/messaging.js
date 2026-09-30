@@ -2,7 +2,16 @@
 
 /** 通过后台发消息；后台没响应时抛一个能看懂的错。 */
 export async function send(message) {
-  const reply = await chrome.runtime.sendMessage(message);
+  let reply;
+  try {
+    reply = await chrome.runtime.sendMessage(message);
+  } catch (error) {
+    // 拡張が読み込み直されると、開いていたページの内容スクリプトは後台とつながらなくなる
+    if (/context invalidated/i.test(String(error?.message ?? error))) {
+      throw new Error('扩展刚更新过，请刷新页面后重试。');
+    }
+    throw error;
+  }
   if (!reply) throw new Error('扩展后台没有响应。刷新页面后重试。');
   if (!reply.ok) throw new Error(reply.error ?? '未知错误');
   return reply.value;

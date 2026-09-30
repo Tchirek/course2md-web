@@ -5,6 +5,7 @@
 
 import { segmented, displayToggleRows, progress, note, applyTheme } from './controls.js';
 import { icon } from './icons.js';
+import { reloadIfCodeChanged } from '../core/build.js';
 
 const el = {
   title: document.getElementById('page-title'),
@@ -39,6 +40,11 @@ async function init() {
   applyTheme(settings);
 
   [tab] = activeTabs;
+  // 解凍した拡張はファイルを更新しても後台が古いコードのまま動き、新しい本機助手と噛み合わない
+  // （401 など）。ポップアップは常にディスク上の新しいコードなので、ここで食い違いを見つけて
+  // 拡張を読み込み直す。作業中のタブがあるときは中断しないよう見送る
+  const busy = await ask({ type: 'c2md.ping' }).then((reply) => reply?.busy).catch(() => false);
+  if (!busy && await reloadIfCodeChanged().catch(() => false)) return;
   renderPage();
   renderSource();
   renderToggles();

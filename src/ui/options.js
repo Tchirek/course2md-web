@@ -7,6 +7,7 @@
 
 import { segmented, displayToggleRows, polishEngineRow, applyTheme } from './controls.js';
 import { withDefaults } from '../core/settings.js';
+import { reloadIfCodeChanged } from '../core/build.js';
 
 /** 字段表：DOM id -> 设置路径。声明式绑定，省掉一堆重复的 addEventListener。 */
 const FIELDS = [
@@ -39,6 +40,8 @@ function input(id) {
 }
 
 async function init() {
+  // ポップアップと同じく、後台だけ古いコードのままなら拡張を読み込み直す
+  if (await reloadIfCodeChanged().catch(() => false)) return;
   settings = withDefaults(await load());
   applyTheme(settings);
   fillFields();
