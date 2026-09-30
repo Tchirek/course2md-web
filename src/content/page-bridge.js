@@ -21,6 +21,7 @@ const CHANNEL = 'c2md-page';
 const captionTokens = new Map();
 const TOKEN_PARAMS = ['pot', 'potc', 'c', 'cver'];
 
+/** @param {string} name 资源地址 */
 function noteCaptionRequest(name) {
   if (!name.includes('/api/timedtext')) return;
   try {
@@ -41,8 +42,10 @@ if (/(^|\.)youtube\.com$/.test(location.hostname)) {
   } catch { /* observer が使えなければトークンなしで進む */ }
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// 参数经页面的 postMessage 传来（内容无保证），所以按 any 接收
+/** @type {Record<string, (args: any[]) => unknown>} */
 const handlers = {
   /** YouTube 的播放器响应：字幕轨、章节、标题作者时长都在里面。 */
   'yt.playerResponse'() {
@@ -82,6 +85,7 @@ const handlers = {
     // スキップ可能な広告もあるので、待っている間は「スキップできる」と案内する
     const adShowing = () => player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
     const started = Date.now();
+    /** @type {number|undefined} */
     let lastTime = NaN;
     let movedAt = started;
     while (adShowing() && !captionTokens.has(videoId)) {

@@ -51,7 +51,7 @@ export class PanelBody {
 
     const existing = new Map();
     for (const child of [...body.children]) {
-      if (!child.classList?.contains('c2md-section')) { child.remove(); continue; }
+      if (!(child instanceof HTMLElement) || !child.classList.contains('c2md-section')) { child.remove(); continue; }
       const key = child.dataset.t;
       if (key !== undefined && !existing.has(key)) existing.set(key, child);
       else child.remove();

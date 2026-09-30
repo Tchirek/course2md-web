@@ -18,13 +18,13 @@ export function ensureFreshCode() {
     frame.src = chrome.runtime.getURL('src/ui/freshness.html');
     frame.style.cssText = 'display:none';
     frame.setAttribute('aria-hidden', 'true');
-    const finish = (reloading) => {
+    const finish = (/** @type {boolean} */ reloading) => {
       clearTimeout(timer);
       removeEventListener('message', onMessage);
       frame.remove();
       resolve(reloading);
     };
-    const onMessage = (event) => {
+    const onMessage = (/** @type {MessageEvent} */ event) => {
       if (event.source === frame.contentWindow && event.data?.channel === 'c2md-freshness') finish(Boolean(event.data.reloading));
     };
     // 拿不到答复（页面策略拦了框架等）就照常继续，不因检查本身耽误生成
@@ -57,7 +57,11 @@ export function resumeAfterExtensionReload(request) {
   }, 200);
 }
 
-/** 取出属于本页、仍在有效期内的待续请求，取出即删。 */
+/**
+ * 取出属于本页、仍在有效期内的待续请求，取出即删。
+ * @param {string} page
+ * @returns {{page: string, overrides?: object, at: number} | null}
+ */
 export function takeResumeRequest(page) {
   try {
     const raw = sessionStorage.getItem(RESUME_KEY);

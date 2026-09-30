@@ -2,6 +2,11 @@
 export class FastAudioUnavailable extends Error {}
 const MAX_MEDIA_BYTES = 24 * 1024 * 1024;
 
+/**
+ * @param {HTMLVideoElement} video
+ * @param {import('./capture.js').CaptureOptions} opts 与播放器录音共用
+ * @returns {Promise<{chunks:number, seconds:number, aborted:boolean, mode?:string}>}
+ */
 export async function decodeMediaAudio(video, { chunkSeconds = 30, signal, onChunk, onProgress }) {
   const url = video.currentSrc || video.src;
   if (!url || !/^(https?:|blob:|file:)/.test(url)) {
@@ -67,6 +72,12 @@ export async function decodeMediaAudio(video, { chunkSeconds = 30, signal, onChu
   return { chunks: index, seconds: total, aborted: false, mode: 'offline' };
 }
 
+/**
+ * 从解码后的音频截一段，转成 16kHz / 单声道 / 16bit 的 WAV。
+ * @param {AudioBuffer} audio
+ * @param {number} start 秒
+ * @param {number} end 秒
+ */
 export function wavSlice(audio, start, end) {
   const sampleRate = 16000;
   const count = Math.ceil((end - start) * sampleRate);

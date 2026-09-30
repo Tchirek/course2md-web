@@ -11,6 +11,7 @@ const ENSURE_MS = 800;
  * - after：放在标题元素后面（B 站标题是弹性布局里单行加省略号的一项，放里面会被省略号吞掉）。
  * avoid：与标题同一行、页面自己绝对定位的按钮（B 站长标题右端的「展开」），箭头要给它让位。
  */
+/** @type {Record<string, {selector: string, mode: 'inside'|'after', avoid?: string}>} */
 const PLACES = {
   youtube: { selector: 'ytd-watch-metadata #title h1', mode: 'inside' },
   bilibili: { selector: '.video-info-title-inner h1.video-title', mode: 'after', avoid: '.video-info-title .show-more' },
@@ -53,7 +54,7 @@ export class TitleLauncher {
     this.siteId = siteId;
     this.onLaunch = onLaunch;
     this.busy = false;
-    /** 因截断而放到标题下方时的标题文字 */
+    /** @type {string|null} 因截断而放到标题下方时的标题文字 */
     this.clippedText = null;
     this.host = document.createElement('span');
     this.host.setAttribute('data-c2md-launcher', '');
@@ -78,7 +79,10 @@ export class TitleLauncher {
     setInterval(() => this.ensure(), ENSURE_MS);
   }
 
-  /** 生成进行中：箭头保持高亮并缓慢闪烁，提示已经在做了。 */
+  /**
+   * 生成进行中：箭头保持高亮并缓慢闪烁，提示已经在做了。
+   * @param {boolean} busy
+   */
   setBusy(busy) {
     this.busy = busy;
     this.button.setAttribute('aria-busy', String(busy));
@@ -113,26 +117,38 @@ export class TitleLauncher {
     if (this.clippedBy(title)) this.moveBelow(title, text);
   }
 
+  /**
+   * @param {HTMLElement} title
+   * @param {string|null} text
+   */
   moveBelow(title, text) {
     title.after(this.host);
     this.clippedText = text;
   }
 
-  /** 右侧有页面自己的按钮时留出它的宽度（标题会随之收窄，省略号前移）。 */
+  /**
+   * 右侧有页面自己的按钮时留出它的宽度（标题会随之收窄，省略号前移）。
+   * @param {HTMLElement} title
+   * @param {string} [avoid] 要让位的元素的选择器
+   */
   makeRoom(title, avoid) {
-    const other = avoid && /** @type {HTMLElement|null} */ (document.querySelector(avoid));
+    const other = avoid ? /** @type {HTMLElement|null} */ (document.querySelector(avoid)) : null;
     const box = other?.getBoundingClientRect();
     const edge = title.parentElement?.getBoundingClientRect();
     const room = box?.width && edge ? `${Math.ceil(edge.right - box.left) + 4}px` : '';
     if (this.host.style.marginInlineEnd !== room) this.host.style.marginInlineEnd = room;
   }
 
-  /** 放在标题外面时继承不到标题的字号，照着标题定大小（放在里面时这样做也无妨）。 */
+  /**
+   * 放在标题外面时继承不到标题的字号，照着标题定大小（放在里面时这样做也无妨）。
+   * @param {HTMLElement} title
+   */
   matchSize(title) {
     const size = getComputedStyle(title).fontSize;
     if (this.host.style.fontSize !== size) this.host.style.fontSize = size;
   }
 
+  /** @param {HTMLElement} title */
   clippedBy(title) {
     const box = title.getBoundingClientRect();
     const own = this.host.getBoundingClientRect();

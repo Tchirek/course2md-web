@@ -2,10 +2,18 @@
 // 显示结构（章节分节与段落）是稳定不变的，密度切换不会搬动任何段落，
 // 浏览器的原生滚动锚定才能始终锚在段落上。帧时刻落在段落的起始时间上，
 // 呈现时图片插在它对应的段落之前。
+/**
+ * @template {import('../core/format.js').DocSection} S
+ * @param {S[]} sections
+ * @param {string} [level] none / few / default / many
+ * @param {Map<number, string>} [cache] 讲述时刻 → 已取到的图
+ * @returns {(S & {frames: Frame[]})[]}
+ */
 export function attachFrames(sections, level = 'default', cache = new Map()) {
   if (level === 'none') return sections.map((section) => ({ ...section, frames: [] }));
-  const step = { few: 180, default: 60, many: 10 }[level] ?? 60;
+  const step = /** @type {Record<string, number>} */ ({ few: 180, default: 60, many: 10 })[level] ?? 60;
   return sections.map((section) => {
+    /** @type {Frame[]} */
     const frames = [];
     let slot = -1;
     for (const segment of section.segments) {
@@ -19,6 +27,16 @@ export function attachFrames(sections, level = 'default', cache = new Map()) {
   });
 }
 
+/** @typedef {import('../core/format.js').Frame} Frame */
+
+/**
+ * 由本机服务按时刻取帧，取到一张就写进对应的 frame（原地修改）。
+ * @param {string} sourceUrl
+ * @param {Frame[]} frames
+ * @param {AbortSignal} [signal]
+ * @param {(frame: Frame) => Promise<void>|void} [onImage]
+ * @returns {Promise<number>} 取到的张数
+ */
 export async function captureSectionImages(sourceUrl, frames, signal, onImage) {
   const times = frames.map((frame) => frame.t);
   if (!times.length) return 0;

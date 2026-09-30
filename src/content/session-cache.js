@@ -3,7 +3,10 @@
 /** キャッシュの有効期間：動画が変わっているかもしれず、古いノートは誤解を招く。 */
 const MAX_AGE_MS = 3600_000;
 
-/** 同じサイト・同じ URL（パスとクエリ）で一つ。 */
+/**
+ * 同じサイト・同じ URL（パスとクエリ）で一つ。
+ * @param {string} adapterId
+ */
 export function sessionKey(adapterId) {
   return `cache:${adapterId}:${location.pathname}${location.search}`;
 }
@@ -11,6 +14,8 @@ export function sessionKey(adapterId) {
 /**
  * 保存する。生成した拡張の版を記録し、コードが更新されたら古いロジックの産物は無効にする。
  * 保存できない（容量超過など）ときは黙って諦め、次回取り直すだけにする。
+ * @param {string} key
+ * @param {object} entry
  */
 export async function saveSession(key, entry) {
   try {
@@ -22,7 +27,10 @@ export async function saveSession(key, entry) {
   }
 }
 
-/** @returns {Promise<any>} 有効な項目。期限切れ・版違い・無しなら null */
+/**
+ * @param {string} key
+ * @returns {Promise<any>} 有効な項目。期限切れ・版違い・無しなら null
+ */
 export async function loadSession(key) {
   try {
     const stored = await chrome.storage.session?.get(key);

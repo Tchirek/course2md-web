@@ -25,15 +25,20 @@ const RESTART_GAP_MS = 40;
  */
 
 /**
+ * 取音的共用选项（离线解码的 fast-audio.js 也收同样的）。
+ * @typedef {object} CaptureOptions
+ * @property {number} chunkSeconds
+ * @property {number} [playbackRate]
+ * @property {AbortSignal} [signal]
+ * @property {(chunk: AudioChunk, index: number) => Promise<void>|void} onChunk
+ * @property {(info: {ratio:number, currentSec:number, totalSec:number}) => void} [onProgress]
+ */
+
+/**
  * 从头到尾录一遍视频的音轨，按 chunkSeconds 切片产出。
  *
  * @param {HTMLVideoElement} el
- * @param {object} opts
- * @param {number} opts.chunkSeconds
- * @param {number} [opts.playbackRate]
- * @param {AbortSignal} [opts.signal]
- * @param {(chunk: AudioChunk, index: number) => Promise<void>|void} opts.onChunk
- * @param {(info: {ratio:number, currentSec:number, totalSec:number}) => void} [opts.onProgress]
+ * @param {CaptureOptions} opts
  * @returns {Promise<{chunks:number, seconds:number, aborted:boolean, mode?:string}>}
  */
 export async function captureAudio(el, opts) {
@@ -136,7 +141,15 @@ export async function captureAudio(el, opts) {
   return { chunks: index, seconds, aborted };
 }
 
-/** 录一片：新建一个 MediaRecorder，录够时间就停，保证每片都能独立解码。 */
+/**
+ * 录一片：新建一个 MediaRecorder，录够时间就停，保证每片都能独立解码。
+ * @param {HTMLVideoElement} el
+ * @param {MediaStream} stream
+ * @param {string} mime
+ * @param {number} chunkSeconds
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<Blob|null>} 何も録れなければ null
+ */
 function recordSlice(el, stream, mime, chunkSeconds, signal) {
   return new Promise((resolve) => {
     let recorder;
@@ -147,7 +160,9 @@ function recordSlice(el, stream, mime, chunkSeconds, signal) {
       return;
     }
 
+    /** @type {Blob[]} */
     const parts = [];
+    /** @type {ReturnType<typeof setTimeout>|null} */
     let timer = null;
     let settled = false;
 
