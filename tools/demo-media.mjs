@@ -179,11 +179,9 @@ async function deferredExport() {
   await page.mouse.move(mouse.x, mouse.y);
   const rec = await record(page, base);
   await sleep(250);
+  // この場面は寄り引きなし：パネル全体を映したまま、ボタンの変化と中身の生成を同時に見せる
   const copy = await panelCenter(page, 'label', '复制 Markdown');
   const save = await panelCenter(page, 'label', '下载图文 .md');
-  const foot = { x: (copy.x + save.x) / 2, y: copy.y };
-  // 下の二つのボタンに寄って押す
-  rec.camera(zoomAt(foot, 1.9, base));
   await glideTo(page, copy, 480);
   await sleep(120);
   await click(page);
@@ -196,16 +194,13 @@ async function deferredExport() {
   await sleep(140);
   await click(page);
   await sleep(700);
-  rec.camera(base);
-  await sleep(400);
   rec.speed(12);
   // 複製はその場で終わるが、図文の保存は画像を一枚ずつ書くぶん遅れて「已保存」になる
   await waitPanel(page, (s) => s.copied || s.saved, 240_000);
   rec.speed(1);
   await waitPanel(page, (s) => s.saved, 60_000);
-  // 結果に寄って見せる。「已保存」は 1.8 秒で消えるので、その前に止める
-  rec.camera(zoomAt(foot, 1.9, base));
-  await sleep(1000);
+  // 「已保存」は 1.8 秒で消えるので、その前に止める（最後のコマは長めに見せる）
+  await sleep(700);
   const clip = await rec.stop();
   await glideTo(page, await panelCenter(page, 'text', '默认'), 1);
   await click(page);
