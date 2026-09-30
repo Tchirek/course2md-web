@@ -4,33 +4,13 @@
 //
 // npm run local:install                          install (or repair) in the current data directory
 // npm run local:install -- --data-dir D:\course2md   move the data directory (models, runtimes, host) there first
-import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ensureAsrRuntime } from './asr-runtime.mjs';
 import { LOCATION_FILE, chooseDataDir, dataDir } from './helper-data.mjs';
 import { registerHost } from './host-registration.mjs';
 import { stopServices } from './services.mjs';
-
-// パスはスクリプトの位置から解決する。別ディレクトリから実行しても、ホスト設定には正しいヘルパーのパスが書かれる
-const tools = path.dirname(fileURLToPath(import.meta.url));
-
-const isWin = process.platform === 'win32';
-
-const python = process.env.C2MD_PYTHON || (isWin ? 'python' : 'python3');
-// 版本固定在 runtime-pins.json：任何时候安装都是同一个版本。已装的其他版本不动（那是用户自己的环境）
-const fasterWhisper = JSON.parse(readFileSync(path.join(tools, 'runtime-pins.json'), 'utf8'))['faster-whisper'].pip;
-let probe = spawnSync(python, ['-c', 'import faster_whisper'], { stdio: 'ignore' });
-if (probe.status !== 0) {
-  process.stdout.write(`正在安装 ${fasterWhisper} 运行库…\n`);
-  probe = spawnSync(python, ['-m', 'pip', 'install', '--user', fasterWhisper], { stdio: 'inherit' });
-  if (probe.status !== 0) {
-    // 影響するのはローカル文字起こしだけで、ヘルパー登録は止めない。ホストがなければフレーム取得や音声ダウンロードでもヘルパーを起こせない
-    // （新しい Debian/Ubuntu のシステム Python は PEP 668 で保護され、pip --user では入らない）
-    process.stdout.write('faster-whisper 未装上（不影响助手安装）。本机转录请先装好 Python 3 和 pip，再手动安装：\n' +
-      `  ${python} -m pip install --user ${isWin ? '' : '--break-system-packages '}${fasterWhisper}\n`);
-  }
-}
 
 const args = process.argv.slice(2);
 const flag = args.findIndex((arg) => arg === '--data-dir' || arg.startsWith('--data-dir='));
@@ -43,6 +23,24 @@ if (flag >= 0) {
 const requested = args;
 for (const id of requested) if (!/^[a-p]{32}$/.test(id)) throw new Error(`扩展 ID 格式错误：${id}`);
 if (targetDir) moveDataDir(path.resolve(targetDir));
+
+// The transcription service's own environment, every package pinned (see asr-runtime.mjs).
+// Failing here only affects local transcription: the helper is still installed
+try {
+  const { gpu, note } = await ensureAsrRuntime({
+    onState: (_state, message) => process.stdout.write(`${message}…
+`),
+    onLine: (line) => { if (/^(Collecting|Downloading|Successfully installed)/.test(line)) process.stdout.write(`  ${line}
+`); },
+  });
+  process.stdout.write(`本机转录环境已就绪（${gpu ? '显卡加速' : 'CPU'}）。
+`);
+  if (note) process.stdout.write(`${note}
+`);
+} catch (error) {
+  process.stdout.write(`本机转录环境未装好（不影响助手安装）：${error?.message ?? error}
+`);
+}
 // 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册
 const { host, allowedOrigins, detected, token } = registerHost({ extensionIds: requested });
 

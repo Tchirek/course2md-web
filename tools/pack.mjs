@@ -38,6 +38,8 @@ const HELPER_FILES = [
   'tools/native-host.mjs',
   'tools/helper-data.mjs',
   'tools/services.mjs',
+  'tools/asr-runtime.mjs',
+  'tools/install-lock.mjs',
   'tools/extension-ids.mjs',
   'tools/host-registration.mjs',
   'tools/native-helper.cs',

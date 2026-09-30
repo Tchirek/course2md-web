@@ -14,7 +14,8 @@ import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
-import { ensureHelperToken, tokenPath } from './helper-data.mjs';
+import { dataDir, ensureHelperToken, tokenPath } from './helper-data.mjs';
+import { asrPython, asrRuntimeReady, ensureAsrRuntime } from './asr-runtime.mjs';
 import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
@@ -27,6 +28,13 @@ const controllers = new Map();
 const videoCache = new Map();
 let asrProcess = null;
 let asrStatus = { state: 'idle', message: '本机转录服务尚未启动' };
+/** The transcription environment being installed, if it is (one installation at a time). */
+let asrInstall = null;
+/**
+ * 'auto' tries the GPU; 'cpu' after a GPU failure in the middle of a job, so the job can finish.
+ * Back to 'auto' once the service exits on its own after idling.
+ */
+let asrDevice = 'auto';
 let polishProcess = null;
 let polishStatus = { state: 'idle', message: '本机润色尚未启动' };
 ensureHelperToken();
@@ -123,7 +131,7 @@ http.createServer(async (req, res) => {
       throw new Error('ASR 服务必须在本机');
     }
     const id = randomUUID();
-    const job = { state: 'running', message: source.protocol === 'file:' ? '正在读取本地视频' : '正在下载媒体', done: 0, total: 0, events: [], images: [] };
+    const job = { state: 'running', message: source.protocol === 'file:' ? '正在读取本地视频' : '正在下载媒体', done: 0, total: 0, events: [], images: [], warnings: [] };
     const controller = new AbortController();
     jobs.set(id, job);
     controllers.set(id, controller);
@@ -220,6 +228,7 @@ function exitReason(command, code) {
 
 async function startLocalAsr() {
   if (asrProcess && ['starting', 'downloading', 'loading', 'ready'].includes(asrStatus.state)) return;
+  if (asrInstall) return;
   try {
     const existing = await fetch(ASR_HEALTH, { signal: AbortSignal.timeout(1000) });
     if (existing.ok) {
@@ -227,10 +236,27 @@ async function startLocalAsr() {
       return;
     }
   } catch { /* 尚无本机模型服务，继续启动 */ }
+  if (!asrRuntimeReady()) {
+    // First use, or the pins changed with an update: install the environment, then start (status shows progress)
+    asrStatus = { state: 'installing', message: '正在准备本机转录环境' };
+    asrInstall = ensureAsrRuntime({ onState: (state, message) => { asrStatus = { state, message }; } })
+      .then(() => {
+        asrInstall = null;
+        spawnLocalAsr();
+      }, (error) => {
+        asrInstall = null;
+        asrStatus = { state: 'error', message: String(error?.message ?? error) };
+      });
+    return;
+  }
+  spawnLocalAsr();
+}
+
+function spawnLocalAsr() {
   asrStatus = { state: 'starting', message: '正在检查本机模型' };
-  const child = spawn(process.env.C2MD_PYTHON || 'python', ['-u', fileURLToPath(new URL('./local-asr.py', import.meta.url))], {
+  const child = spawn(asrPython(), ['-u', fileURLToPath(new URL('./local-asr.py', import.meta.url))], {
     windowsHide: true,
-    env: { ...process.env, C2MD_ASR_PORT: String(ASR_PORT) },
+    env: { ...process.env, C2MD_ASR_PORT: String(ASR_PORT), C2MD_DATA_DIR: dataDir(), C2MD_ASR_DEVICE: asrDevice },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   asrProcess = child;
@@ -258,6 +284,7 @@ async function startLocalAsr() {
   child.on('exit', (code) => {
     if (asrProcess !== child) return;
     // 空き時間での自発的な終了（state: idle）はエラーではない。次に使うとき起動し直す
+    if (asrStatus.state === 'idle') asrDevice = 'auto';
     if (!['error', 'idle'].includes(asrStatus.state)) asrStatus = { state: 'error', message: errors || `转录服务退出：${code}` };
     asrProcess = null;
   });
@@ -303,7 +330,7 @@ async function startLocalPolish() {
 }
 
 function readyStatus(health) {
-  return { state: 'ready', message: `本机转录服务已启动（${health.device === 'cuda' ? '显卡' : 'CPU'}）` };
+  return { state: 'ready', device: health.device, note: health.note ?? '', message: `本机转录服务已启动（${health.device === 'cuda' ? '显卡' : 'CPU'}）` };
 }
 
 async function processJob(input, source, endpoint, job, signal) {
@@ -350,7 +377,13 @@ async function processJob(input, source, endpoint, job, signal) {
     const files = (await readdir(dir)).filter((name) => /^part-\d+\.wav$/.test(name)).sort();
     if (!files.length) throw new Error('ffmpeg 未产出音频切片');
     job.total = files.length;
-    if (BUILTIN_ASR.has(endpoint.origin)) await waitForLocalAsr(job, signal);
+    // The device the service runs on, remembered here: after a GPU failure the service reports only the error
+    let serviceDevice = null;
+    if (BUILTIN_ASR.has(endpoint.origin)) {
+      await waitForLocalAsr(job, signal);
+      serviceDevice = asrStatus.device;
+      if (asrStatus.note) job.warnings.push(asrStatus.note);
+    }
     const events = job.events;
     let restarts = 0;
     for (let i = 0; i < files.length; i++) {
@@ -387,8 +420,16 @@ async function processJob(input, source, endpoint, job, signal) {
         // 新しいプロセスなら CUDA コンテキストも作り直されるので、同じ切片を一度だけやり直す
         if (!BUILTIN_ASR.has(endpoint.origin) || restarts >= 3) throw new Error(`ASR 第 ${i + 1} 片失败：${error.message}`);
         restarts++;
-        job.message = `本机转录服务出错（${error.message}），正在重启后重试第 ${i + 1} 片`;
+        if (serviceDevice === 'cuda') {
+          // A GPU failure tends to repeat on the same input. Finish the job on the CPU instead of failing it
+          asrDevice = 'cpu';
+          job.message = `显卡转录出错，正在改用 CPU 重试第 ${i + 1} 片`;
+          job.warnings.push(`显卡转录第 ${i + 1} 片出错，已改用 CPU 继续（较慢）：${error.message.slice(0, 160)}`);
+        } else {
+          job.message = `本机转录服务出错（${error.message}），正在重启后重试第 ${i + 1} 片`;
+        }
         await restartLocalAsr(job, signal);
+        serviceDevice = asrStatus.device;
         try {
           reply = await attempt();
         } catch (retryError) {

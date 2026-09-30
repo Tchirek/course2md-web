@@ -1,7 +1,75 @@
 {
-  "faster-whisper": {
-    "pip": "faster-whisper==1.2.1",
-    "license": "MIT"
+  "asr-python": {
+    "note": "The transcription service runs in its own virtual environment (data dir/asr/venv). Every package is pinned so the environment is the same on every machine and never drifts with new releases. Versions with wheels for CPython 3.10-3.13 on Windows, Linux and macOS.",
+    "python": ">=3.10,<3.14",
+    "packages": {
+      "faster-whisper": "1.2.1",
+      "ctranslate2": "4.8.1",
+      "av": "16.0.1",
+      "onnxruntime": "1.23.2",
+      "tokenizers": "0.23.1",
+      "huggingface_hub": "1.23.0",
+      "hf-xet": "1.5.1",
+      "numpy": "2.2.6",
+      "pyyaml": "6.0.3",
+      "tqdm": "4.67.1",
+      "filelock": "3.20.0",
+      "fsspec": "2025.12.0",
+      "packaging": "24.2",
+      "httpx": "0.28.1",
+      "httpcore": "1.0.9",
+      "h11": "0.16.0",
+      "anyio": "4.14.2",
+      "idna": "3.7",
+      "certifi": "2025.1.31",
+      "typing_extensions": "4.15.0",
+      "click": "8.5.0",
+      "colorama": "0.4.6",
+      "coloredlogs": "15.0.1",
+      "humanfriendly": "10.0",
+      "pyreadline3": "3.5.6",
+      "flatbuffers": "25.12.19",
+      "protobuf": "7.35.1",
+      "sympy": "1.13.1",
+      "mpmath": "1.3.0"
+    },
+    "license": "faster-whisper: MIT; CTranslate2: MIT"
+  },
+  "cuda-runtime": {
+    "note": "CTranslate2 4.8.1 is built with CUDA 12.8 (PTX ISA 8.7) and bundles cudnn64_9.dll 9.10.2 on Windows. Its cuBLAS and the rest of cuDNN must be at least as new and all of cuDNN one version; borrowing an older copy (e.g. the cuBLAS 12.1 inside PyTorch) fails on some matrix shapes with CUBLAS_STATUS_NOT_SUPPORTED. Installed only on machines with an NVIDIA GPU.",
+    "wheels": {
+      "nvidia-cublas-cu12": {
+        "version": "12.8.4.1",
+        "files": {
+          "win32-x64": {
+            "name": "nvidia_cublas_cu12-12.8.4.1-py3-none-win_amd64.whl",
+            "size": 568,
+            "sha256": "47e9b82132fa8d2b4944e708049229601448aaad7e6f296f630f2d1a32de35af"
+          },
+          "linux-x64": {
+            "name": "nvidia_cublas_cu12-12.8.4.1-py3-none-manylinux_2_27_x86_64.whl",
+            "size": 594,
+            "sha256": "8ac4e771d5a348c551b2a426eda6193c19aa630236b418086020df5ba9667142"
+          }
+        }
+      },
+      "nvidia-cudnn-cu12": {
+        "version": "9.10.2.21",
+        "files": {
+          "win32-x64": {
+            "name": "nvidia_cudnn_cu12-9.10.2.21-py3-none-win_amd64.whl",
+            "size": 693,
+            "sha256": "c6288de7d63e6cf62988f0923f96dc339cea362decb1bf5b3141883392a7d65e"
+          },
+          "linux-x64": {
+            "name": "nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl",
+            "size": 707,
+            "sha256": "949452be657fa16687d0930933f032835951ef0892b37d2d53824d1a84dc97a8"
+          }
+        }
+      }
+    },
+    "license": "NVIDIA Software License Agreement (redistributable CUDA libraries)"
   },
   "whisper-small": {
     "repo": "Systran/faster-whisper-small",
@@ -62,20 +130,38 @@
     "license": "MIT",
     "assets": {
       "win32-x64": [
-        { "name": "llama-b11235-bin-win-cuda-12.4-x64.zip", "sha256": "85b6d6fd41a1fc89a6af3d674665331d2f4578e2282ed5067e4c302327c9af0a" },
-        { "name": "cudart-llama-bin-win-cuda-12.4-x64.zip", "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6" }
+        {
+          "name": "llama-b11235-bin-win-cuda-12.4-x64.zip",
+          "sha256": "85b6d6fd41a1fc89a6af3d674665331d2f4578e2282ed5067e4c302327c9af0a"
+        },
+        {
+          "name": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+        }
       ],
       "darwin-arm64": [
-        { "name": "llama-b11235-bin-macos-arm64.tar.gz", "sha256": "d28351029acd7e0c01825d8e7dddadded3da4a2494bf72ebd98e73aec9344d50" }
+        {
+          "name": "llama-b11235-bin-macos-arm64.tar.gz",
+          "sha256": "d28351029acd7e0c01825d8e7dddadded3da4a2494bf72ebd98e73aec9344d50"
+        }
       ],
       "darwin-x64": [
-        { "name": "llama-b11235-bin-macos-x64.tar.gz", "sha256": "27427e8240ae0900e781f0897780dfa14ad0b12aa75ce60ecad3779d66d3a980" }
+        {
+          "name": "llama-b11235-bin-macos-x64.tar.gz",
+          "sha256": "27427e8240ae0900e781f0897780dfa14ad0b12aa75ce60ecad3779d66d3a980"
+        }
       ],
       "linux-x64": [
-        { "name": "llama-b11235-bin-ubuntu-x64.tar.gz", "sha256": "7f4f1dd11b5bc471db1de74df66a5e4065523c260ecc73780755a7c99cb68114" }
+        {
+          "name": "llama-b11235-bin-ubuntu-x64.tar.gz",
+          "sha256": "7f4f1dd11b5bc471db1de74df66a5e4065523c260ecc73780755a7c99cb68114"
+        }
       ],
       "linux-arm64": [
-        { "name": "llama-b11235-bin-ubuntu-arm64.tar.gz", "sha256": "3d7e5a11d9bfbb63b55ad956f2c8e80133cd0acb45afff2f47dcd790a17f70eb" }
+        {
+          "name": "llama-b11235-bin-ubuntu-arm64.tar.gz",
+          "sha256": "3d7e5a11d9bfbb63b55ad956f2c8e80133cd0acb45afff2f47dcd790a17f70eb"
+        }
       ]
     },
     "gpu_layers": {

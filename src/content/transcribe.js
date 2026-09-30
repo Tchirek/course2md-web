@@ -77,6 +77,8 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         onProgress?.('capture', { ratio: job.total ? job.done / job.total : 0, message: job.message });
       } while (job.state === 'running');
       if (job.state === 'error') throw new Error(job.error);
+      // Notes from the helper (e.g. it finished on the CPU after a GPU error) become panel notices
+      for (const note of job.warnings ?? []) if (!warnings.includes(note)) warnings.push(note);
       if (events.length) {
         await simplifyBilibili(events, adapter.id);
         const built = organize(events, meta, {});
