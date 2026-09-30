@@ -27,3 +27,38 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  # main への push はすべて、検査が通ればそのままリリースになる（版は tools/next-version.mjs が決める）
+  release:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # 続けて push しても版が重ならないよう、一つずつ順に出す
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Version
+        id: version
+        run: echo "value=$(node tools/next-version.mjs)" >> "$GITHUB_OUTPUT"
+      - name: Package
+        env:
+          C2MD_VERSION: ${{ steps.version.outputs.value }}
+        run: npm run pack
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: v${{ steps.version.outputs.value }}
+        run: |
+          gh release create "$VERSION" dist/*.zip dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "course2md $VERSION" --generate-notes

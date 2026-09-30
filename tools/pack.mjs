@@ -20,7 +20,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
 
 const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
-const version = manifest.version;
+// main への push ごとの自動リリースでは、CI が決めた版（例 0.4.3）で包む。リポジトリの manifest は書き換えない
+const version = releaseVersion(process.env.C2MD_VERSION, manifest.version);
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
 /** 助手运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
@@ -65,7 +66,7 @@ const artifacts = [];
 
 // ---------- 1. 扩展 zip ----------
 artifacts.push(await makeZip(`course2md-${version}.zip`, join(DIST, 'stage-ext'), async (stage) => {
-  cpSync(join(ROOT, 'manifest.json'), join(stage, 'manifest.json'));
+  writeFileSync(join(stage, 'manifest.json'), `${JSON.stringify({ ...manifest, version }, null, 2)}\n`);
   cpSync(join(ROOT, 'src'), join(stage, 'src'), { recursive: true });
   for (const file of LEGAL_FILES) cpSync(join(ROOT, file), join(stage, file));
   return ['manifest.json', ...LEGAL_FILES, ...allFiles(join(ROOT, 'src'), 'src')];
@@ -75,7 +76,7 @@ artifacts.push(await makeZip(`course2md-${version}.zip`, join(DIST, 'stage-ext')
 artifacts.push(await makeZip(`course2md-helper-${version}.zip`, join(DIST, 'stage-helper'), async (stage) => {
   writeFileSync(join(stage, 'package.json'), JSON.stringify({
     name: pkg.name,
-    version: pkg.version,
+    version,
     private: true,
     type: 'module',
     license: pkg.license,
@@ -149,4 +150,19 @@ function allFiles(dir, prefix) {
     else out.push(rel);
   }
   return out;
+}
+
+/** 包む版。指定がなければ manifest の版。指定は Chrome の版の形式で、manifest の版より古くてはならない。 */
+function releaseVersion(requested, base) {
+  if (!requested) return base;
+  if (!/^\d+(\.\d+){0,3}$/.test(requested)) throw new Error(`C2MD_VERSION の形式が不正：${requested}`);
+  const parts = (value) => value.split('.').map(Number);
+  const [a, b] = [parts(requested), parts(base)];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) {
+      if ((a[i] ?? 0) < (b[i] ?? 0)) throw new Error(`C2MD_VERSION ${requested} が manifest の ${base} より古い`);
+      break;
+    }
+  }
+  return requested;
 }
