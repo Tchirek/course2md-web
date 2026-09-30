@@ -15,6 +15,7 @@ import { loadSession, saveSession, sessionKey } from './session-cache.js';
 import { PolishCoordinator } from './polish-coordinator.js';
 import { FrameLoader } from './frame-loader.js';
 import { ensureFreshCode, extensionGone, resumeAfterExtensionReload, takeResumeRequest } from './freshness.js';
+import { TitleLauncher } from './title-launcher.js';
 
 const POLL_MS = 1500;
 /** 提前润色起步的最少事件数：攒够一点内容就开始，不等转录全部结束。 */
@@ -48,6 +49,8 @@ export class Controller {
     this.autoRunArmed = false;
     // 只作用于下一次生成的临时选择（如标题旁的按钮指定优先用平台字幕），不改设置
     this.nextRunOverrides = null;
+    // 自动生成（换视频时）沿用开启它的那次选择：由标题旁的 ↗ 开启的就一直优先用平台字幕
+    this.autoRunOverrides = null;
     // 内容がまだできていないときに押された複製・保存。できた瞬間に実行する（もう一度押すと取り消し）。
     // ブラウザの「ダウンロード完了後に開く」と同じ考え方
     this.pendingExport = { copy: false, download: false };
@@ -62,6 +65,8 @@ export class Controller {
     this.polishRestart = false;
     this.finalizingPolish = false;
     this.urlKey = this.currentUrlKey();
+    /** @type {TitleLauncher|null} */
+    this.launcher = null;
     this.polisher = new PolishCoordinator(this);
     this.frames = new FrameLoader(this);
 
@@ -73,6 +78,7 @@ export class Controller {
       onDownload: () => this.requestExport('download'),
       onRerun: () => {
         this.autoRunArmed = true;
+        this.autoRunOverrides = null;
         return this.run();
       },
       onRepolish: () => this.polisher.repolish(),
@@ -131,6 +137,9 @@ export class Controller {
     // SPA 换视频：YouTube 与 B 站都是不刷新页面换内容的
     setInterval(() => this.checkNavigation(), POLL_MS);
 
+    this.launcher = new TitleLauncher(() => this.adapter.id, () => this.launch());
+    this.launcher.start();
+
     // 有缓存内容就恢复出来（后退/前进回来时不用重新抓一遍）
     const cached = await this.loadCache();
     if (cached) {
@@ -159,6 +168,7 @@ export class Controller {
     const resume = takeResumeRequest(this.urlKey);
     if (resume) {
       this.nextRunOverrides = resume.overrides ?? null;
+      this.autoRunOverrides = this.nextRunOverrides;
       this.autoRunArmed = true;
       this.status = 'loading';
       this.panelDismissed = false;
@@ -215,6 +225,7 @@ export class Controller {
     this.autoTimer = setTimeout(() => {
       if (this.urlKey !== key || !this.autoRunArmed) return;
       if (!this.adapter.video()) return this.scheduleAutoRun();
+      this.nextRunOverrides ??= this.autoRunOverrides;
       this.run();
     }, 1000);
   }
@@ -241,6 +252,7 @@ export class Controller {
 
     'c2md.run': () => {
       this.autoRunArmed = true;
+      this.autoRunOverrides = null;
       this.run().catch((error) => {
         this.status = 'error';
         this.error = toErrorState(error);
@@ -307,6 +319,7 @@ export class Controller {
 
   broadcast(updatePanel = true) {
     this.flushPendingExport();
+    this.launcher?.setBusy(this.status === 'running');
     if (updatePanel) this.panel.setState(this.panelState());
     // 弹窗可能开着，也可能没开；没开时这个 sendMessage 会静默失败
     chrome.runtime.sendMessage({ type: 'c2md.state', payload: this.summaryState() }).catch(() => {});
@@ -475,6 +488,27 @@ export class Controller {
     return { status: this.status, error: this.error };
   }
 
+
+  /**
+   * 标题旁的 ↗：立即生成。这一次优先用平台字幕（没有就照常自动改用本地转录），
+   * 图片密度沿用上次停留的挡位（即设置里的 imageLevel）。正在生成时只把面板叫出来。
+   */
+  launch() {
+    this.panelDismissed = false;
+    if (this.status === 'running') {
+      this.panel.mount();
+      this.broadcast();
+      return;
+    }
+    this.autoRunArmed = true;
+    this.autoRunOverrides = { source: 'subtitle' };
+    this.nextRunOverrides = this.autoRunOverrides;
+    this.run().catch((error) => {
+      this.status = 'error';
+      this.error = toErrorState(error);
+      this.broadcast();
+    });
+  }
 
   /** 扩展正在重新加载：面板说明缘由，扩展起来后刷新页面、接着生成。 */
   resumeAfterReload(overrides) {
