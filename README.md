@@ -271,3 +271,4 @@ MIT，全文见 `LICENSE`。第三方组件（随包分发的与运行时下载�
 README 里的动图与截图都由 `npm run media` 用本扩展在真实 YouTube 页面上录制，页面内容都是现场生成的真实结果；动图里的光标与镜头推拉是后期按真实操作的位置与时刻合成的。
 演示课程为 MIT OpenCourseWare《6.0001 Introduction to Computer Science and Programming in Python》（Fall 2016，Dr. Ana Bell），
 按 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) 使用。
+横幅中的 YouTube 与 bilibili 标志取自 Wikimedia Commons（公有领域），仅用于标示所支持的站点；它们是各自所有者的商标。

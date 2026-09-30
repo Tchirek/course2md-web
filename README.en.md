@@ -273,3 +273,4 @@ the comments of `src/ui/tokens.css`. Traditional/Simplified conversion uses open
 The GIFs and screenshots in this README were all recorded by `npm run media` with this extension on real YouTube pages; everything on the page is a real result generated on the spot. The cursor and the camera zooms in the GIFs are composited afterwards from the real pointer positions and timings.
 The demo lecture is MIT OpenCourseWare's *6.0001 Introduction to Computer Science and Programming in Python* (Fall 2016, Dr. Ana Bell),
 used under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+The YouTube and bilibili logos in the banner come from Wikimedia Commons (public domain) and only indicate the supported sites; they are trademarks of their respective owners.

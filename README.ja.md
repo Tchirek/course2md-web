@@ -273,3 +273,4 @@ MIT。全文は `LICENSE` にあります。サードパーティの部品（同
 この README の GIF とスクリーンショットは、どれも `npm run media` がこの拡張を本物の YouTube のページで動かして録ったもので、ページの中身はその場で生成された本物の結果です。GIF の光標と寄り引きは、実際の操作の位置と時刻をもとに後から合成しています。
 実演の講義は MIT OpenCourseWare の《6.0001 Introduction to Computer Science and Programming in Python》（Fall 2016、Dr. Ana Bell）で、
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) に基づいて使っています。
+横幕の YouTube と bilibili のロゴは Wikimedia Commons（パブリックドメイン）から取り、対応サイトを示すためだけに使っています。いずれも各所有者の商標です。
