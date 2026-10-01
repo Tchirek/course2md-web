@@ -39,8 +39,8 @@ if (check.status !== 0) {
   const target = sharedModelTarget();
   const shared = spawnSync(python, [qwen, ...(target ? ['--configure-models', target] : ['--model-dir'])],
     { encoding: 'utf8', windowsHide: true, env: pythonEnv });
-  if (shared.status !== 0) process.stdout.write(`没能确定与原版共用的模型目录（本机助手照常安装）：${(shared.stdout || shared.stderr).trim()}\n`);
-  else process.stdout.write(`本机转录与原版 course2md 共用模型目录：${shared.stdout.trim()}\n`);
+  if (shared.status !== 0) process.stdout.write(`没能确定与 course2md 共用的模型目录（本机助手照常安装）：${(shared.stdout || shared.stderr).trim()}\n`);
+  else process.stdout.write(`本机转录与 course2md 共用模型目录：${shared.stdout.trim()}\n`);
 }
 removeObsoleteWhisper((target) => process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`));
 // 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册

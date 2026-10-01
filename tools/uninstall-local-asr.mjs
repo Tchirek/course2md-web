@@ -26,7 +26,7 @@ if (purge) {
 }
 for (const item of removed) process.stdout.write(`已删除：${item}\n`);
 process.stdout.write(purge
-  ? '本机助手已卸载，专用运行库已删除；共享模型与原版配置已保留。\n'
+  ? '本机助手已卸载，专用运行库已删除；共享模型与 course2md 配置已保留。\n'
   : '本机助手已卸载。下载的模型与运行库仍保留，重装时无须再下；要一并删除请运行 npm run local:uninstall -- --purge。\n');
 
 /**

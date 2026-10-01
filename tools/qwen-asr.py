@@ -76,7 +76,7 @@ def configure_models(target):
         if match:
             text = text[:match.end()] + '\n' + line + text[match.end():]
         elif 'defaults' in value:
-            raise ValueError('请在原版 config.toml 的 defaults 中设置 model_dir 后重试（保留了原配置）')
+            raise ValueError('请在 course2md config.toml 的 defaults 中设置 model_dir 后重试（保留了原配置）')
         else:
             text = text.rstrip() + '\n\n[defaults]\n' + line
         tomllib.loads(text)
