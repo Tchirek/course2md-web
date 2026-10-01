@@ -56,8 +56,11 @@ const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:uninstall', 'local:c
 
 // ---------- 0. 完整检查：测试不过就不许出门 ----------
 // 以前只跑清单自检，单元测试和布局断言失败也照样能打出发布包
-const check = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'check'],
-  { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+// npm's own CLI path is available under npm run; execute it directly without a Windows shell.
+const npmCli = process.env.npm_execpath || (process.platform === 'win32' ? join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js') : null);
+const check = npmCli
+  ? spawnSync(process.execPath, [npmCli, 'run', 'check'], { cwd: ROOT, stdio: 'inherit', windowsHide: true })
+  : spawnSync('npm', ['run', 'check'], { cwd: ROOT, stdio: 'inherit' });
 if (check.status !== 0) {
   console.error('检查没有全部通过，不打包。');
   process.exit(check.status || 1);
