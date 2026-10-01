@@ -8,7 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { LOCATION_FILE, chooseDataDir, dataDir, removeObsoleteWhisper, sharedModelTarget } from './helper-data.mjs';
+import { LOCATION_FILE, chooseDataDir, dataDir, removeObsoleteWhisper, sharedModelTarget, pythonCommand } from './helper-data.mjs';
 import { registerHost } from './host-registration.mjs';
 import { stopServices } from './services.mjs';
 
@@ -27,7 +27,7 @@ if (targetDir) moveDataDir(path.resolve(targetDir));
 // Local transcription runs the original course2md's Qwen3-ASR model on llama.cpp, from a Python that needs
 // only its standard library (qwen-asr.py). Nothing to install here: the model is found, or fetched, on first
 // use. Failing here only affects local transcription: the helper is still installed
-const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+const python = pythonCommand();
 const qwen = fileURLToPath(new URL('./qwen-asr.py', import.meta.url));
 const pythonEnv = { ...process.env, C2MD_DATA_DIR: dataDir() };
 const check = spawnSync(python, ['-c', 'import sys, tomllib; print("%d.%d" % sys.version_info[:2])'], { encoding: 'utf8', windowsHide: true });
@@ -45,6 +45,7 @@ if (check.status !== 0) {
 removeObsoleteWhisper((target) => process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`));
 // 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册
 const { host, allowedOrigins, detected, token } = registerHost({ extensionIds: requested });
+stopServices();
 
 // ヘルパーを直接起動せず、ブラウザと同じく登録したてのホスト経由で起こす。ホストの不具合は
 // 再起動後に拡張が起こせなくなって初めて気づくのではなく、今ここで報告される

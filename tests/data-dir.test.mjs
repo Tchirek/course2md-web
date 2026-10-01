@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LOCATION_FILE, chooseDataDir, dataDir, defaultDataDir, removeObsoleteWhisper, sharedModelTarget } from '../tools/helper-data.mjs';
+import { LOCATION_FILE, chooseDataDir, dataDir, defaultDataDir, removeObsoleteWhisper, sharedModelTarget, pythonCommand } from '../tools/helper-data.mjs';
 
 /** Points the platform default at a temporary folder for the duration of fn. */
 function withTempHome(fn) {
@@ -35,6 +35,25 @@ test('数据目录默认在平台位置，选定后记在默认位置并一直�
     assert.equal(dataDir(), defaultDataDir());
     assert.equal(existsSync(path.join(defaultDataDir(), LOCATION_FILE)), false);
   });
+});
+
+test('安装器记录的 Python 可供浏览器唤醒使用，环境变量仍可覆盖', () => {
+  const previous = process.env.C2MD_PYTHON;
+  delete process.env.C2MD_PYTHON;
+  try {
+    withTempHome((root) => {
+      const chosen = chooseDataDir(path.join(root, 'helper'));
+      const python = path.join(root, 'python.exe');
+      writeFileSync(python, 'test');
+      writeFileSync(path.join(chosen, 'runtime.json'), JSON.stringify({ python }));
+      assert.equal(pythonCommand(), python);
+      process.env.C2MD_PYTHON = 'custom-python';
+      assert.equal(pythonCommand(), 'custom-python');
+    });
+  } finally {
+    if (previous === undefined) delete process.env.C2MD_PYTHON;
+    else process.env.C2MD_PYTHON = previous;
+  }
 });
 
 test('数据目录不随磁盘剩余空间变化；记录损坏或不是绝对路径时退回默认位置', () => {

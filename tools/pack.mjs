@@ -26,6 +26,8 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
 /** 助手运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
 const HELPER_FILES = [
+  '安装本机助手.cmd',
+  'tools/install-helper.ps1',
   'tools/engine-pins.json',
   'tools/library.py',
   'tools/fast-asr-server.mjs',

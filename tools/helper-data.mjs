@@ -38,6 +38,16 @@ export function dataDir() {
   return base;
 }
 
+/** The click-to-install launcher records its Python so browser/autostart launches use it too. */
+export function pythonCommand() {
+  if (process.env.C2MD_PYTHON) return process.env.C2MD_PYTHON;
+  try {
+    const python = JSON.parse(readFileSync(path.join(dataDir(), 'runtime.json'), 'utf8')).python;
+    if (typeof python === 'string' && path.isAbsolute(python) && existsSync(python)) return python;
+  } catch { /* use an existing system installation */ }
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
 /** Records the chosen data directory (or forgets the choice when it is the default). */
 export function chooseDataDir(dir) {
   const base = defaultDataDir();

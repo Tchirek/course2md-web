@@ -8,15 +8,18 @@
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { downloadBilibiliAudio, downloadBilibiliVideo } from './bilibili-audio.mjs';
 import { SILENCE_FILTER, invertSilence, parseSilences, pcmData, rmsOfFile, speechSegments, wavFile } from './speech-segments.mjs';
-import { dataDir, ensureHelperToken, removeObsoleteWhisper, sharedModelTarget, tokenPath } from './helper-data.mjs';
+import { dataDir, ensureHelperToken, removeObsoleteWhisper, sharedModelTarget, tokenPath, pythonCommand } from './helper-data.mjs';
 import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
+
+process.env.C2MD_PYTHON ||= pythonCommand();
+process.env.PATH = [path.join(dataDir(), 'bin'), path.dirname(process.execPath), process.env.PATH ?? ''].join(path.delimiter);
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
 const ASR_PORT = Number(process.env.C2MD_ASR_PORT) || 8081;
@@ -190,6 +193,7 @@ function sweepStaleTemp() {
  * 助手在那之前退出的话，登录 cookie 就一直留在临时目录里。
  */
 async function ytDlp(args, url, cookieFile, signal) {
+  if (process.platform === 'win32' && existsSync(path.join(dataDir(), 'bin', 'yt-dlp.exe'))) args = ['--js-runtimes', `node:${process.execPath}`, ...args];
   if (!cookieFile) return run('yt-dlp', [...args, '--', url], signal);
   const dir = await mkdtemp(path.join(TEMP_ROOT, 'cookies-'));
   try {
