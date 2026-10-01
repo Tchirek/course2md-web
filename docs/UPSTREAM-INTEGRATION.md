@@ -102,7 +102,7 @@
 
 不能为了出现这些按钮伪造已完成任务，也不能由插件在桌面程序打开时直接改写它的 workspace、服务、阅读位置或逻辑分类文件。桌面程序持有内存状态并自行保存，外部写入会造成状态冲突。
 
-课程库位置应从原版已登记的 `libraries/default_library` 或用户明确指定的位置取得，不等同于 CLI `defaults.out`，也不保证是 `Documents/course2md`。当前桌面首次启动甚至会从配置目录下的 `desktop-local-library` 起步。
+课程库优先取桌面端已登记的 `libraries/default_library` 或用户选中的位置，不等同于 CLI `defaults.out`，也不保证是 `Documents/course2md`。尚无可用库时，网页助手先准备同一配置目录下的 `desktop-local-library`；桌面端首次启动会使用这个默认目录并扫描已有课程，不需要预写它的 workspace。CLI 先检查本机安装，未找到兼容程序时可下载经过固定版本、大小及 SHA-256 校验的独立副本到助手的 `bin/`。
 
 源码：[持久工作区字段](F:/shame/course2md-upstream/desktop/src/workspace.rs:449)、[任务关联动作](F:/shame/course2md-upstream/desktop/src/reader_ui.rs:3447)、[离线视频条件](F:/shame/course2md-upstream/desktop/src/reader_ui.rs:87)。
 
