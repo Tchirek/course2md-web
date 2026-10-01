@@ -50,6 +50,9 @@ test('本机助手除 /health 外，没有访问令牌一律拒绝', async (t) =
   assert.equal(await call('/transcribe', { method: 'POST', body: localFile, origin: 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }), 401);
   assert.equal(await call('/frames', { method: 'POST', body: localFile }), 401);
   assert.equal(await call('/library/discover', { method: 'POST', body: '{}' }), 401);
+  const fresh = await fetch(`${base}/library/discover`, { method: 'POST', headers: { 'x-c2md-token': token }, body: '{}' }).then((r) => r.json());
+  assert.equal(fresh.libraries[0].root, join(dir, 'upstream', 'desktop-local-library'));
+  assert.equal(fresh.defaultLibrary, fresh.libraries[0].id);
   assert.equal(await call('/library/connect', { method: 'POST', body: JSON.stringify({ root: dir }), token }), 200);
   assert.equal(await call('/library/discover', { method: 'POST', body: '{}', token }), 200);
   const libraryCall = async (action, input) => {

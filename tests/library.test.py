@@ -1,6 +1,7 @@
 import base64
 import copy
 import importlib.util
+import io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -18,6 +19,55 @@ spec.loader.exec_module(bridge)
 
 
 class LibraryTest(unittest.TestCase):
+    def test_fresh_default_and_desktop_preference(self):
+        default = self.config / "desktop-local-library"
+        found = bridge.libraries(self.root / "new-helper")
+        self.assertEqual(found["libraries"][0]["root"], str(default.resolve()))
+        self.assertEqual(found["defaultLibrary"], found["libraries"][0]["id"])
+        self.assertTrue(default.is_dir())
+        self.assertFalse((self.config / "desktop-workspace.json").exists())
+        workspace = {"schema": 1, "default_library": "chosen", "libraries": [
+            {"id": "other", "root": str(default)}, {"id": "chosen", "root": str(self.library)}]}
+        (self.config / "desktop-workspace.json").write_bytes(bridge.encoded(workspace))
+        found = bridge.libraries(self.data)
+        selected = next(x for x in found["libraries"] if x["id"] == found["defaultLibrary"])
+        self.assertEqual(selected["root"], str(self.library.resolve()))
+
+    def test_engine_recovers_a_stale_saved_path(self):
+        binary = self.data / "bin" / ("course2md.exe" if os.name == "nt" else "course2md")
+        binary.parent.mkdir()
+        binary.write_bytes(b"test engine")
+        config = self.data / "upstream-engine.json"
+        config.write_bytes(bridge.encoded({"path": str(self.root / "missing.exe")}))
+        def version(command, **kwargs):
+            return subprocess.CompletedProcess(command, 0, b"course2md 2.0.0-rc.6\n" if command[0] == str(binary) else b"", b"")
+        with patch.object(bridge.subprocess, "run", side_effect=version), patch.object(bridge.shutil, "which", return_value=None):
+            self.assertEqual(bridge.engine(self.data)["path"], str(binary))
+
+    def test_engine_download_checks_integrity_before_installing(self):
+        system = "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" else "linux"
+        data = b"verified engine"
+        pins = {"version": "v2.0.0-rc.6", "assets": {f"{system}-x86_64": {
+            "name": "test", "bytes": len(data), "sha256": bridge.digest(data)}}}
+        read_json = bridge.read_json
+        def read(file):
+            return pins if file.name == "engine-pins.json" else read_json(file)
+        config = self.data / "upstream-engine.json"
+        config.write_bytes(bridge.encoded({"path": "missing"}))
+        before = config.read_bytes()
+        with patch.object(bridge.platform, "machine", return_value="x86_64"), patch.object(bridge, "read_json", side_effect=read), \
+             patch.object(bridge, "engine", return_value={"available": False}), patch.object(bridge, "urlopen", return_value=io.BytesIO(b"x" * len(data))):
+            with self.assertRaisesRegex(ValueError, "校验"):
+                bridge.install_engine(self.data)
+        self.assertEqual(config.read_bytes(), before)
+        self.assertFalse(any(p.name.startswith(".course2md-") for p in (self.data / "bin").iterdir()))
+        with patch.object(bridge.platform, "machine", return_value="x86_64"), patch.object(bridge, "read_json", side_effect=read), \
+             patch.object(bridge, "engine", side_effect=lambda _, requested=None: {"available": bool(requested), "path": requested}), \
+             patch.object(bridge, "urlopen", return_value=io.BytesIO(data)), \
+             patch.object(bridge.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"course2md 2.0.0-rc.6\n")):
+            saved = bridge.install_engine(self.data)
+            self.assertEqual(Path(saved["path"]).read_bytes(), data)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

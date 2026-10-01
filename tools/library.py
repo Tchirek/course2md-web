@@ -6,6 +6,7 @@ import json
 import math
 import mimetypes
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -15,6 +16,7 @@ import tempfile
 import time
 import uuid
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 
 LIMIT = 64 * 1024 * 1024
 
@@ -121,6 +123,7 @@ def config_dir():
 def libraries(data_dir):
     roots = []
     warnings = []
+    preferred = ""
     workspace = config_dir() / "desktop-workspace.json"
     if workspace.is_file():
         try:
@@ -128,12 +131,18 @@ def libraries(data_dir):
             if state.get("schema") != 1:
                 raise ValueError("course2md 桌面工作区版本不受支持")
             roots.extend({"root": x["root"], "name": x.get("name", "课程库")} for x in state.get("libraries", []))
+            preferred = next((x["root"] for x in state.get("libraries", []) if x.get("id") == state.get("default_library")), "")
         except (ValueError, KeyError, OSError) as error:
             warnings.append(f"无法读取课程库记录：{error}")
     own = data_dir / "libraries.json"
     if own.exists():
         roots.extend(read_json(own))
     default = config_dir() / "desktop-local-library"
+    if not any(Path(x["root"]).is_absolute() and Path(x["root"]).is_dir() for x in roots):
+        try:
+            default.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            warnings.append(f"无法准备默认课程库：{error}")
     if default.is_dir():
         roots.append({"root": str(default), "name": "本地课程库"})
     found = {}
@@ -144,7 +153,10 @@ def libraries(data_dir):
             continue
         key = digest(os.fsencode(str(root.resolve())))[:32]
         found.setdefault(key, {"id": key, "name": item["name"], "root": str(root.resolve()), "available": root.is_dir()})
-    return {"libraries": list(found.values()), "warnings": warnings}
+    available = [x for x in found.values() if x["available"]]
+    selected = next((x for x in available if preferred and Path(x["root"]) == Path(preferred).resolve()), None)
+    selected = selected or (available[0] if available else None)
+    return {"libraries": list(found.values()), "defaultLibrary": selected["id"] if selected else "", "warnings": warnings}
 
 
 def root_for(data_dir, identifier):
@@ -393,20 +405,98 @@ def publish(root, payload):
 
 def engine(data_dir, requested=None):
     config = data_dir / "upstream-engine.json"
-    executable = requested or (read_json(config)["path"] if config.is_file() else shutil.which("course2md.exe" if os.name == "nt" else "course2md"))
-    if not executable:
-        return {"available": False, "path": "", "version": "", "message": "连接 course2md 2.0 CLI 后可导出完整图文文件"}
-    file = Path(executable)
-    if not file.is_absolute() or not file.is_file() or (os.name == "nt" and file.suffix.lower() != ".exe"):
-        raise ValueError("请输入 course2md CLI 可执行文件的绝对路径")
-    result = subprocess.run([str(file), "--version"], capture_output=True, timeout=5)
-    label = result.stdout.decode("utf-8", errors="replace").strip()
-    supported = result.returncode == 0 and bool(re.fullmatch(r"course2md 2\.\d+\.\d+[^\r\n]*", label))
-    if requested:
-        if not supported:
+    saved = read_json(config).get("path") if config.is_file() else None
+    executable = "course2md.exe" if os.name == "nt" else "course2md"
+    on_path = shutil.which("course2md")
+    folders = [data_dir / "bin", Path.home() / "bin", Path.home() / ".local/bin", Path.home() / ".cargo/bin"]
+    if os.environ.get("COURSE2MD_BIN_DIR"):
+        folders.insert(0, Path(os.environ["COURSE2MD_BIN_DIR"]))
+    if on_path:
+        folders.insert(0, Path(on_path).parent)
+    if os.name == "nt":
+        folders += [Path(os.environ.get(key, str(Path.home()))) / suffix for key, suffix in
+                    (("LOCALAPPDATA", "Programs/course2md"), ("ProgramFiles", "course2md"))]
+        # Portable desktop installs have no fixed location; use the running app's sibling engine.
+        try:
+            paths = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                "Get-Process -Name course2md-desktop -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path"],
+                capture_output=True, timeout=5).stdout.decode("utf-8", errors="replace").splitlines()
+            folders += [Path(p).parent for p in paths if Path(p).is_absolute()]
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    elif sys.platform == "darwin":
+        folders += [Path("/Applications/course2md.app/Contents/MacOS"), Path.home() / "Applications/course2md.app/Contents/MacOS",
+                    Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
+    candidates = [requested] if requested else [saved, os.environ.get("C2MD_CLI"), on_path, *(str(p / executable) for p in folders)]
+    for candidate in dict.fromkeys(candidates):
+        if not candidate:
+            continue
+        file = Path(candidate)
+        if not file.is_absolute() or not file.is_file() or (os.name == "nt" and file.suffix.lower() != ".exe"):
+            if requested:
+                raise ValueError("请输入 course2md CLI 可执行文件的绝对路径")
+            continue
+        try:
+            result = subprocess.run([str(file), "--version"], capture_output=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            if requested:
+                raise ValueError("无法运行所选 CLI")
+            continue
+        label = result.stdout.decode("utf-8", errors="replace").strip()
+        if result.returncode == 0 and re.fullmatch(r"course2md 2\.\d+\.\d+[^\r\n]*", label):
+            if requested:
+                atomic(config, encoded({"path": str(file)}))
+            return {"available": True, "path": str(file), "version": label[:160], "message": ""}
+        if requested:
             raise ValueError("需要 course2md 2.0 CLI；" + label[:160])
-        atomic(config, encoded({"path": str(file)}))
-    return {"available": supported, "path": str(file), "version": label[:160], "message": "" if supported else "图文导出需要 course2md 2.0 CLI"}
+    return {"available": False, "path": "", "version": "", "message": "未找到可用的 CLI。导出时可自动安装，也可以连接已有程序。"}
+
+
+def install_engine(data_dir):
+    existing = engine(data_dir)
+    if existing["available"]:
+        return existing
+    machine = platform.machine().lower()
+    arch = "aarch64" if machine in ("arm64", "aarch64") else "x86_64" if machine in ("amd64", "x86_64") else ""
+    system = "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" else "linux" if sys.platform == "linux" else ""
+    key = f"{system}-{arch}"
+    pins = read_json(Path(__file__).with_name("engine-pins.json"))
+    if key not in pins["assets"]:
+        raise ValueError("此系统暂不提供自动安装，请连接已有 CLI")
+    asset = pins["assets"][key]
+    directory = data_dir / "bin"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / ("course2md.exe" if os.name == "nt" else "course2md")
+    with file_lock(directory / ".engine-install.lock"):
+        existing = engine(data_dir)
+        if existing["available"]:
+            return existing
+        url = f"https://github.com/mizorewww/course2md/releases/download/{pins['version']}/{asset['name']}"
+        fd, temporary = tempfile.mkstemp(prefix=".course2md-", suffix=target.suffix, dir=directory)
+        try:
+            with os.fdopen(fd, "wb") as output, urlopen(url, timeout=30) as response:
+                remaining = asset["bytes"]
+                while remaining:
+                    chunk = response.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError("CLI 下载不完整，请重试")
+                    output.write(chunk)
+                    remaining -= len(chunk)
+                if response.read(1):
+                    raise ValueError("CLI 下载大小不符")
+            file = Path(temporary)
+            if digest(file.read_bytes()) != asset["sha256"]:
+                raise ValueError("CLI 校验失败，未安装")
+            file.chmod(0o755)
+            # Validate before replacing the managed copy; never change a desktop installation.
+            check = subprocess.run([str(file), "--version"], capture_output=True, timeout=5)
+            if check.returncode or not re.fullmatch(r"course2md 2\.\d+\.\d+[^\r\n]*", check.stdout.decode("utf-8", errors="replace").strip()):
+                raise ValueError("下载的 CLI 未通过运行检查")
+            os.replace(file, target)
+            return engine(data_dir, str(target))
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
 
 def export_with_engine(data_dir, root, payload):
@@ -468,7 +558,7 @@ def handle(action, payload, data_dir):
         atomic(data_dir / "libraries.json", encoded(records))
         return libraries(data_dir)
     if action == "engine":
-        return engine(data_dir, payload.get("path"))
+        return install_engine(data_dir) if payload.get("install") is True else engine(data_dir, payload.get("path"))
     root = root_for(data_dir, payload["library"])
     if action == "list":
         return list_courses(root)
