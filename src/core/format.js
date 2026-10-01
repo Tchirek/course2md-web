@@ -40,6 +40,9 @@ export function seekUrl(sourceUrl, sec) {
  * @property {string} [site]
  * @property {string} [language]
  * @property {string} [source] 文字来源（model.js 的 SOURCE）
+ * @property {string} [videoId]
+ * @property {number} [cid]
+ * @property {{title: string, t: number}[]} [chapters]
  */
 
 /**
@@ -86,8 +89,9 @@ export function seekUrl(sourceUrl, sec) {
 export function buildDoc(meta, sections) {
   return {
     schemaVersion: SCHEMA_VERSION,
-    generator: { name: 'course2md-web', version: '0.1.0' },
+    generator: { name: 'course2md-web', version: globalThis.chrome?.runtime?.getManifest?.().version ?? 'unknown' },
     meta: {
+      ...meta,
       title: meta.title ?? '',
       uploader: meta.uploader ?? '',
       duration: Number(meta.duration) || 0,
@@ -95,11 +99,15 @@ export function buildDoc(meta, sections) {
       site: meta.site ?? '',
       language: meta.language ?? '',
       source: meta.source ?? '',
+      videoId: meta.videoId ?? '',
+      cid: Number(meta.cid) || 0,
+      chapters: meta.chapters ?? [],
     },
     sections: sections.map((s) => ({
       title: s.title ?? '',
       t: s.t,
       end: s.end,
+      ...(s.frames ? { frames: s.frames.map((frame) => ({ ...frame })) } : {}),
       segments: s.segments
         .filter((seg) => seg.state !== 'skipped')
         .map((seg) => {
@@ -159,16 +167,19 @@ export function toMarkdown(doc, opts = {}) {
       out.push(`## ${stamp(section.t, url, links)}`, '');
     }
 
-    // 图片帧按时刻落在同起点的段落之前
-    const frames = opts.images ? (section.frames ?? []).filter((f) => f.image) : [];
+    // 原版画面未必与段落同时开始；按时刻插到对应段落之前。
+    const frames = opts.images ? (section.frames ?? []).filter((f) => f.image).sort((a, b) => a.t - b.t) : [];
+    let frameIndex = 0;
 
     for (const seg of segments) {
-      for (const frame of frames) {
-        if (frame.t === seg.start) out.push(`![视频 ${fmtTs(frame.t)} 的截图](${frame.image})`, '');
+      while (frameIndex < frames.length && frames[frameIndex].t <= seg.start) {
+        const frame = frames[frameIndex++];
+        out.push(`![视频 ${fmtTs(frame.t)} 的截图](${frame.image})`, '');
       }
       const body = inline(seg.text);
       out.push(timestamps ? `${stamp(seg.start, url, links)} ${body}` : body, '');
     }
+    for (const frame of frames.slice(frameIndex)) out.push(`![视频 ${fmtTs(frame.t)} 的截图](${frame.image})`, '');
   }
 
   return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
@@ -195,12 +206,86 @@ export function toPlainText(doc, opts = {}) {
 }
 
 /**
- * 结构化 JSON，字段名与 course2md 的 structured.json 对齐。
+ * 网页文档 JSON；原版 document.json 用 upstreamSnapshot 显式转换。
  * @param {Doc} doc
  * @param {{pretty?: boolean}} [opts]
  */
 export function toJson(doc, opts = {}) {
   return `${JSON.stringify(doc, opts.pretty === false ? undefined : null, 2)}\n`;
+}
+
+/** @param {DocSection[]} sections @param {boolean} original */
+export function shownSections(sections, original) {
+  return original ? sections.map((section) => ({ ...section,
+    segments: section.segments.map((p) => ({ ...p, text: p.raw ?? p.text, state: /** @type {const} */ ('kept') })) })) : sections;
+}
+
+/** @typedef {{schema: number, meta: {title: string, uploader: string, duration: number, webpage_url: string, extractor: string, id: string}, sections: {t: number, end: number, image: string, speech: import('./model.js').TranscriptEvent[]}[], summary?: {tldr: string, key_points: string[], outline: {t: number, title: string, detail: string}[]}|null}} UpstreamDocument */
+
+/**
+ * 一段只归属一次；章节与所有图片保存在网页伴随文档中，原版每节只接收一张图。
+ * @param {Doc} doc
+ * @param {DocSection[]} sections
+ */
+export function upstreamSnapshot(doc, sections) {
+  /** @type {Record<string, string>} */
+  const images = {};
+  const web = buildDoc(doc.meta, sections);
+  web.sections = sections.map((s) => ({ ...s, segments: s.segments.map((p) => ({ ...p })), frames: (s.frames ?? []).map((f) => ({ ...f })) }));
+  web.generator = doc.generator;
+  let count = 0;
+  /** @type {Map<number, {data: string, path: string}>} */
+  const framePaths = new Map();
+  for (const section of web.sections) {
+    for (const frame of section.frames ?? []) {
+      if (!frame.image) continue;
+      const previous = framePaths.get(frame.t);
+      if (previous) {
+        if (previous.data !== frame.image) throw new Error('同一时刻出现不同画面');
+        frame.image = previous.path;
+        continue;
+      }
+      const match = /^data:image\/(jpeg|png|webp);base64,/.exec(frame.image);
+      if (!match) throw new Error('只能保存已取得的本机画面');
+      const name = `frames/slide_${String(++count).padStart(4, '0')}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`;
+      images[name] = frame.image;
+      framePaths.set(frame.t, { data: frame.image, path: name });
+      frame.image = name;
+    }
+  }
+  const marks = new Map(web.sections.map((s) => [s.t, '']));
+  for (const s of web.sections) for (const f of s.frames ?? []) if (f.image) marks.set(f.t, f.image);
+  /** @type {UpstreamDocument} */
+  const document = {
+    schema: 1,
+    meta: { title: doc.meta.title ?? '', uploader: doc.meta.uploader ?? '', duration: doc.meta.duration ?? 0,
+      webpage_url: doc.meta.url ?? '', extractor: doc.meta.site ?? '', id: doc.meta.videoId ?? '' },
+    sections: [...marks].sort(([a], [b]) => a - b).map(([t, image]) => ({ t, end: 0, image, speech: [] })),
+    summary: null,
+  };
+  const native = document.sections;
+  const end = web.sections.flatMap((s) => s.segments).reduce((last, p) => Math.max(last, p.end), doc.meta.duration ?? 0);
+  for (let i = 0; i < native.length; i++) native[i].end = native[i + 1]?.t ?? Math.max(end, native[i].t);
+  let index = 0;
+  const shown = shownSections(web.sections, doc.meta.polished === false);
+  for (const p of shown.flatMap((s) => s.segments).filter((p) => p.state !== 'skipped').sort((a, b) => a.start - b.start)) {
+    const mid = (p.start + p.end) / 2;
+    // ponytail: linear scan per paragraph keeps out-of-order/overlapping cue midpoints correct.
+    index = 0;
+    while (index + 1 < native.length && native[index + 1].t <= mid) index++;
+    native[index]?.speech.push({ start: p.start, end: p.end, text: p.text, ...(p.raw !== undefined ? { raw: p.raw } : {}) });
+  }
+  return { document, web, images, markdown: toMarkdown({ ...web, sections: shown }, { timestamps: doc.meta.showTimestamps, images: true }) };
+}
+
+/** @param {UpstreamDocument} document */
+export function fromUpstream(document) {
+  if (document.schema !== 1) throw new Error('不支持此课程文档版本');
+  let id = 0;
+  return buildDoc({ title: document.meta.title, uploader: document.meta.uploader,
+    duration: document.meta.duration, url: document.meta.webpage_url, site: document.meta.extractor, source: 'upstream' },
+  document.sections.map((s) => ({ t: s.t, end: s.end, segments: s.speech.map((p) => ({ ...p, id: id++ })),
+    frames: s.image ? [{ t: s.t, image: s.image }] : [] })));
 }
 
 /**
@@ -252,6 +337,7 @@ function countSegments(doc) {
 
 /** @param {unknown} source */
 export function sourceLabel(source) {
+  if (source === 'upstream') return '课程正文';
   return source === 'asr' ? '本地模型转录' : '平台字幕';
 }
 

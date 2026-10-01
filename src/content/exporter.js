@@ -1,6 +1,6 @@
 //! 書き出し：Markdown・純テキスト・画像付きの一式を、コントローラの状態から組み立てる純関数。
 
-import { toMarkdown, toPlainText } from '../core/format.js';
+import { toMarkdown, toPlainText, shownSections } from '../core/format.js';
 
 /** @typedef {import('../core/format.js').Doc} Doc */
 /** @typedef {import('../core/format.js').DocSection} DocSection */
@@ -10,10 +10,11 @@ import { toMarkdown, toPlainText } from '../core/format.js';
  * 生成済みの文書を Markdown にする。
  * @param {Doc|null} doc
  * @param {Settings} settings
+ * @param {DocSection[]} [sections] 完整段落；切回原文时恢复润色删除的段落
  */
-export function markdownOf(doc, settings) {
+export function markdownOf(doc, settings, sections = doc?.sections ?? []) {
   if (!doc) return '';
-  return toMarkdown(doc, { timestamps: settings.showTimestamps });
+  return toMarkdown({ ...doc, sections: shownSections(sections, !settings.polish) }, { timestamps: settings.showTimestamps });
 }
 
 /**
@@ -25,15 +26,7 @@ export function markdownOf(doc, settings) {
  */
 export function plainTextOf(meta, sections, settings) {
   if (!sections?.some((section) => section.segments.some((seg) => seg.raw ?? seg.text))) return '';
-  const original = !settings.polish;
-  const shown = sections.map((section) => ({
-    ...section,
-    segments: section.segments.map((seg) => ({
-      ...seg,
-      text: original ? (seg.raw ?? seg.text) : seg.text,
-      state: original ? 'kept' : seg.state,
-    })),
-  }));
+  const shown = shownSections(sections, !settings.polish);
   return toPlainText({ meta: meta ?? {}, sections: shown }, { timestamps: settings.showTimestamps });
 }
 
@@ -49,7 +42,7 @@ export function imageBundle(doc, previewSections, settings) {
   if (settings.imageLevel === 'none') return null;
   /** @type {string[]} */
   const images = [];
-  const sections = previewSections
+  const sections = shownSections(previewSections, !settings.polish)
     .filter((section) => section.segments.some((seg) => seg.state !== 'skipped'))
     .map((section) => ({
       ...section,

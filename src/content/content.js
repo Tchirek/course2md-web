@@ -35,6 +35,7 @@ const POLL_MS = 1500;
  * @property {import('./pipeline.js').PipelineStats} stats
  * @property {string[]} [warnings]
  * @property {boolean} [polished]
+ * @property {import('../core/model.js').TranscriptEvent[]} [originalEvents]
  */
 
 export class Controller {
@@ -160,6 +161,7 @@ export class Controller {
         sectionIndexOf: cached.sections.flatMap((section, i) => section.segments.map(() => i)),
         stats: cached.stats,
         warnings: cached.warnings ?? [],
+        originalEvents: cached.originalEvents,
       };
       this.built.segments.forEach((seg, id) => { seg.id = id; });
       for (const [t, image] of cached.images ?? []) {
@@ -552,7 +554,7 @@ export class Controller {
   }
 
   markdown() {
-    return markdownOf(this.doc, this.settings);
+    return markdownOf(this.doc, this.settings, this.built?.sections ?? this.doc?.sections);
   }
 
   plainText() {
@@ -637,7 +639,6 @@ export class Controller {
     }
   }
 
-
   /** @param {string} [section] 设置页要打开的分区 */
   async openOptions(section) {
     return send({ type: 'ui.openOptions', payload: { section } });
@@ -669,6 +670,7 @@ export class Controller {
       stats: this.built.stats,
       warnings: this.built.warnings,
       polished: this.polisher.progress.hasResult,
+      originalEvents: this.built.originalEvents,
     });
   }
 

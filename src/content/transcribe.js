@@ -36,6 +36,8 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
 
   /** @type {import('../core/model.js').TranscriptEvent[]} */
   const events = [];
+  /** @type {import('../core/model.js').TranscriptEvent[]} */
+  const originalEvents = [];
   let fastError = '';
   if (/^(https?:|file:)/.test(meta.url || '')) {
     onProgress?.('capture', { ratio: 0, message: '正在尝试本机快速提取音轨' });
@@ -64,6 +66,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         if (!reply?.ok) throw new Error(reply?.error ?? '本机任务查询失败');
         job = reply.value;
         if (job.events?.length) {
+          originalEvents.push(...structuredClone(job.events));
           await simplifyBilibili(job.events, adapter.id);
           events.push(...job.events);
           seen += job.events.length;
@@ -79,6 +82,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         const built = organize(events, meta, {});
         return {
           ...built,
+          originalEvents,
           stats: {
             source: 'asr',
             trackLabel: `${asr.model || '本机模型'} · 本机快速提取`,
@@ -98,6 +102,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
       warnings.push(`本机快速提取失败：${fastError}`);
       if (events.length) {
         events.length = 0;
+        originalEvents.length = 0;
         onPartial?.(events);
       }
       // 没运行辅助服务时继续尝试浏览器可读媒体。
@@ -133,6 +138,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
           throw new Error(`第 ${index} 片转写失败：${detail}`);
         }
         const value = reply.value;
+        const first = events.length;
         if (value.segments?.length) {
           for (const s of value.segments) {
             events.push({ start: chunk.start + s.start, end: chunk.start + s.end, text: s.text });
@@ -140,6 +146,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         } else if (value.text) {
           events.push({ start: chunk.start, end: chunk.end, text: value.text });
         }
+        originalEvents.push(...structuredClone(events.slice(first)));
         await simplifyBilibili(events, adapter.id);
         onPartial?.(events);
       }).catch((error) => { failure ??= error; }).finally(() => pending.delete(task));
@@ -175,6 +182,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
   const built = organize(events, meta, {});
   return {
     ...built,
+    originalEvents,
     stats: {
       source: 'asr',
       trackLabel: asr.model || '本机模型',
