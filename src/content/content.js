@@ -6,7 +6,7 @@
 import { pickAdapter, siteLabel } from '../adapters/index.js';
 import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
-import { buildDoc, fileNameFor } from '../core/format.js';
+import { buildDoc, fileNameFor, upstreamSnapshot } from '../core/format.js';
 import { runSubtitlePipeline, runAsrPipeline, finalize, organize, MissingSourceError, AbortError } from './pipeline.js';
 import { copyText, send } from './messaging.js';
 import { imageBundle, markdownOf, plainTextOf } from './exporter.js';
@@ -84,6 +84,7 @@ export class Controller {
     /** @type {Partial<Record<ExportKind, ReturnType<typeof setTimeout>>>} */
     this.exportFlashTimers = {};
     this.panelDismissed = false;
+    this.librarySaving = false;
     /** @type {import('../core/model.js').TranscriptEvent[]|null} 转录途中已到手的事件 */
     this.liveEvents = null;
     /** @type {DocSection[]|null} 转录途中先组织出来的分节 */
@@ -102,6 +103,7 @@ export class Controller {
       onCopy: () => this.requestExport('copy'),
       onCopyText: () => this.copyPlainText(),
       onDownload: () => this.requestExport('download'),
+      onLibrary: () => this.saveLibrary(),
       onRerun: () => {
         this.autoRunArmed = true;
         this.autoRunOverrides = null;
@@ -638,6 +640,36 @@ export class Controller {
       return { saved: false };
     }
   }
+
+  async saveLibrary() {
+    if (!this.doc || this.librarySaving) return;
+    if (!this.exportReady() || this.exportBusy()) return;
+    const { selectedLibrary } = await chrome.storage.local.get('selectedLibrary');
+    if (typeof selectedLibrary !== 'string' || !selectedLibrary) {
+      await send({ type: 'ui.openLibrary' });
+      return;
+    }
+    this.librarySaving = true;
+    try {
+      const doc = { ...this.doc, meta: { ...this.doc.meta, polished: Boolean(this.settings.polish && this.polisher.progress.hasResult),
+        showTimestamps: this.settings.showTimestamps, imageLevel: this.settings.imageLevel } };
+      const sections = this.settings.imageLevel === 'none'
+        ? (this.built?.sections ?? this.doc.sections).map((s) => ({ ...s, frames: [] })) : this.previewSections;
+      const snapshot = upstreamSnapshot(doc, sections);
+      const input = { ...snapshot, library: selectedLibrary, events: this.built?.originalEvents ?? [] };
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
+      const requestId = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const value = await send({ type: 'library.request', payload: { action: 'publish', input: {
+        ...input, requestId,
+      } } });
+      const params = new URLSearchParams({ library: selectedLibrary, course: value.course, version: value.version });
+      await send({ type: 'ui.openLibrary', payload: { query: params.toString() } });
+    } catch (error) {
+      this.error = toErrorState(error);
+      this.panel.setState(this.panelState());
+    } finally { this.librarySaving = false; }
+  }
+
 
   /** @param {string} [section] 设置页要打开的分区 */
   async openOptions(section) {

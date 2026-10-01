@@ -39,6 +39,7 @@ export class Panel {
    * @param {() => unknown} [handlers.onCopy]
    * @param {() => unknown} [handlers.onCopyText]
    * @param {() => unknown} [handlers.onDownload]
+   * @param {() => unknown} [handlers.onLibrary]
    * @param {() => unknown} [handlers.onRerun]
    * @param {() => unknown} [handlers.onRepolish]
    * @param {(section?:string) => unknown} [handlers.onOptions]
@@ -415,6 +416,11 @@ export class Panel {
     copyText.disabled = !ready && !(status === 'running' && this.state.sections?.some((section) =>
       section.segments.some((seg) => seg.raw ?? seg.text)));
     foot.appendChild(copyText);
+    if (this.handlers.onLibrary) {
+      const library = iconButton({ iconName: 'open', label: '存入课程库', onClick: () => this.handlers.onLibrary?.() });
+      library.disabled = !ready || this.state.exportBusy || !this.state.exportReady;
+      foot.appendChild(library);
+    }
 
     return foot;
   }

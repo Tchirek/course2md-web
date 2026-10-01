@@ -144,6 +144,29 @@ const HANDLERS = {
 
   'file.save': (payload) => saveFile(payload),
   'file.saveBundle': (payload) => saveBundle(payload),
+  'library.request': async (payload, _message, sender) => {
+    const actions = ['discover', 'connect', 'list', 'read', 'image', 'publish', 'engine', 'export'];
+    if (!actions.includes(payload.action)) throw new Error('未知的课程库操作');
+    if (payload.action !== 'publish' && !sender.url?.startsWith(chrome.runtime.getURL(''))) {
+      throw new Error('请在扩展课程库页面操作');
+    }
+    await ensureLocalHelper();
+    const response = await helperFetch(`/library/${payload.action}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload.input ?? {}), signal: AbortSignal.timeout(65_000),
+    });
+    const value = await response.json();
+    if (response.status === 404) throw new Error('本机助手版本过旧，请更新助手文件并重启，再连接课程库');
+    if (!response.ok) throw new Error(value.error ?? '课程库操作失败');
+    return value;
+  },
+  'ui.openLibrary': async ({ query = '' }) => {
+    const params = new URLSearchParams(String(query));
+    const allowed = new URLSearchParams();
+    for (const name of ['library', 'course', 'version']) if (params.has(name)) allowed.set(name, params.get(name) ?? '');
+    await chrome.tabs.create({ url: chrome.runtime.getURL(`src/ui/library.html?${allowed}`) });
+    return { opened: true };
+  },
   /** 打开设置页（弹窗里的链接用，避免弹窗内嵌 options）。 */
   'ui.openOptions': async (payload) => {
     if (payload.section) {

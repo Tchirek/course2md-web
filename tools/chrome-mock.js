@@ -161,6 +161,28 @@
           };
         }
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
+        if (type === 'library.request') {
+          const { action, input = {} } = message.payload;
+          if (action === 'discover' || action === 'connect') return { ok: true, value: { libraries: [{ id: 'demo', name: '本地课程库', root: '/demo', available: true }], warnings: [] } };
+          if (action === 'engine') return { ok: true, value: { available: true, path: '/demo/course2md', version: 'course2md 2.0.0-rc.6' } };
+          if (action === 'export') return { ok: true, value: { outputs: ['/demo/exports/course.zip'] } };
+          if (action === 'list') return { ok: true, value: { courses: [
+            { course: 'web-course', title: '注意力机制与 Transformer 入门', folder: '机器学习', duration: 3725, partial: false },
+            { course: 'native-course', title: '线性代数入门', folder: '', duration: 180, partial: false },
+          ], warnings: [] } };
+          if (action === 'read') {
+            const segments = Array.from({ length: 24 }, (_, i) => ({ start: i * 30, end: i * 30 + 20, text: `第 ${i + 1} 段讲述注意力机制。润色后的课程内容需要足够长，以验证阅读页面在不同屏幕上能够自然换行，并保留原文切换与视频时间链接。`, raw: `第 ${i + 1} 段原始字幕`, ...(i === 23 ? { state: 'skipped' } : {}) }));
+            const sections = [{ title: '注意力机制', t: 0, end: 900, segments, frames: [{ t: 0, image: 'frames/slide_0001.jpg' }] }];
+            const meta = { title: input.course === 'native-course' ? '线性代数入门' : '注意力机制与 Transformer 入门', uploader: '讲者', duration: 900, url: 'https://www.bilibili.com/video/BV1CAxaeHEeH?p=2', site: 'bilibili' };
+            return { ok: true, value: {
+              manifest: { version_id: input.version || 'new', partial: false },
+              versions: [{ id: 'new', created: 1759000000000, revision: 2 }, { id: 'old', created: 1758900000000, revision: 1 }],
+              web: input.course === 'native-course' ? null : { schemaVersion: 1, generator: { name: 'course2md-web', version: '0.4.0' }, meta, sections },
+              document: { schema: 1, meta: { ...meta, webpage_url: meta.url, extractor: 'bilibili', id: 'BV1CAxaeHEeH_p2' }, summary: { tldr: '理解注意力机制与课程结构', key_points: ['注意力机制'], outline: [] }, sections: sections.map((s) => ({ t: s.t, end: s.end, image: 'frames/slide_0001.jpg', speech: segments })) },
+            } };
+          }
+          if (action === 'image') return { ok: true, value: { data: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' } };
+        }
         return { ok: true, value: null };
       },
       onMessage: {

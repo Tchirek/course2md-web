@@ -10,7 +10,7 @@
 
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -444,8 +444,8 @@ try {
         return { before, after: skipped?.style.display, original: skipped?.querySelector('.c2md-say')?.textContent };
       });
       counts.before === 'none' && counts.after !== 'none' && counts.original
-        ? pass('panel/polished 可切回完整原版转录')
-        : fail('panel/polished', `原版切换失败：${JSON.stringify(counts)}`);
+        ? pass('panel/polished 可切回完整原始转录')
+        : fail('panel/polished', `原文切换失败：${JSON.stringify(counts)}`);
     }
     if (state === 'ready' || state === 'polished') {
       const extra = await page.evaluate(() => [...window.__selftestPanel.scope.querySelectorAll('.c2md-panel-foot button')]
@@ -507,6 +507,55 @@ try {
     }
     if (name === 'popup' && (!m.primaryBg || m.primaryBg === 'rgba(0, 0, 0, 0)')) {
       fail(name, '主按钮没有底色');
+    }
+    await page.close();
+  }
+  // Original/native and browser documents use the same reader, including narrow screens.
+  for (const [width, theme] of [[1280, 'light'], [390, 'light'], [1280, 'dark']]) {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewport({ width, height: 800 });
+    await page.goto(`${BASE}/src/ui/library.html?library=demo&course=web-course&theme=${theme}`, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('.paragraph-text');
+    const name = `reader/${width}/${theme}`;
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    overflow <= 1 ? pass(`${name} 无横向溢出`) : fail(name, `横向溢出 ${overflow}px`);
+    const behavior = await page.evaluate(() => {
+      const toggle = (id) => { const input = document.getElementById(id); input.click(); };
+      const polished = document.querySelector('.paragraph-text').textContent;
+      const hidden = document.querySelector('[data-state="skipped"]').hidden;
+      toggle('original');
+      const original = document.querySelector('.paragraph-text').textContent;
+      const restored = !document.querySelector('[data-state="skipped"]').hidden;
+      toggle('timestamps');
+      toggle('images');
+      const timestamps = getComputedStyle(document.querySelector('.timestamp')).display;
+      const images = getComputedStyle(document.querySelector('.reader-frame')).display;
+      const query = document.getElementById('query'); query.value = '原始字幕'; query.dispatchEvent(new Event('input'));
+      document.getElementById('find').dispatchEvent(new Event('submit', { cancelable: true }));
+      return { polished, original, hidden, restored, timestamps, images, marks: document.querySelectorAll('mark').length,
+        match: document.getElementById('matches').textContent, url: document.querySelector('.timestamp').href };
+    });
+    behavior.polished.includes('润色') && behavior.original.includes('原始字幕') && behavior.hidden && behavior.restored
+      ? pass(`${name} 原文切换恢复被跳过的段落`) : fail(name, JSON.stringify(behavior));
+    behavior.timestamps === 'none' && behavior.images === 'none' && behavior.marks === 24 && behavior.match.startsWith('1 / 24')
+      ? pass(`${name} 图片、时间戳与搜索有效`) : fail(name, JSON.stringify(behavior));
+    new URL(behavior.url).searchParams.get('p') === '2' && new URL(behavior.url).searchParams.get('t') === '0'
+      ? pass(`${name} 视频跳转保留 B 站分 P`) : fail(name, behavior.url);
+    await page.select('#versions', 'old');
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('version') === 'old');
+    pass(`${name} 切换历史版本`);
+    await page.evaluate(() => [...document.querySelectorAll('.course-row')].find((b) => b.textContent.includes('线性代数入门')).click());
+    await page.waitForFunction(() => document.getElementById('title').textContent === '线性代数入门');
+    await page.waitForSelector('.paragraph-text');
+    errors.length ? fail(name, errors.join('; ')) : pass(`${name} 课程文档读取无运行时错误`);
+    await page.click('#native-export');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('/demo/exports/course.zip'));
+    pass(`${name} 图文导出显示保存位置`);
+    if (width === 1280) {
+      mkdirSync(join(ROOT, 'tools', 'shots'), { recursive: true });
+      await page.screenshot({ path: join(ROOT, 'tools', 'shots', `reader-${theme}.png`), fullPage: false });
     }
     await page.close();
   }

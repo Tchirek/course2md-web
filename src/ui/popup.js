@@ -46,6 +46,7 @@ let state = null;
 init();
 
 async function init() {
+  byId('open-library').addEventListener('click', () => send({ type: 'ui.openLibrary' }));
   el.options.appendChild(icon('settings', { size: 16 }));
   el.options.addEventListener('click', () => chrome.runtime.openOptionsPage());
 

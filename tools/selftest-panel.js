@@ -37,6 +37,7 @@ const panel = new Panel({
   onCopy: () => {},
   onCopyText: () => {},
   onDownload: () => {},
+  onLibrary: () => {},
   onRerun: () => {},
   onRepolish: () => {},
   onOptions: () => {},
