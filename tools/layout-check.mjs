@@ -485,6 +485,11 @@ try {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);
     } else pass(`${name} 分段选择选中项数正确（${expectedSegments}）`);
     if (name === 'popup') {
+      mkdirSync(join(ROOT, 'tools', 'shots'), { recursive: true });
+      await page.screenshot({ path: join(ROOT, 'tools', 'shots', 'popup-ready.png') });
+      const nav = await page.$eval('#open-library', (a) => ({ tag: a.tagName, href: a.getAttribute('href'), border: getComputedStyle(a).borderStyle }));
+      nav.tag === 'A' && nav.href === 'library.html' && nav.border === 'none'
+        ? pass('popup 课程库使用轻量导航') : fail('popup', JSON.stringify(nav));
       // 勾选「润色文本」后，强度与方式两行直接出现
       const after = await page.evaluate(() => new Promise((resolve) => {
         const polish = [...document.querySelectorAll('.c2md-check')]
