@@ -48,6 +48,32 @@ YouTube、B 站的快速音轨提取可选用 `yt-dlp` 和 `ffmpeg`。文字来�
 - 复制 Markdown 保持文字版；图文下载在同一文件夹中保存 `course.md` 和 `frames/slide_*.jpg`；
 - 还在生成时也能点复制或下载：按钮变成虚线框的「完成后复制」「完成后下载」，全部完成（含截图与润色）的一刻自动执行；再点一次取消。
 - 扩展代码更新后没重新加载时，从页面发起的生成会先自动重新加载扩展、刷新页面，再接着生成。
+- 与 course2md 2.0 共用课程库；独立阅读页可查看桌面端与浏览器生成的笔记、历史版本、原文、图片和摘要目录。
+
+### 连接课程库与 CLI
+
+1. 安装或更新本项目的本机助手（`npm run local:install`）。更新正在运行的旧助手后，先重启助手进程；课程库页面会明确提示版本不匹配。
+2. 点扩展弹窗里的「课程库」。它会读取 course2md 桌面端 `desktop-workspace.json` 中登记的库，也支持输入已有课程库的绝对路径。若 course2md 通过自定义 `XDG_CONFIG_HOME` 启动，直接连接那里的课程目录即可。
+3. 选中的库成为网页笔记的保存位置。生成完成后，点浮窗底部「存入课程库」图标；保存成功会打开对应阅读页。第一次尚未选择库时，该图标先打开课程库页面，连接后再保存即可。
+
+保存采用 course2md schema 1 的 `current.json → versions/<版本>/manifest.json`、`document.json`、`course.md` 和 `frames/`，带资产大小与 SHA-256 校验。course2md 可直接阅读，也能用 `run-task` 补做摘要与导出。相同内容重试不会重复发布或回滚较新的版本；保存失败保留旧笔记。B 站各个分 P 使用独立来源身份。
+
+网页章节、原文与被润色跳过的段落额外保存在 `web-document.json`；未经转换与合段的字幕保存在 `timeline.jsonl`。既有的 Markdown 下载、图片密度、字幕优先、本机 ASR、润色与缓存流程继续使用原实现。阅读页记住的是每个课程版本的段落位置。
+
+课程库里的正文和画面只通过带令牌的本机助手读取。列表读取标题别名和逻辑文件夹；打开正文时校验文件，当前版本损坏时可以回退阅读可用历史版本，并显示原因。此时不会改写 course2md 的版本指针。桌面工作区、AI 凭据与任务队列由桌面端维护；网页存入的笔记不创建桌面任务记录。CLI 补做的新版本按其文档格式读取，网页章节等扩展字段仍保留在之前的网页版本中。
+
+course2md GUI 目前没有按课程定位的公开深链接，因此入口使用扩展自己的阅读页。阅读页支持课程筛选、正文查找、时间跳转、版本选择、原文/图片/时间戳开关和文字 Markdown 下载；完整图文 Markdown 已保存在版本目录中。
+
+要分享完整图文文件，在左侧「course2md CLI」中连接 course2md 2.0 CLI 可执行文件，选择格式后点「导出图文」。这直接调用 course2md 的 `run-task`，把 ZIP、内嵌图片的 HTML 或带图片索引的结构化 JSON 存入课程目录的 `exports/`，页面显示实际保存路径。只做导出，不启动 ASR/LLM，也不更改课程当前版本或读取 course2md 凭据。
+
+兼容基线为 `v2.0.0-rc.6`（`83b935347c7a`）。真实引擎互操作检查只使用临时测试课程及 localhost 模拟 LLM，不需要下载模型或使用你的密钥：
+
+```powershell
+$env:C2MD_UPSTREAM_EXE = 'D:\Tools\course2md.exe'
+npm run check:upstream
+```
+
+`npm run check` 包含格式、权限、发布恢复与阅读页检查；CI 额外校验固定校验和的 course2md Linux 引擎。升级兼容基线时同步更新 CI 的版本和 SHA-256，再运行互操作检查。
 
 <table>
   <tr>
@@ -129,7 +155,7 @@ YouTube 字幕要带播放器签发的访问凭证才能取到；扩展从播放
 
 ### 本地模型转录
 
-优先通过本机提取服务直接下载和处理流媒体音轨；可直接读取的短视频（不超过 3 分钟、24 MiB）在浏览器里离线解码。两条快路径都不等播放器走完。本机提取服务按停顿把音轨切成一段段语音（与原版 course2md 同一规则：太长的一段在最安静处切开，内置转录每段不超过 20 秒，自配服务不超过设置里的切片长度），再交给本机 ASR 服务；浏览器直读与播放器录音按切片长度切。
+优先通过本机提取服务直接下载和处理流媒体音轨；可直接读取的短视频（不超过 3 分钟、24 MiB）在浏览器里离线解码。两条快路径都不等播放器走完。本机提取服务按停顿把音轨切成一段段语音（与 course2md 同一规则：太长的一段在最安静处切开，内置转录每段不超过 20 秒，自配服务不超过设置里的切片长度），再交给本机 ASR 服务；浏览器直读与播放器录音按切片长度切。
 YouTube、B 站下载失败时，本机助手会用当前浏览器中该视频站点的登录态重试。扩展只向 `127.0.0.1` 的本机助手传送该站点 cookie；助手把它交给 `yt-dlp` 下载，并在任务结束后删除临时文件。Edge 会在扩展更新后提示新增的站点 cookie 权限。
 
 首次在项目目录运行（Windows / macOS / Linux 通用）：
@@ -138,14 +164,14 @@ YouTube、B 站下载失败时，本机助手会用当前浏览器中该视频�
 npm run local:install
 ```
 
-本机转录用的是与原版 [course2md](https://github.com/mizorewww/course2md) 相同的模型：**Qwen3-ASR-1.7B**（GGUF，Q8_0 与 mmproj 两个文件，共约 2.5 GB），由 llama.cpp 的 `llama-server` 运行。模型放在原版的模型目录里，布局也与原版一致：取原版 `config.toml`（Windows 在 `%APPDATA%\course2md\`，macOS / Linux 在 `~/.config/course2md/`）里 `[defaults] model_dir` 指定的目录，没有指定就用原版的默认位置（Windows `%LOCALAPPDATA%\course2md\models`，macOS / Linux `~/.cache/course2md/models`）。装过原版的机器不用再下载；先装本扩展的，以后装原版时模型已经就位。那里已有的文件与固定的 SHA-256 一致才用，不一致就原样保留并报错，不会覆盖原版的文件。原版运行时用 `--model-dir` 临时指定的目录，请用环境变量 `C2MD_MODEL_DIR` 告诉助手。
+本机转录用的是与 [course2md](https://github.com/mizorewww/course2md) 相同的模型：**Qwen3-ASR-1.7B**（GGUF，Q8_0 与 mmproj 两个文件，共约 2.5 GB），由 llama.cpp 的 `llama-server` 运行。模型放在 course2md 的模型目录里，布局也与 course2md 一致：取 course2md `config.toml`（Windows 在 `%APPDATA%\course2md\`，macOS / Linux 在 `~/.config/course2md/`）里 `[defaults] model_dir` 指定的目录，没有指定就用 course2md 的默认位置（Windows `%LOCALAPPDATA%\course2md\models`，macOS / Linux `~/.cache/course2md/models`）。装过 course2md 的机器不用再下载；先装本扩展的，以后装 course2md 时模型已经就位。那里已有的文件与固定的 SHA-256 一致才用，不一致就原样保留并报错，不会覆盖 course2md 的文件。course2md 运行时用 `--model-dir` 临时指定的目录，请用环境变量 `C2MD_MODEL_DIR` 告诉助手。
 
 本机转录需要 Node.js 22、Python 3.11 或更新版本（只用标准库，不建虚拟环境）和 `ffmpeg`；YouTube、B 站快速提取还需要 `yt-dlp`。不再安装 faster-whisper、PyTorch 或单独的 CUDA 库：llama.cpp 运行库（固定版本 `b11235`）与本机润色共用一份，PATH 上已有同一版本就直接用，否则下载并校验。Windows（NVIDIA 显卡）与 macOS 用显卡加速，Linux 用 CPU；显卡起不来或转录中途出错就改用 CPU 继续，浮窗里给一行提示。
 
 安装命令把轻量本机助手注册为原生消息宿主（插件因此能自动唤醒它），并设置登录后运行。Windows 用注册表加编译的 exe 宿主；macOS / Linux 写浏览器的 `NativeMessagingHosts` 目录，登录自启分别走 LaunchAgent 和 XDG autostart。安装脚本会在 Edge / Chrome 的配置里找出已加载的本扩展（解压加载的扩展 ID 随所在文件夹而变），只允许这些扩展调用助手，所以请先在浏览器加载扩展再运行；也可以直接带上 ID：`node tools/install-local-asr.mjs <扩展ID>`。以前版本装过的 faster-whisper 转录环境与模型（约 2.5 GB）会在这一步删掉；只拉取了新代码、没重跑安装的，本机助手启动时也会删。
 选择本地模型转录后，助手会在任务开始时自动启动服务；设置页按钮也可手动启动，按钮会显示下载、加载与就绪状态，并自动填好转录地址和模型名。本机转录与润色模型 10 分钟没有任务就会退出并释放内存（环境变量 `C2MD_IDLE_SECONDS` 可调），下次用到时自动重新加载。安装只需一次：以后更新代码，本机助手启动时会自动修复过时的宿主注册，无须重跑；移动了项目目录才需要重新安装。
 
-数据目录（宿主、访问令牌、润色环境与运行库）默认在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的应用数据目录）；系统盘空间紧张时，运行 `npm run local:install -- --data-dir D:\course2md` 把它移到别的盘，之后一直沿用。数据目录不在默认位置、原版既没有指定模型目录、默认位置也还没有模型时，安装（或更新代码后第一次本机转录）会把 `<数据目录>\models` 写进原版的 `config.toml`（其余内容原样保留），两边以后都用那里的模型。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连润色环境与运行库一起删）；与原版共用的转录模型不会删除。
+数据目录（宿主、访问令牌、润色环境与运行库）默认在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的应用数据目录）；系统盘空间紧张时，运行 `npm run local:install -- --data-dir D:\course2md` 把它移到别的盘，之后一直沿用。数据目录不在默认位置、course2md 既没有指定模型目录、默认位置也还没有模型时，安装（或更新代码后第一次本机转录）会把 `<数据目录>\models` 写进 course2md 的 `config.toml`（其余内容原样保留），两边以后都用那里的模型。卸载运行 `npm run local:uninstall`（加 `-- --purge` 连润色环境与运行库一起删）；与 course2md 共用的转录模型不会删除。
 
 本机助手只监听 `127.0.0.1`，除健康检查外的请求都要带访问令牌；令牌只经原生消息交给本扩展，
 机器上的其他扩展和网页都用不了它读本机文件。运行时下载的模型与运行库都固定了版本与 SHA-256
@@ -261,7 +287,7 @@ manifest 里出现，`web_accessible_resources` 覆盖不到就会在运行时�
 - **上游接口会变。** YouTube 字幕凭证、B 站字幕接口都在真实页面上验证过（`npm run check:sites`），
   但随时可能调整，`src/adapters/` 是最可能需要维护的部分。
 - **浏览器内 WebGPU ASR 尚未实现。** 当前的快速处理依靠浏览器离线解码或本机提取服务；WebGPU 需要随扩展打包可验证的模型与推理运行时。
-- **截图依赖本机助手取得视频文件。** 它用 `yt-dlp` 和 `ffmpeg` 离线取帧，不改动页面播放进度。无法下载媒体时会阻止图文导出并显示原因。各档先按讲述时间窗取候选画面（多档最多每 10 秒一张），再用原版 0.85 的相似度阈值，略去与两分钟内已保留画面相同的。
+- **截图依赖本机助手取得视频文件。** 它用 `yt-dlp` 和 `ffmpeg` 离线取帧，不改动页面播放进度。无法下载媒体时会阻止图文导出并显示原因。各档先按讲述时间窗取候选画面（多档最多每 10 秒一张），再用 course2md 0.85 的相似度阈值，略去与两分钟内已保留画面相同的。
 - **DRM 视频无法转录**，`captureStream()` 拿不到音轨。
 - 只有播放器录音回退需要按真实播放速度走。
 
