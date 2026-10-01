@@ -20,6 +20,14 @@ jobs:
       - run: npm ci
       - name: Python syntax
         run: python -m py_compile tools/*.py
+      - name: Check course2md CLI interoperability
+        env:
+          C2MD_UPSTREAM_EXE: ${{ runner.temp }}/course2md
+        run: |
+          curl --fail --location --retry 3 https://github.com/mizorewww/course2md/releases/download/v2.0.0-rc.6/course2md-linux-x86_64 -o "$C2MD_UPSTREAM_EXE"
+          echo "fe6700bed527b1a26f7b661aae62e79dc906da0eda4048e38bf8a85bf2a9603e  $C2MD_UPSTREAM_EXE" | sha256sum --check
+          chmod +x "$C2MD_UPSTREAM_EXE"
+          npm run check:upstream
       # pack runs the full check first (manifest, typecheck, unit tests, layout assertions)
       # and refuses to build the zips if anything fails, so this is both the gate and a pack smoke test.
       - run: npm run pack

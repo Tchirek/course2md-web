@@ -22,6 +22,7 @@
     "icons": "node tools/make-icons.mjs",
     "check": "npm run check:manifest && npm run typecheck && npm test && node tools/check-shared-asr.mjs && npm run check:layout",
     "lint": "npm run check:manifest && npm run typecheck",
+    "check:upstream": "node tools/check-upstream.mjs",
     "check:manifest": "node tools/check-manifest.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "check:sites": "node tools/check-sites.mjs",
