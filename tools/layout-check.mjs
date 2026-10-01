@@ -42,6 +42,8 @@ await waitFor(`${BASE}/tools/selftest.html`);
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: 'new',
+  pipe: true,
+  dumpio: Boolean(process.env.CI),
   args: ['--no-first-run', '--no-default-browser-check'],
 });
 
