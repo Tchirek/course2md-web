@@ -189,6 +189,17 @@ function renderTheme() {
 // ---------- 动作 ----------
 
 function bindActions() {
+  const installer = /** @type {HTMLAnchorElement} */ (byId('helper-install'));
+  const version = chrome.runtime.getManifest().version;
+  installer.href = `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}.zip`;
+  installer.target = '_blank';
+  installer.rel = 'noopener';
+  installer.addEventListener('click', () => flash('helper-result', '解压安装包，双击「安装本机助手.cmd」，完成后点「检查连接」。', null));
+  byId('helper-check').addEventListener('click', async () => {
+    flash('helper-result', '正在检查连接', null);
+    try { await send({ type: 'helper.check' }); flash('helper-result', '本机助手已连接', true); }
+    catch (error) { flash('helper-result', errorText(error), false); }
+  });
   for (const [id, path, kind] of FIELDS) {
     const node = field(id);
     if (!node) continue;

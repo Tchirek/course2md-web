@@ -27,7 +27,7 @@ let imagesObserver = null;
 /** @param {object} message @returns {Promise<any>} */
 async function send(message) {
   const reply = await chrome.runtime.sendMessage(message);
-  if (!reply?.ok) throw new Error(reply?.error ?? '扩展后台没有响应');
+  if (!reply?.ok) throw Object.assign(new Error(reply?.error ?? '扩展后台没有响应'), { setupRequired: reply?.setupRequired });
   return reply.value;
 }
 /** @param {string} action @param {object} [input] */
@@ -35,7 +35,10 @@ function request(action, input = {}) { return send({ type: 'library.request', pa
 /** @param {unknown} text @param {boolean} [error] */
 function status(text, error = false) { byId('status').textContent = String(text ?? ''); byId('status').dataset.error = String(error); }
 /** @param {() => Promise<unknown>} task */
-async function run(task) { try { await task(); } catch (error) { status(/** @type {Error} */ (error).message, true); } }
+async function run(task) { try { await task(); } catch (error) {
+  status(/** @type {Error} */ (error).message, true);
+  if (/** @type {{setupRequired?: boolean}} */ (error).setupRequired) byId('helper-setup').hidden = false;
+} }
 /** @param {string} url */
 function videoUrl(url) { try { return ['https:', 'http:'].includes(new URL(url).protocol) ? url : ''; } catch { return ''; } }
 /** @template {keyof HTMLElementTagNameMap} K @param {K} tag @param {string} [text] @param {string} [className] */
@@ -44,6 +47,7 @@ function node(tag, text = '', className = '') { const element = document.createE
 async function discover() {
   status('正在连接本机课程库');
   const result = await request('discover');
+  byId('helper-setup').hidden = true;
   const stored = await chrome.storage.local.get('selectedLibrary');
   library ||= typeof stored.selectedLibrary === 'string' ? stored.selectedLibrary : '';
   librarySelect.replaceChildren(new Option('选择课程库', ''));
@@ -53,7 +57,7 @@ async function discover() {
     librarySelect.append(option);
   }
   if (!result.libraries.some(/** @param {any} item */ (item) => item.id === library && item.available)) library = '';
-  if (!library && result.libraries.filter(/** @param {any} item */ (item) => item.available).length === 1) library = result.libraries.find(/** @param {any} item */ (item) => item.available).id;
+  if (!library) library = result.defaultLibrary ?? result.libraries.find(/** @param {any} item */ (item) => item.available)?.id ?? '';
   librarySelect.value = library;
   status(result.warnings.join('\n'));
   if (!library) { /** @type {HTMLDetailsElement} */ (byId('connection')).open = true; return; }
@@ -78,7 +82,16 @@ async function connectEngine(path) {
   engineAvailable = result.available;
   /** @type {HTMLInputElement} */ (byId('engine-path')).value = result.path;
   byId('engine-status').textContent = result.version || result.message;
-  /** @type {HTMLButtonElement} */ (byId('native-export')).disabled = !engineAvailable;
+  byId('engine-install').hidden = engineAvailable;
+  /** @type {HTMLButtonElement} */ (byId('native-export')).disabled = !doc;
+  byId('native-export').textContent = engineAvailable ? '导出图文' : '安装 CLI 并导出';
+}
+
+async function installEngine() {
+  status('正在安装 course2md CLI');
+  await request('engine', { install: true });
+  await connectEngine();
+  status('CLI 已就绪');
 }
 
 function renderCourses() {
@@ -104,6 +117,7 @@ async function read() {
   if (ticket !== generation) return;
   version = result.manifest.version_id;
   doc = result.web ?? fromUpstream(result.document);
+  /** @type {HTMLButtonElement} */ (byId('native-export')).disabled = false;
   /** @type {HTMLInputElement} */ (byId('original')).checked = Boolean(result.web && doc?.meta.polished === false);
   versions.replaceChildren(...result.versions.map(/** @param {any} v */ (v) => new Option(`第 ${v.revision} 版 · ${new Date(v.created).toLocaleString()}`, v.id)));
   versions.value = version;
@@ -244,15 +258,19 @@ byId('connect').addEventListener('submit', (event) => { event.preventDefault(); 
   await request('connect', { root }); await discover();
 }); });
 byId('refresh').addEventListener('click', () => run(discover));
+byId('helper-retry').addEventListener('click', () => run(async () => { await discover(); await connectEngine(); }));
+byId('engine-install').addEventListener('click', () => run(installEngine));
 byId('engine-connect').addEventListener('submit', (event) => { event.preventDefault(); run(() => connectEngine(/** @type {HTMLInputElement} */ (byId('engine-path')).value.trim())); });
 byId('native-export').addEventListener('click', () => run(async () => {
   const button = /** @type {HTMLButtonElement} */ (byId('native-export'));
   button.disabled = true;
-  status('正在导出图文文件');
   try {
+    if (!engineAvailable) await installEngine();
+    button.disabled = true;
+    status('正在导出图文文件');
     const result = await request('export', { format: /** @type {HTMLSelectElement} */ (byId('export-format')).value });
     status(`图文文件已保存：\n${result.outputs.join('\n')}`);
-  } finally { button.disabled = !engineAvailable; }
+  } finally { button.disabled = !doc; }
 }));
 byId('filter').addEventListener('input', renderCourses);
 versions.addEventListener('change', () => run(async () => { version = versions.value; await read(); }));

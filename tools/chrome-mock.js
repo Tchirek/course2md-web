@@ -7,6 +7,8 @@
 
 (() => {
   if (window.chrome?.runtime?.getURL) return; // 真的扩展环境，别覆盖
+  const initialQuery = new URLSearchParams(location.search);
+  let engineReady = initialQuery.get('engine') !== 'missing';
 
   const DEFAULTS = {
     source: 'subtitle',
@@ -130,6 +132,7 @@
 
   const chromeMock = {
     runtime: {
+      getManifest: () => ({ version: '0.6.0' }),
       // 相对扩展根目录解析，与真实语义一致：'/src/ui/tokens.css'
       getURL: (path) => new URL(String(path).replace(/^\.?\//, ''), location.origin + '/').toString(),
       id: 'selftest-mock-extension-id',
@@ -161,10 +164,15 @@
           };
         }
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
+        if (type === 'helper.check') return { ok: true, value: { ready: true } };
         if (type === 'library.request') {
           const { action, input = {} } = message.payload;
-          if (action === 'discover' || action === 'connect') return { ok: true, value: { libraries: [{ id: 'demo', name: '本地课程库', root: '/demo', available: true }], warnings: [] } };
-          if (action === 'engine') return { ok: true, value: { available: true, path: '/demo/course2md', version: 'course2md 2.0.0-rc.6' } };
+          if (initialQuery.get('helper') === 'missing') return { ok: false, error: '请点击「安装本机助手」', setupRequired: true };
+          if (action === 'discover' || action === 'connect') return { ok: true, value: { libraries: [{ id: 'demo', name: '本地课程库', root: '/demo', available: true }], defaultLibrary: 'demo', warnings: [] } };
+          if (action === 'engine') {
+            if (input.install) engineReady = true;
+            return { ok: true, value: { available: engineReady, path: engineReady ? '/demo/course2md' : '', version: engineReady ? 'course2md 2.0.0-rc.6' : '', message: '导出时可自动安装 CLI' } };
+          }
           if (action === 'export') return { ok: true, value: { outputs: ['/demo/exports/course.zip'] } };
           if (action === 'list') return { ok: true, value: { courses: [
             { course: 'web-course', title: '注意力机制与 Transformer 入门', folder: '机器学习', duration: 3725, partial: false },

@@ -90,3 +90,32 @@ test('课程库发布、校验、路径隔离、锁和恢复（Python 标准库�
   const result = spawnSync(python, ['tests/library.test.py'], { encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
+
+test('first save uses the discovered library and keeps the same retry identity', async (t) => {
+  const priorWindow = globalThis.window, priorChrome = globalThis.chrome;
+  t.after(() => { globalThis.window = priorWindow; globalThis.chrome = priorChrome; });
+  globalThis.window = { addEventListener() {} };
+  let selectedLibrary;
+  const saved = [], opened = [];
+  globalThis.chrome = { storage: { local: { get: async () => ({ selectedLibrary }) } }, runtime: {
+    getManifest: () => ({ version: '0.6.0' }),
+    sendMessage: async (message) => {
+      if (message.type === 'library.request') { saved.push(message.payload.input); selectedLibrary = 'default'; }
+      if (message.type === 'ui.openLibrary') opened.push(new URLSearchParams(message.payload.query));
+      return { ok: true, value: { library: 'default', course: 'course-1', version: 'version-1' } };
+    },
+  } };
+  const { Controller } = await import('../src/content/content.js');
+  const sections = [{ t: 0, end: 1, segments: [{ start: 0, end: 1, text: 'hello' }], frames: [] }];
+  const controller = Object.assign(Object.create(Controller.prototype), {
+    doc: buildDoc({ title: 'course', duration: 1 }, sections), settings: { polish: false, imageLevel: 'none' },
+    built: { sections, originalEvents: [] }, polisher: { progress: { hasResult: false } },
+    exportReady: () => true, exportBusy: () => false, panel: { setState() { assert.fail('saving failed'); } }, panelState: () => ({}),
+  });
+  await controller.saveLibrary();
+  await controller.saveLibrary();
+  assert.deepEqual(saved.map((input) => input.library), ['', 'default']);
+  assert.equal(saved[0].requestId, saved[1].requestId);
+  assert.equal(opened[0].get('library'), 'default');
+});
+

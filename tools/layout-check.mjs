@@ -510,6 +510,13 @@ try {
     if (name === 'popup' && (!m.primaryBg || m.primaryBg === 'rgba(0, 0, 0, 0)')) {
       fail(name, '主按钮没有底色');
     }
+    if (name === 'options') {
+      const installer = await page.$eval('#helper-install', (a) => a.getAttribute('href'));
+      installer.endsWith('/v0.6.0/course2md-helper-0.6.0.zip') ? pass('options 安装包匹配扩展版本') : fail(name, installer);
+      await page.click('#helper-check');
+      await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('已连接'));
+      pass('options 可以检查助手连接');
+    }
     await page.close();
   }
   // Original/native and browser documents use the same reader, including narrow screens.
@@ -559,6 +566,24 @@ try {
       mkdirSync(join(ROOT, 'tools', 'shots'), { recursive: true });
       await page.screenshot({ path: join(ROOT, 'tools', 'shots', `reader-${theme}.png`), fullPage: false });
     }
+    await page.close();
+  }
+  for (const missing of ['helper', 'engine']) {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewport({ width: 390, height: 800 });
+    await page.goto(`${BASE}/src/ui/library.html?library=demo&course=web-course&${missing}=missing`, { waitUntil: 'networkidle0' });
+    if (missing === 'helper') {
+      await page.waitForFunction(() => !document.getElementById('helper-setup').hidden);
+      pass('reader 缺少助手时提供安装入口');
+    } else {
+      await page.waitForFunction(() => document.getElementById('native-export').textContent === '安装 CLI 并导出');
+      await page.click('#native-export');
+      await page.waitForFunction(() => document.getElementById('status').textContent.includes('/demo/exports/course.zip'));
+      pass('reader 可安装 CLI 后继续导出');
+    }
+    errors.length ? fail(`reader/${missing}`, errors.join('; ')) : pass(`reader/${missing} 无运行时错误`);
     await page.close();
   }
 } finally {

@@ -22,7 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then(() => handler(message.payload ?? {}, message, sender))
     .then(
       (value) => sendResponse({ ok: true, value }),
-      (error) => sendResponse({ ok: false, error: describeError(error) }),
+      (error) => sendResponse({ ok: false, error: describeError(error), setupRequired: Boolean(error?.setupRequired) }),
     );
   // 返回 true 表示会异步 sendResponse
   return true;
@@ -52,6 +52,7 @@ const HANDLERS = {
   'settings.load': () => loadSettings(),
   'settings.save': (payload) => saveSettings(payload.patch ?? {}),
   'settings.reset': () => resetSettings(),
+  'helper.check': async () => { await ensureLocalHelper(); return { ready: true }; },
 
   'llm.chat': (payload) => chat(payload),
   'llm.test': (payload) => testLlm(payload),
@@ -151,6 +152,13 @@ const HANDLERS = {
       throw new Error('请在扩展课程库页面操作');
     }
     await ensureLocalHelper();
+    if (payload.action === 'publish' && !payload.input?.library) {
+      const discovery = await (await helperFetch('/library/discover', { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: '{}' })).json();
+      if (!discovery.defaultLibrary) throw new Error('默认课程库不可用，请在课程库页面选择保存位置');
+      payload.input = { ...payload.input, library: discovery.defaultLibrary };
+      await chrome.storage.local.set({ selectedLibrary: discovery.defaultLibrary });
+    }
     const response = await helperFetch(`/library/${payload.action}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload.input ?? {}), signal: AbortSignal.timeout(65_000),
@@ -256,16 +264,14 @@ async function helperFetch(route, init = {}) {
   // 升级后第一次唤醒的可能还是旧宿主（不交令牌）；新助手启动时已把注册修好，再唤醒一次即可
   for (let attempt = 0; attempt < 2 && !await knownHelperToken(); attempt++) await wakeLocalHelper();
   if (!await knownHelperToken()) {
-    throw new Error(`本机宿主没有提供访问令牌。请在项目目录重新运行 ${installCommand()}。`);
+    throw Object.assign(new Error('本机助手需要修复。请在设置页点击「安装本机助手」。'), { setupRequired: true });
   }
   response = await send();
-  if (response.status === 401) throw new Error(`本机助手不认可宿主给出的访问令牌。请在项目目录重新运行 ${installCommand()}。`);
+  if (response.status === 401) throw Object.assign(new Error('本机助手连接已失效。请在设置页点击「安装本机助手」修复。'), { setupRequired: true });
   return response;
 }
 
 const HELPER_HOST = 'com.course2md.helper';
-/** インストーラが既定で登録する拡張 ID。実際の ID が異なる場合は、案内に実 ID を含める。 */
-const DEFAULT_EXTENSION_ID = 'icceajppndlehndkedbflgimdbinmjcf';
 
 /** @param {number} timeout 毫秒 */
 function helperHealthy(timeout) {
@@ -286,9 +292,9 @@ function wakeLocalHelper() {
   wakingHelper ??= new Promise((/** @type {(token: unknown) => void} */ resolve, reject) => {
     chrome.runtime.sendNativeMessage(HELPER_HOST, { action: 'start' }, (reply) => {
       const failure = chrome.runtime.lastError?.message;
-      if (failure) return reject(new Error(hostFailure(failure)));
+      if (failure) return reject(Object.assign(new Error(hostFailure(failure)), { setupRequired: true }));
       if (!reply?.ok) {
-        return reject(new Error(`本机助手未能启动：${reply?.error || '宿主没有应答'}。请在项目目录重新运行 ${installCommand()}。`));
+        return reject(Object.assign(new Error(`本机助手未能启动：${reply?.error || '宿主没有应答'}。请在设置页点击「安装本机助手」修复。`), { setupRequired: true }));
       }
       resolve(reply.token);
     });
@@ -304,16 +310,12 @@ function wakeLocalHelper() {
 /** @param {string} message chrome.runtime.lastError 的原话 */
 function hostFailure(message) {
   if (/not found/i.test(message)) {
-    return `本机助手未注册，或注册指向的文件已不存在。请在项目目录运行 ${installCommand()}。`;
+    return '本机助手尚未安装，或安装位置已变动。请点击「安装本机助手」，完成后检查连接。';
   }
   if (/forbidden/i.test(message)) {
-    return `本机助手注册给了别的扩展 ID，当前扩展 ID 是 ${chrome.runtime.id}。请在项目目录运行 node tools/install-local-asr.mjs ${chrome.runtime.id}。`;
+    return '本机助手尚未连接此扩展。请点击「安装本机助手」修复连接。';
   }
-  return `无法唤醒本机助手（${message}）。请在项目目录运行 ${installCommand()}，再用 npm run local:check-host 检查。`;
-}
-
-function installCommand() {
-  return chrome.runtime.id === DEFAULT_EXTENSION_ID ? 'npm run local:install' : `node tools/install-local-asr.mjs ${chrome.runtime.id}`;
+  return `无法唤醒本机助手（${message}）。请在设置页点击「安装本机助手」修复。`;
 }
 
 /**

@@ -12,13 +12,14 @@
   <p id="status" role="status" aria-live="polite"></p>
   <div class="library-layout">
     <aside class="library-sidebar" aria-label="课程库与目录">
+      <div id="helper-setup" hidden><p>安装本机助手后，课程库会自动连接。</p><a class="c2md-button" href="options.html#block-helper">安装本机助手</a><button id="helper-retry" class="c2md-button" type="button">检查连接</button></div>
       <label for="libraries">课程库</label>
       <select id="libraries"><option value="">选择课程库</option></select>
       <details id="connection"><summary>连接课程库</summary>
         <form id="connect"><label for="root">课程库的绝对路径</label><input id="root" required placeholder="例如 D:\Courses"><button class="c2md-button" type="submit">连接</button></form>
-        <p class="c2md-meta">自动读取 course2md 桌面端登记的课程库，也可以连接已有目录。选中的课程库用于保存网页笔记。</p>
+        <p class="c2md-meta">自动连接已有课程库；首次使用时准备默认保存位置。其他位置也可以在这里连接。</p>
       </details>
-      <details><summary>course2md CLI</summary><form id="engine-connect"><label for="engine-path">course2md 2.0 CLI 的绝对路径</label><input id="engine-path" required placeholder="例如 D:\Tools\course2md.exe"><button class="c2md-button" type="submit">连接</button></form><p id="engine-status" class="c2md-meta"></p></details>
+      <details><summary>course2md CLI</summary><p id="engine-status" class="c2md-meta"></p><button id="engine-install" class="c2md-button" type="button" hidden>安装 CLI</button><form id="engine-connect"><label for="engine-path">其他 CLI 位置（可选）</label><input id="engine-path" required placeholder="例如 D:\Tools\course2md.exe"><button class="c2md-button" type="submit">连接</button></form></details>
       <div class="library-filter"><label for="filter">查找课程</label><input id="filter" type="search" placeholder="课程名称或文件夹"><button id="refresh" class="c2md-button" type="button">刷新</button></div>
       <nav id="courses" aria-label="课程列表"></nav>
       <nav id="toc" aria-label="本课目录"></nav>

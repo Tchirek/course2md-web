@@ -645,10 +645,6 @@ export class Controller {
     if (!this.doc || this.librarySaving) return;
     if (!this.exportReady() || this.exportBusy()) return;
     const { selectedLibrary } = await chrome.storage.local.get('selectedLibrary');
-    if (typeof selectedLibrary !== 'string' || !selectedLibrary) {
-      await send({ type: 'ui.openLibrary' });
-      return;
-    }
     this.librarySaving = true;
     try {
       const doc = { ...this.doc, meta: { ...this.doc.meta, polished: Boolean(this.settings.polish && this.polisher.progress.hasResult),
@@ -656,13 +652,13 @@ export class Controller {
       const sections = this.settings.imageLevel === 'none'
         ? (this.built?.sections ?? this.doc.sections).map((s) => ({ ...s, frames: [] })) : this.previewSections;
       const snapshot = upstreamSnapshot(doc, sections);
-      const input = { ...snapshot, library: selectedLibrary, events: this.built?.originalEvents ?? [] };
+      const input = { ...snapshot, events: this.built?.originalEvents ?? [] };
       const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
       const requestId = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
       const value = await send({ type: 'library.request', payload: { action: 'publish', input: {
-        ...input, requestId,
+        ...input, library: typeof selectedLibrary === 'string' ? selectedLibrary : '', requestId,
       } } });
-      const params = new URLSearchParams({ library: selectedLibrary, course: value.course, version: value.version });
+      const params = new URLSearchParams({ library: value.library, course: value.course, version: value.version });
       await send({ type: 'ui.openLibrary', payload: { query: params.toString() } });
     } catch (error) {
       this.error = toErrorState(error);
