@@ -26,6 +26,7 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
 /** 助手运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
 const HELPER_FILES = [
+  'tools/library.py',
   'tools/fast-asr-server.mjs',
   'tools/bilibili-audio.mjs',
   'tools/speech-segments.mjs',

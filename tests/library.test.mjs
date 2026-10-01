@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { buildDoc, upstreamSnapshot, fromUpstream, toJson } from '../src/core/format.js';
 import { markdownOf, imageBundle } from '../src/content/exporter.js';
 
@@ -82,4 +83,10 @@ test('B 站多分 P 的默认首页有明确 p=1 身份；选择分 P 使用自�
     assert.equal(second.cid, 22);
     assert.equal(second.duration, 200);
   } finally { Object.assign(globalThis, previous); }
+});
+
+test('课程库发布、校验、路径隔离、锁和恢复（Python 标准库）', () => {
+  const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+  const result = spawnSync(python, ['tests/library.test.py'], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });

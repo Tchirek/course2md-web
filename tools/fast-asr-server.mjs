@@ -94,6 +94,16 @@ http.createServer(async (req, res) => {
     res.writeHead(401);
     return res.end('{"error":"缺少或错误的访问令牌"}');
   }
+  if (req.method === 'POST' && /^\/library\/(discover|connect|list|read|image|publish|engine|export)$/.test(req.url ?? '')) {
+    try {
+      const payload = JSON.parse(await readBody(req, 64 * 1024 * 1024));
+      const value = await libraryRequest(req.url.slice('/library/'.length), payload);
+      return res.end(JSON.stringify(value));
+    } catch (error) {
+      res.writeHead(400);
+      return res.end(JSON.stringify({ error: String(error?.message ?? error) }));
+    }
+  }
   if (req.method === 'GET' && req.url === '/asr/status') return res.end(JSON.stringify(asrStatus));
   if (req.method === 'GET' && req.url === '/polish/status') return res.end(JSON.stringify(polishStatus));
   if (req.method === 'POST' && req.url === '/polish/start') {
@@ -558,13 +568,44 @@ async function waitForLocalAsr(job, signal) {
   }
 }
 
-async function readBody(req) {
-  let body = '';
+async function readBody(req, limit = MAX_BODY) {
+  const chunks = [];
+  let bytes = 0;
   for await (const chunk of req) {
-    body += chunk;
-    if (body.length > MAX_BODY) throw new Error('请求过大');
+    bytes += chunk.length;
+    if (bytes > limit) throw new Error('请求过大');
+    chunks.push(chunk);
   }
-  return body;
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function libraryRequest(action, payload) {
+  return new Promise((resolve, reject) => {
+    const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+    const child = spawn(python, ['-u', fileURLToPath(new URL('./library.py', import.meta.url))], {
+      windowsHide: true, env: { ...process.env, C2MD_DATA_DIR: dataDir() }, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let output = '', errors = '';
+    const timer = setTimeout(() => { child.kill(); reject(new Error('课程库操作超时，请重试')); }, 60_000);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+      if (output.length > 64 * 1024 * 1024) { child.kill(); reject(new Error('课程文件过大')); }
+    });
+    child.stderr.on('data', (chunk) => { errors = (errors + chunk).slice(-2000); });
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        const value = JSON.parse(output);
+        if (code || value.error) throw new Error(value.error || errors || '课程库操作失败');
+        resolve(value);
+      } catch (error) { reject(error); }
+    });
+    child.stdin.on('error', reject);
+    child.stdin.end(JSON.stringify({ action, payload }));
+  });
 }
 
 /**
