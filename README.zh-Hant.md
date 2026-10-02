@@ -135,7 +135,7 @@ YouTube 字幕要帶播放器簽發的存取憑證才能取到；擴充功能從
 
 安裝 [course2md 2.0 CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide)（已驗證 v2.0.0-rc.6），執行 `course2md doctor` 檢查依賴。線上媒體需要 `yt-dlp`，媒體處理需要 `ffmpeg` / `ffprobe`。GPU / CPU 轉錄需要 `llama-server`；Apple Silicon 可用 CoreML，支援的 Intel 裝置可用 NPU。模型由 CLI 按需準備，Web 不另建推理服務。
 
-瀏覽器不能直接執行本機命令，目前 CLI 也沒有瀏覽器傳送介面，因此保留一份標準函式庫連接腳本。先載入擴充功能，安裝 Python 3.11+ 和 Node.js 22+，再從倉庫或 `course2md-cli-bridge-<版本>.zip` 登記一次：
+瀏覽器不能直接執行本機命令，目前 CLI 也沒有瀏覽器傳送介面，透過 MizoreLink 連接，使用 Python 標準函式庫。先載入擴充功能，安裝 Python 3.11+ 和 Node.js 22+，再從倉庫或 `course2md-cli-bridge-<版本>.zip` 登記一次：
 
 ```sh
 node tools/install-local-asr.mjs
@@ -173,7 +173,7 @@ CLI 從 PATH、應用資料目錄的 `bin/` 或 `C2MD_UPSTREAM_EXE` 取得。沿
 
 預設不顯示同步入口。需要時，在設定頁勾選「显示 course2md 同步按钮」，生成完成後點浮窗的同步圖示。它只把筆記寫入桌面端的預設保存位置，不開啟閱讀頁，也不管理課程。兩版都不內建閱讀器或課程庫介面。
 
-有登記的桌面保存位置就直接沿用；尚未安裝桌面端時使用同一設定目錄的 `desktop-local-library`，日後可由桌面端讀取。無須填寫絕對路徑；失效的位置需在桌面端重新選擇。正文、原文、截圖和字幕時間線以 course2md 2.0 schema 1 保存，重複同步不會回退較新的版本。同步需要所選版本的本機連接，不建立桌面任務紀錄。
+有登記的桌面保存位置就直接沿用；尚未安裝桌面端時使用同一設定目錄的 `desktop-local-library`，日後可由桌面端讀取。無須填寫絕對路徑；失效的位置需在桌面端重新選擇。正文、原文、截圖和字幕時間線以 course2md 2.0 schema 1 保存，重複同步不會回退較新的版本。同步需要所選版本的 MizoreLink，不建立桌面任務紀錄。
 
 ## 安裝
 
@@ -181,8 +181,8 @@ CLI 從 PATH、應用資料目錄的 `bin/` 或 `C2MD_UPSTREAM_EXE` 取得。沿
 
 | 版本 | 適合 | 轉錄與截圖需要 |
 | --- | --- | --- |
-| **獨立版 · Standalone** | 由 Web 管理本機模型、轉錄、截圖與潤色 | Web 本機助手，提供 Windows / macOS / Linux 安裝器；無須另裝 CLI |
-| **CLI 版 · CLI** | 透過精簡連接層沿用 course2md CLI 的模型、設定與處理能力 | course2md 2.0 CLI + 一次瀏覽器連接登記 |
+| **獨立版 · Standalone** | 由 Web 管理本機模型、轉錄、截圖與潤色 | MizoreLink，提供 Windows / macOS / Linux 安裝器；無須另裝 CLI |
+| **CLI 版 · CLI** | 透過精簡連接層沿用 course2md CLI 的模型、設定與處理能力 | course2md 2.0 CLI + MizoreLink（登記一次） |
 
 兩版都有浮窗、字幕快取、圖片密度與自備 API；平臺字幕的純文字筆記可直接使用擴充功能。本說明對應 CLI 版。
 
@@ -222,7 +222,7 @@ CLI 檢查需要媒體工具，未明確指定 CLI 時下載 SHA-256 固定的�
 - CLI 及媒體／推理依賴需在本機安裝，瀏覽器連接仍需一次登記。
 - CLI 不逐句串流；轉錄檢查點提供部分文字，潤色結果逐塊回寫。
 - 圖文匯出需要可下載的媒體，DRM 不受支援；自訂介面的錄音回退依播放速度處理。
-- 獨立閱讀器、共用課程庫瀏覽及安裝器保留於 `legacy/standalone-helper`；主線保留 0.4.5 的頁面筆記流程。
+- 兩版都保留 0.4.5 的頁面筆記流程，不內建閱讀器或課程管理；獨立版安裝器位於 `legacy/standalone-helper`。
 
 ## 授權
 

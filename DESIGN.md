@@ -1,6 +1,6 @@
 # 设计说明
 
-主线从 0.4.5 继续。独立助手在 `legacy/standalone-helper` 继续维护，0.5.0 以来的历史和发行包仍可查阅。两版都不内置独立阅读器或课程管理。新的主线使用 course2md CLI 作为处理引擎。
+主线从 0.4.5 继续。独立版 MizoreLink 在 `legacy/standalone-helper` 继续维护，0.5.0 以来的历史和发行包仍可查阅。两版都不内置独立阅读器或课程管理。新的主线使用 course2md CLI 作为处理引擎。
 
 ## 处理边界
 

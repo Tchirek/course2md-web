@@ -135,7 +135,7 @@ When platform subtitles are unavailable (none exist, login required, the API fai
 
 Install [course2md 2.0 CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide), verified against v2.0.0-rc.6, and run `course2md doctor`. Online media needs `yt-dlp`; media processing needs `ffmpeg` / `ffprobe`. GPU / CPU recognition needs `llama-server`; Apple Silicon can use CoreML and supported Intel devices can use NPU. The CLI prepares and downloads models on demand.
 
-Browsers cannot launch local commands directly, and the current CLI has no browser transport. One small standard-library script connects them. Load the extension, install Python 3.11+ and Node.js 22+, then register once from this checkout or `course2md-cli-bridge-<version>.zip`:
+Browsers cannot launch local commands directly, and the current CLI has no browser transport. MizoreLink connects them using only the Python standard library. Load the extension, install Python 3.11+ and Node.js 22+, then register once from this checkout or `course2md-cli-bridge-<version>.zip`:
 
 ```sh
 node tools/install-local-asr.mjs
@@ -175,7 +175,7 @@ Turning off 「润色文本」 shows the original immediately — it is always k
 
 The sync button is hidden by default. Enable 「显示 course2md 同步按钮」 in settings, then click it once notes are ready. It writes notes to the desktop default save location. Reading and course management belong to the desktop app; neither Web edition includes those screens.
 
-An existing desktop location is reused. Before desktop installation, notes go to `desktop-local-library` in the same configuration directory, ready for the desktop app to read later. No absolute path field is needed; repair a missing registered location in the desktop app. Text, originals, frames and subtitle timelines use course2md 2.0 schema 1. Retries cannot roll back newer versions. Sync needs the chosen edition's local connection and does not create desktop task records.
+An existing desktop location is reused. Before desktop installation, notes go to `desktop-local-library` in the same configuration directory, ready for the desktop app to read later. No absolute path field is needed; repair a missing registered location in the desktop app. Text, originals, frames and subtitle timelines use course2md 2.0 schema 1. Retries cannot roll back newer versions. Sync needs the chosen edition's MizoreLink and does not create desktop task records.
 
 ## Installation
 
@@ -183,8 +183,8 @@ The [release page](https://github.com/Tchirek/course2md-web/releases/latest) lis
 
 | Edition | Best for | Transcription and screenshots need |
 | --- | --- | --- |
-| **Standalone** | Web-managed local models, transcription, screenshots and polishing | Web helper, with Windows / macOS / Linux installers; no separate CLI |
-| **CLI** | A smaller connection layer that reuses course2md CLI models, settings and processing | course2md 2.0 CLI + one-time browser registration |
+| **Standalone** | Web-managed local models, transcription, screenshots and polishing | MizoreLink, with Windows / macOS / Linux installers; no separate CLI |
+| **CLI** | A smaller connection layer that reuses course2md CLI models, settings and processing | course2md 2.0 CLI + MizoreLink (register once) |
 
 Both keep floating notes, fast subtitles, image controls and custom APIs. Text-only platform-subtitle notes need just the extension. This README covers the CLI edition.
 

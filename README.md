@@ -133,7 +133,7 @@ YouTube 字幕要带播放器签发的访问凭证才能取到；扩展从播放
 
 安装 [course2md 2.0 CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide)（已验证 v2.0.0-rc.6），用 `course2md doctor` 检查依赖。在线媒体需要 `yt-dlp`；截图和音轨处理需要 `ffmpeg` / `ffprobe`。GPU / CPU 转录需要 `llama-server`，Apple Silicon 可用 CoreML，支持的 Intel 设备可用 NPU。模型由 CLI 按需下载与准备，Web 不再维护另一套推理服务。
 
-浏览器无法直接运行本机命令，目前 CLI 也没有浏览器连接入口，因此保留一份标准库传送脚本。先加载扩展，安装 Python 3.11+ 与 Node.js 22+，再从仓库或 `course2md-cli-bridge-<版本>.zip` 登记连接一次：
+浏览器无法直接运行本机命令，目前 CLI 也没有浏览器连接入口，通过 MizoreLink 连接，使用 Python 标准库。先加载扩展，安装 Python 3.11+ 与 Node.js 22+，再从仓库或 `course2md-cli-bridge-<版本>.zip` 登记连接一次：
 
 ```sh
 node tools/install-local-asr.mjs
@@ -173,7 +173,7 @@ CLI 可从 PATH、应用数据目录的 `bin/` 或 `C2MD_UPSTREAM_EXE` 找到。
 
 默认不显示同步入口。需要时，在设置页勾选「显示 course2md 同步按钮」，生成完成后点浮窗里的同步图标。它只把笔记写入桌面端的默认保存位置，不打开阅读页，也不管理课程。两版均不内置阅读器或课程库界面。
 
-已登记桌面保存位置时直接沿用；尚未安装桌面端时使用同一配置目录的 `desktop-local-library`，以后可由桌面端读取。无需填写绝对路径；失效的已登记位置需在桌面端重新选择。正文、原文、截图与字幕时间线按 course2md 2.0 schema 1 保存，重复同步不会回滚较新的版本。同步需要所选版本的本机连接，不创建桌面任务记录。
+已登记桌面保存位置时直接沿用；尚未安装桌面端时使用同一配置目录的 `desktop-local-library`，以后可由桌面端读取。无需填写绝对路径；失效的已登记位置需在桌面端重新选择。正文、原文、截图与字幕时间线按 course2md 2.0 schema 1 保存，重复同步不会回滚较新的版本。同步需要所选版本的 MizoreLink，不创建桌面任务记录。
 
 ## 安装
 
@@ -181,8 +181,8 @@ CLI 可从 PATH、应用数据目录的 `bin/` 或 `C2MD_UPSTREAM_EXE` 找到。
 
 | 版本 | 适合 | 转录与截图需要 |
 | --- | --- | --- |
-| **独立版 · Standalone** | 由 Web 管理本机模型、转录、截图与润色 | Web 本机助手，提供 Windows / macOS / Linux 安装器；无需另装 CLI |
-| **CLI 版 · CLI** | 通过精简连接层复用 course2md CLI 的模型、配置与处理能力 | course2md 2.0 CLI + 一次浏览器连接登记 |
+| **独立版 · Standalone** | 由 Web 管理本机模型、转录、截图与润色 | MizoreLink，提供 Windows / macOS / Linux 安装器；无需另装 CLI |
+| **CLI 版 · CLI** | 通过精简连接层复用 course2md CLI 的模型、配置与处理能力 | course2md 2.0 CLI + MizoreLink（登记一次） |
 
 两版都有浮窗、字幕快取、图片密度与自备 API；平台字幕的纯文字笔记可直接使用扩展。本说明对应 CLI 版。
 
