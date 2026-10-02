@@ -37,7 +37,7 @@ async function llmChat(payload, onDelta, signal) {
  * @param {object} args
  * @param {import('../core/model.js').Segment[]} args.segments 平坦段落（会被就地修改）
  * @param {number[]} [args.sectionIndexOf] 段落下标 -> 章节下标（没有就都算第 0 节）
- * @param {{title?: string, uploader?: string, language?: string}} args.meta
+ * @param {{title?: string, uploader?: string, language?: string, url?: string, duration?: number}} args.meta
  * @param {import('../core/settings.js').Settings} args.settings
  * @param {(done:number,total:number)=>void} [args.onProgress]
  * @param {(id:number)=>void} [args.onSegment] 段落の整形結果を書き戻したらすぐ知らせる（浮窓を段落ごとに更新）
@@ -102,7 +102,13 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
     /** @type {Set<number>} */
     const seen = new Set();
     let reply;
-    try { reply = await llmChat({
+    const usingCli = llmConfig.baseUrl === LOCAL_POLISH.baseUrl;
+    try { reply = usingCli ? await cliPolish({
+      sourceUrl: meta.url, title: meta.title, duration: meta.duration,
+      // The CLI assigns its own batch IDs; retain hints without the Web ID contract.
+      instruction: [instructionFor(settings.polishLevel, llmConfig.instruction), messages[1].content.slice(0, messages[1].content.lastIndexOf('待校对：\n'))].join('\n\n'),
+      segments: chunk.ids.map((id) => ({ id, start: segments[id].start, end: segments[id].end, text: segments[id].raw ?? segments[id].text })),
+    }, signal) : await llmChat({
       baseUrl: llmConfig.baseUrl,
       apiKey: llmConfig.apiKey,
       model: llmConfig.model,
@@ -139,6 +145,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
           : '模型没有返回可解析的 JSON，这一块保留原文',
       );
     }
+    if (usingCli) for (const id of chunk.ids) onSegment?.(id);
     return outcome;
   };
 
@@ -169,7 +176,8 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
       // 一块最多尝试三次；都用自备 LLM 失败后，静默换成本机润色
       /** @type {unknown} */
       let lastError = new Error('模型未返回可用文本');
-      for (let attempt = 1; attempt <= 3; attempt++) {
+      // The CLI owns its own retry/receipt policy; do not multiply its paid requests.
+      for (let attempt = 1; attempt <= (usingLocal ? 1 : 3); attempt++) {
         try { return await attemptChunk(chunk, llm); } catch (error) {
           if (signal?.aborted) throw error;
           lastError = error;
@@ -182,7 +190,7 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
           fallbackQueue = task.then(() => {}, () => {});
           return task;
         }
-        if (fallbackEnsureError) throw new Error(`本机润色未启动：${String(/** @type {{message?: string}} */ (fallbackEnsureError)?.message ?? fallbackEnsureError)}`);
+        if (fallbackEnsureError) throw new Error(`CLI 润色配置不可用：${String(/** @type {{message?: string}} */ (fallbackEnsureError)?.message ?? fallbackEnsureError)}`);
       }
       throw lastError;
     },
@@ -205,4 +213,28 @@ export async function polishSegments({ segments, sectionIndexOf, meta, settings,
   });
 
   return { chunks: chunks.length, polished, failed: errors.length, removed, errors, firstError };
+}
+
+/**
+ * CLI results arrive by chunk; browser API results still stream by paragraph.
+ * @param {object} payload
+ * @param {AbortSignal} [signal]
+ */
+async function cliPolish(payload, signal) {
+  if (signal?.aborted) throw new AbortError();
+  const started = await chrome.runtime.sendMessage({ type: 'cli.polish.start', payload });
+  if (!started?.ok || !started.value?.id) throw new Error(started?.error || 'CLI 润色未启动');
+  const id = started.value.id;
+  try {
+    while (!signal?.aborted) {
+      const reply = await chrome.runtime.sendMessage({ type: 'cli.polish.status', payload: { id } });
+      if (!reply?.ok) throw new Error(reply?.error || 'CLI 润色查询失败');
+      if (reply.value.state === 'done') return { content: JSON.stringify({ segments: reply.value.segments }) };
+      if (reply.value.state === 'error') throw new Error(reply.value.error);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new AbortError();
+  } finally {
+    if (signal?.aborted) chrome.runtime.sendMessage({ type: 'cli.polish.cancel', payload: { id } }).catch(() => {});
+  }
 }

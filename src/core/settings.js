@@ -30,8 +30,8 @@ export const DEFAULT_SETTINGS = {
   },
 
   asr: {
-    /** 本机 ASR 服务的 OpenAI 兼容转写端点。 */
-    endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
+    /** cli 沿用 course2md 配置；也可填写本机 OpenAI 转录端点。 */
+    endpoint: 'cli',
     apiKey: '',
     model: 'Qwen3-ASR-1.7B',
     /** 语言提示（'' = 自动） */
@@ -63,10 +63,10 @@ export const DEFAULT_SETTINGS = {
 
 /** @typedef {typeof DEFAULT_SETTINGS} Settings */
 
-/** 内置润色模型：FireRedPunc 修正标点，疑难句交给 Qwen3.5-2B。 */
+/** CLI transport marker, never sent to an HTTP LLM endpoint. */
 export const LOCAL_POLISH = {
-  baseUrl: 'http://127.0.0.1:8082/v1',
-  model: 'FireRedPunc+Qwen3.5-2B',
+  baseUrl: 'cli',
+  model: 'course2md',
 };
 
 /**
@@ -76,6 +76,7 @@ export const LOCAL_POLISH = {
  */
 export function withDefaults(stored) {
   const settings = /** @type {Settings & Record<string, unknown>} */ (deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {}));
+  if (/^https?:\/\/(?:127\.0\.0\.1|localhost):8081\/v1\/audio\/transcriptions\/?$/.test(settings.asr.endpoint)) settings.asr.endpoint = 'cli';
   delete settings.clickToSeek; // 旧版开关由 showTimestamps 取代
   delete settings.autoRun; // 旧版开关：现在切换视频一律自动生成
   if (settings.asr.endpoint === 'http://127.0.0.1:8080/v1/audio/transcriptions' && settings.asr.model === 'small') {
@@ -136,7 +137,7 @@ export function normalizeSettings(raw) {
   s.asr.playbackRate = clampInt(s.asr.playbackRate, 1, 16, 1);
   s.subtitle.preferLang = String(s.subtitle.preferLang ?? '').trim();
 
-  if (s.source === 'asr' && !isHttpUrl(s.asr.endpoint)) {
+  if (s.source === 'asr' && s.asr.endpoint !== 'cli' && !isHttpUrl(s.asr.endpoint)) {
     notes.push('本地模型转录需要填写本机 ASR 服务的地址，否则转录会失败。');
   }
 
@@ -166,7 +167,7 @@ export function useLocalPolish(s) {
  */
 export function canTranscribe(s) {
   if (s.source !== 'asr') return true;
-  return isHttpUrl(s.asr.endpoint);
+  return s.asr.endpoint === 'cli' || isHttpUrl(s.asr.endpoint);
 }
 
 /** @param {unknown} value */

@@ -29,6 +29,7 @@ const POLL_MS = 1500;
 /**
  * 会话缓存里存的一份笔记（saveCache 写、loadCache 读；扩展版本不同的会被丢弃）。
  * @typedef {object} CacheEntry
+ * @property {boolean} [imagesComplete]
  * @property {import('../adapters/index.js').VideoMeta} meta
  * @property {DocSection[]} sections
  * @property {[number, string][]} [images] 讲述时刻 → 已取到的帧
@@ -167,6 +168,7 @@ export class Controller {
         if (this.frames.generation !== cacheGeneration) return;
       }
       this.meta = cached.meta;
+      this.frames.complete = Boolean(cached.imagesComplete);
       this.doc = buildDoc({ ...this.meta, source: cached.stats.source }, cached.sections);
       this.status = 'ready';
       this.polisher.restore(Boolean(cached.polished));
@@ -424,7 +426,7 @@ export class Controller {
           if (!(error instanceof MissingSourceError) || runAbort.signal.aborted) throw error;
           // 平台字幕が使えなければ、この回だけ本機の文字起こしへ自動で切り替える。
           // 設定は変えない：次の動画に字幕があればそのまま字幕を使う
-          this.fallbackNotice = `${error.brief ?? '没有可用的平台字幕'}，已自动改用本地模型转录`;
+          this.fallbackNotice = `${error.brief ?? '没有可用的平台字幕'}，已自动改用语音转录`;
           this.broadcast();
           built = await runAsrPipeline(common);
           built.warnings.unshift(this.fallbackNotice);
@@ -666,6 +668,7 @@ export class Controller {
       sections: this.built.sections,
       // 已取到的帧按时刻存，密度换挡时同款时刻直接复用
       images: [...this.frames.cache.entries()],
+      imagesComplete: this.frames.complete,
       stats: this.built.stats,
       warnings: this.built.warnings,
       polished: this.polisher.progress.hasResult,

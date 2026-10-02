@@ -48,7 +48,18 @@ test('图片密度分四档；多档至多每十秒取一个帧时刻，且不�
   assert.deepEqual(count('many'), [19]);
   const cached = attachFrames(sections, 'few', new Map([[0, 'data:cached']]));
   assert.equal(cached[0].frames[0].image, 'data:cached');
-  assert.equal(cached[0].frames[1].image, '');
+  assert.equal(cached[0].frames.length, 1, 'a CLI catalogue does not invent missing frames');
+});
+
+test('CLI frame timestamps survive density filtering and Markdown export between paragraphs', () => {
+  const sections = [{ t: 0, segments: [{ start: 0, end: 2, text: 'first' }, { start: 30, end: 32, text: 'second' }] }];
+  const cache = new Map([[10, 'frames/ten.jpg'], [70, 'frames/seventy.jpg']]);
+  const many = attachFrames(sections, 'many', cache);
+  assert.equal(many[0].segments, sections[0].segments);
+  assert.deepEqual(many[0].frames.map((frame) => frame.t), [10, 70]);
+  assert.deepEqual(attachFrames(sections, 'few', cache)[0].frames.map((frame) => frame.t), [10]);
+  const text = toMarkdown({ ...buildDoc({ title: 'test' }, sections), sections: many }, { timestamps: false, images: true });
+  assert.match(text, /first\n\n!\[视频 00:10 的截图\]\(frames\/ten.jpg\)\n\nsecond\n\n!\[视频 01:10 的截图\]\(frames\/seventy.jpg\)/);
 });
 
 /** 160×88 的白底「幻灯片」，每个 bars 项是一条黑色横线（行号）。 */
@@ -228,13 +239,13 @@ test('本机提取和浏览器读取都失败时显示原始错误，不启动�
   }
 });
 
-test('点击本机模型生成笔记时先启动模型再提取音轨', async () => {
+test('CLI transcription checks the connection and reports its failure without browser recording', async () => {
   const oldChrome = globalThis.chrome;
   const oldWindow = globalThis.window;
   const calls = [];
   globalThis.chrome = { runtime: { sendMessage: async ({ type }) => {
     calls.push(type);
-    return type === 'asr.local.start' ? { ok: true, value: { state: 'starting' } } : { ok: false, error: '提取失败' };
+    return type === 'asr.local.start' ? { ok: true, value: { state: 'ready' } } : { ok: false, error: '提取失败' };
   } } };
   globalThis.window = { addEventListener() {} };
   try {
@@ -242,8 +253,8 @@ test('点击本机模型生成笔记时先启动模型再提取音轨', async ()
     await assert.rejects(runAsrPipeline({
       adapter: { video: () => ({ currentSrc: 'blob:video', duration: 1118 }) },
       meta: { url: 'https://www.bilibili.com/video/BVtest', duration: 1118 },
-      settings: { asr: { endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions' } },
-    }), /浏览器也无法离线读取/);
+      settings: { asr: { endpoint: 'cli' } },
+    }), /提取失败/);
     assert.deepEqual(calls.slice(0, 2), ['asr.local.start', 'asr.fast.start']);
   } finally {
     globalThis.chrome = oldChrome;

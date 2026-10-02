@@ -9,7 +9,7 @@ export const SCHEMA_VERSION = 1;
 export const SOURCE = {
   /** 平台字幕（YouTube timedtext / B 站 subtitle_url / <track>）。 */
   SUBTITLE: 'subtitle',
-  /** 本地模型转录（音频在本机转写，不经过任何云服务）。 */
+  /** Speech transcription using the selected CLI configuration or loopback ASR endpoint. */
   ASR: 'asr',
 };
 

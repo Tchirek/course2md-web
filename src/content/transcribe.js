@@ -7,7 +7,7 @@ import { decodeMediaAudio, FastAudioUnavailable } from './fast-audio.js';
 import { organize, simplifyBilibili } from './organize.js';
 
 /**
- * 用本机模型转录音频再组织成文档。
+ * 使用 CLI 或自配本机接口转录音频，再组织成文档。
  *
  * @param {import('./pipeline.js').PipelineArgs} args
  * @returns {Promise<import('./pipeline.js').PipelineResult>}
@@ -22,15 +22,16 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
 
   if (!asr.endpoint) {
     throw new MissingSourceError(
-      '还没填写本机 ASR 服务的地址。到设置页的「本地模型转录」里填一个端点——' +
+      '还没选择转录接口。到设置页的「转录」里使用 CLI 或填一个本机端点——' +
         'whisper.cpp 的 server、faster-whisper-server 都行，音频不出本机。',
     );
   }
 
-  if (/^https?:\/\/(?:127\.0\.0\.1|localhost):8081\/v1\/audio\/transcriptions\/?$/.test(asr.endpoint)) {
-    onProgress?.('capture', { ratio: 0, message: '正在启动本机转录服务' });
+  const useCli = asr.endpoint === 'cli';
+  if (useCli) {
+    onProgress?.('capture', { ratio: 0, message: '正在连接 course2md CLI' });
     const started = await chrome.runtime.sendMessage({ type: 'asr.local.start' });
-    if (!started?.ok) throw new Error(started?.error ?? '本机转录服务启动失败');
+    if (!started?.ok) throw new Error(started?.error ?? 'CLI 转录连接失败');
     if (started.value?.state === 'error') throw new Error(started.value.message);
   }
 
@@ -49,6 +50,9 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
           apiKey: asr.apiKey,
           model: asr.model,
           prompt: meta.title,
+          title: meta.title,
+          duration: meta.duration,
+          uploader: meta.uploader,
           language: asr.language || meta.language || undefined,
           chunkSeconds: asr.chunkSeconds,
         },
@@ -81,7 +85,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
           ...built,
           stats: {
             source: 'asr',
-            trackLabel: `${asr.model || '本机模型'} · 本机快速提取`,
+            trackLabel: useCli ? 'course2md CLI' : `${asr.model || '本机模型'} · 本机快速提取`,
             eventCount: events.length,
             chunkCount: job.chunks,
             captureMode: 'local-helper',
@@ -95,6 +99,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
         throw new AbortError();
       }
       fastError = String(/** @type {{message?: string}} */ (error)?.message ?? error);
+      if (useCli) throw error;
       warnings.push(`本机快速提取失败：${fastError}`);
       if (events.length) {
         events.length = 0;
@@ -103,6 +108,7 @@ export async function runAsrPipeline({ adapter, meta, settings, onProgress, onPa
       // 没运行辅助服务时继续尝试浏览器可读媒体。
     }
   }
+  if (useCli) throw new MissingSourceError('CLI 未返回可读文字，请检查 course2md 的转录配置。');
   /** @type {Set<Promise<void>>} */
   const pending = new Set();
   /** @type {unknown} 最先失败的那一片的错误，之后的切片不再送出 */

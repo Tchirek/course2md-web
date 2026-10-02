@@ -7,7 +7,7 @@
 // 使い方：node tools/check-native-helper.mjs [拡張ID]
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
@@ -15,6 +15,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectExtensionIds } from './extension-ids.mjs';
 import { dataDir } from './helper-data.mjs';
+import { findPython } from './host-registration.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOST_NAME = 'com.course2md.helper';
@@ -35,7 +36,7 @@ if (process.platform === 'win32') {
   try { exe = JSON.parse(readFileSync(join(dataDir(), 'native-helper.json'), 'utf8')).path ?? ''; } catch { /* 未安装 */ }
   if (exe && existsSync(exe)) hosts.push({ label: '.exe 宿主', command: exe, configEol: '\r\n' });
 }
-hosts.push({ label: 'Node 宿主', command: process.execPath, scriptSource: join(HERE, 'native-host.mjs'), configEol: '\n' });
+hosts.push({ label: 'Python 宿主', command: findPython(), scriptSource: join(HERE, 'cli_bridge.py'), configEol: '\n' });
 
 for (const host of hosts) {
   try { await checkHost(host); } catch (error) {
@@ -92,8 +93,8 @@ function manifestProblem(manifestPath) {
   }
   const configPath = join(dirname(manifest.path), 'native-helper.config');
   if (!existsSync(configPath)) return `→ 宿主配置不存在：${configPath}`;
-  const [nodePath, helperPath] = readFileSync(configPath, 'utf8').split(/\r?\n/).filter((line) => line.trim() !== '');
-  if (!nodePath || !existsSync(nodePath)) return `→ 配置里的 Node 不存在：${nodePath}`;
+  const [pythonPath, helperPath] = readFileSync(configPath, 'utf8').split(/\r?\n/).filter((line) => line.trim() !== '');
+  if (!pythonPath || !existsSync(pythonPath)) return `→ 配置里的 Python 不存在：${pythonPath}`;
   if (!helperPath || !existsSync(helperPath)) return `→ 配置里的助手脚本不存在：${helperPath}`;
   return null;
 }
@@ -108,21 +109,22 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
   try {
     let hostPath;
     if (scriptSource) {
-      // Node 宿主经 Git 检出可能是 CRLF，安装器落盘时会归一成 LF；这里按同样规则处理
-      hostPath = join(dir, 'native-host.mjs');
+      // Use the installed directory layout in an isolated scratch directory.
+      hostPath = join(dir, 'helper', 'tools', 'cli_bridge.py');
+      await mkdir(dirname(hostPath), { recursive: true });
       await writeFile(hostPath, (await readFile(scriptSource, 'utf8')).replaceAll('\r\n', '\n'), { mode: 0o755 });
     } else {
       hostPath = join(dir, 'host.exe');
       await copyFile(command, hostPath);
     }
-    await writeFile(join(dir, 'fixture.mjs'), `import http from 'node:http';\nconst server=http.createServer((req,res)=>{res.end('ok');if(req.url==='/shutdown')server.close()});server.listen(${port},'127.0.0.1');\n`);
+    await writeFile(join(dir, 'fixture.py'), `from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nclass Handler(BaseHTTPRequestHandler):\n def log_message(self, *args): pass\n def do_GET(self):\n  self.send_response(200); self.end_headers(); self.wfile.write(b'{"engine":"course2md-cli"}')\n  if self.path == '/shutdown': self.server.shutdown()\nThreadingHTTPServer(('127.0.0.1', ${port}), Handler).serve_forever()\n`);
     // 宿主确认启动后要把配置第 4 行指向的访问令牌交出来
     const token = randomBytes(32).toString('hex');
     await writeFile(join(dir, 'helper-token'), token);
-    await writeFile(join(dir, 'native-helper.config'), `${process.execPath}${configEol}${join(dir, 'fixture.mjs')}${configEol}${health}${configEol}${join(dir, 'helper-token')}${configEol}`);
+    await writeFile(join(dir, 'native-helper.config'), `${findPython()}${configEol}${join(dir, 'fixture.py')}${configEol}${health}${configEol}${join(dir, 'helper-token')}${configEol}`);
     // .exe ホストは自身の置き場所から設定を探すので、隔離ディレクトリ内のコピーを実行しないと実インストールの設定を読んでしまう
     const child = scriptSource
-      ? spawn(command, [hostPath], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+      ? spawn(command, [hostPath, '--native-host'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
       : spawn(hostPath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     const body = Buffer.from('{"action":"start"}');
     const size = Buffer.alloc(4);

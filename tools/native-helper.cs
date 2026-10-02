@@ -11,7 +11,9 @@ class NativeHelper {
         try {
             var request = WebRequest.Create(healthUrl);
             request.Timeout = 500;
-            using (var response = request.GetResponse()) return true;
+            using (var response = request.GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream()))
+                return reader.ReadToEnd().Contains("\"course2md-cli\"");
         } catch { return false; }
     }
 
@@ -65,8 +67,7 @@ class NativeHelper {
             if (!ReadExact(input, body)) throw new Exception("本机消息未完整传入");
             if (!Encoding.UTF8.GetString(body).Contains("\"start\"")) throw new Exception("不支持的操作");
             if (!Healthy()) {
-                // インストール時に記録したパスは無効になり得る（Node の更新で場所が変わった、プロジェクトを移動した等）。どれかを明示する
-                if (!File.Exists(config[0])) throw new Exception("找不到 Node：" + config[0]);
+                if (!File.Exists(config[0])) throw new Exception("找不到 Python：" + config[0]);
                 if (!File.Exists(config[1])) throw new Exception("找不到助手脚本：" + config[1]);
                 var start = new ProcessStartInfo(config[0], "\"" + config[1] + "\"");
                 start.UseShellExecute = true;
@@ -75,7 +76,7 @@ class NativeHelper {
                 for (int i = 0; i < 50 && !Healthy(); i++) {
                     // プロセスが終了済みなら 10 秒待つ必要はない：ポート競合やスクリプトのエラーでこうなる
                     if (child != null && child.HasExited && !Healthy()) {
-                        throw new Exception("助手进程启动后立即退出（代码 " + child.ExitCode + "），可在项目目录运行 npm run fast-asr 查看报错");
+                        throw new Exception("CLI 连接进程启动后立即退出（代码 " + child.ExitCode + "）");
                     }
                     Thread.Sleep(200);
                 }

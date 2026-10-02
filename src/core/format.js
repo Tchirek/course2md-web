@@ -159,16 +159,16 @@ export function toMarkdown(doc, opts = {}) {
       out.push(`## ${stamp(section.t, url, links)}`, '');
     }
 
-    // 图片帧按时刻落在同起点的段落之前
-    const frames = opts.images ? (section.frames ?? []).filter((f) => f.image) : [];
+    const frames = opts.images ? (section.frames ?? []).filter((f) => f.image).sort((a, b) => a.t - b.t) : [];
+    let fi = 0;
+    const writeFrame = (/** @type {Frame} */ frame) => out.push(`![视频 ${fmtTs(frame.t)} 的截图](${frame.image})`, '');
 
     for (const seg of segments) {
-      for (const frame of frames) {
-        if (frame.t === seg.start) out.push(`![视频 ${fmtTs(frame.t)} 的截图](${frame.image})`, '');
-      }
+      while (fi < frames.length && frames[fi].t <= seg.start) writeFrame(frames[fi++]);
       const body = inline(seg.text);
       out.push(timestamps ? `${stamp(seg.start, url, links)} ${body}` : body, '');
     }
+    while (fi < frames.length) writeFrame(frames[fi++]);
   }
 
   return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
@@ -252,7 +252,7 @@ function countSegments(doc) {
 
 /** @param {unknown} source */
 export function sourceLabel(source) {
-  return source === 'asr' ? '本地模型转录' : '平台字幕';
+  return source === 'asr' ? '语音转录' : '平台字幕';
 }
 
 /**

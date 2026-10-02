@@ -2,8 +2,8 @@
 //!
 //! 1. course2md-<ver>.zip —— 扩展本体。浏览器扩展不区分操作系统与 CPU 架构，
 //!    Windows、Linux、Intel/Apple Silicon macOS 加载的是同一个包。
-//! 2. course2md-helper-<ver>.zip —— 本机助手：提取服务、原生宿主、安装与检查
-//!    脚本。纯 Node/Python 实现，同样全平台一份；目录保持 tools/ 前缀，
+//! 2. course2md-cli-bridge-<ver>.zip —— CLI 浏览器连接：传送、登记与检查
+//!    脚本。标准库实现，同样全平台一份；目录保持 tools/ 前缀，
 //!    安装脚本里的相对路径才能原样工作。
 //!
 //! 打包前先跑完整检查（清单、单元测试、布局断言，与 npm run check 相同），任何一项
@@ -24,34 +24,24 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
 const version = releaseVersion(process.env.C2MD_VERSION, manifest.version);
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
-/** 助手运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
+/** Files required to register, run and check the CLI browser connection. */
 const HELPER_FILES = [
-  'tools/fast-asr-server.mjs',
-  'tools/bilibili-audio.mjs',
-  'tools/speech-segments.mjs',
-  'tools/launch-local-polish.mjs',
-  'tools/qwen-asr.py',
-  'tools/runtime_download.py',
-  'tools/local-polish.py',
-  'tools/service_lifecycle.py',
-  'tools/pins.py',
-  'tools/runtime-pins.json',
+  'tools/cli_bridge.py',
+  'tools/run-cli.mjs',
+  'tools/check-cli.py',
+  'tools/engine-pins.json',
   'tools/install-local-asr.mjs',
   'tools/uninstall-local-asr.mjs',
-  'tools/native-host.mjs',
   'tools/helper-data.mjs',
   'tools/services.mjs',
-  'tools/install-lock.mjs',
-  'tools/pip-install.mjs',
   'tools/extension-ids.mjs',
   'tools/host-registration.mjs',
   'tools/native-helper.cs',
   'tools/check-native-helper.mjs',
-  'tools/check-local-polish.mjs',
 ];
 /** 两个包都附带：说明、本项目许可与第三方许可声明。 */
 const LEGAL_FILES = ['README.md', 'README.zh-Hant.md', 'README.en.md', 'README.ja.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'];
-const HELPER_SCRIPTS = ['fast-asr', 'local:install', 'local:uninstall', 'local:check-host', 'check:local-polish'];
+const HELPER_SCRIPTS = ['cli:bridge', 'local:install', 'local:uninstall', 'local:check-host', 'local:check'];
 
 // ---------- 0. 完整检查：测试不过就不许出门 ----------
 // 以前只跑清单自检，单元测试和布局断言失败也照样能打出发布包
@@ -75,7 +65,7 @@ artifacts.push(await makeZip(`course2md-${version}.zip`, join(DIST, 'stage-ext')
 }));
 
 // ---------- 2. 本机助手 zip ----------
-artifacts.push(await makeZip(`course2md-helper-${version}.zip`, join(DIST, 'stage-helper'), async (stage) => {
+artifacts.push(await makeZip(`course2md-cli-bridge-${version}.zip`, join(DIST, 'stage-helper'), async (stage) => {
   writeFileSync(join(stage, 'package.json'), JSON.stringify({
     name: pkg.name,
     version,

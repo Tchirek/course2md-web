@@ -54,9 +54,9 @@ export function imageBundle(doc, previewSections, settings) {
     .map((section) => ({
       ...section,
       frames: (section.frames ?? [])
-        // 只留已取到图、且所在段落没被润色删掉的帧
+        // Real CLI timestamps do not have to equal paragraph boundaries.
         .filter(/** @returns {frame is {t: number, image: string}} */ (frame) =>
-          Boolean(frame.image) && section.segments.some((seg) => seg.state !== 'skipped' && seg.start === frame.t))
+          Boolean(frame.image))
         .map((frame) => {
           images.push(frame.image);
           return { ...frame, image: `frames/slide_${String(images.length).padStart(4, '0')}.jpg` };

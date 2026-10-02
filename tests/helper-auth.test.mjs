@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readHelperToken } from '../tools/helper-data.mjs';
+import { findPython } from '../tools/host-registration.mjs';
 
 const freePort = () => new Promise((resolve) => {
   const server = createServer();
@@ -18,7 +19,7 @@ const freePort = () => new Promise((resolve) => {
 test('本机助手除 /health 外，没有访问令牌一律拒绝', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'c2md-auth-'));
   const port = await freePort();
-  const helper = spawn(process.execPath, ['tools/fast-asr-server.mjs'], {
+  const helper = spawn(findPython(), ['tools/cli_bridge.py'], {
     env: { ...process.env, C2MD_HELPER_PORT: String(port), C2MD_DATA_DIR: dir },
     stdio: 'ignore',
   });
@@ -60,4 +61,7 @@ test('本机助手除 /health 外，没有访问令牌一律拒绝', async (t) =
   await unlink(join(dir, 'helper-token'));
   assert.equal(await call('/asr/status', { token: rotated }), 401);
   assert.equal(await call('/asr/status', { token: readHelperToken(dir) }), 200);
+  const closed = new Promise((resolve) => helper.once('exit', resolve));
+  assert.equal(await call('/shutdown', { token: readHelperToken(dir), method: 'POST' }), 200);
+  assert.equal(await Promise.race([closed.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 3000))]), true, '关闭后释放端口与进程');
 });

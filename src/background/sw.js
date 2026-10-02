@@ -81,7 +81,11 @@ const HANDLERS = {
     if (!result.ok) return { ok: false, error: result.error, hint: result.hint };
     return { ok: true, ...parseAsrResponse(result.data), raw: undefined };
   },
-  'asr.test': (payload) => testAsr(payload),
+  'asr.test': async (payload) => {
+    if (payload.endpoint !== 'cli') return testAsr(payload);
+    const status = await localAsr('status');
+    return { ok: status.state === 'ready', message: status.message };
+  },
   'asr.local.start': () => localAsr('start'),
   'asr.local.status': () => localAsr('status'),
   'polish.local.start': () => localPolish('start'),
@@ -138,6 +142,23 @@ const HANDLERS = {
     return value;
   },
   'frame.cancel': async ({ id }) => {
+    await helperFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return { cancelled: true };
+  },
+  'cli.polish.start': async (payload) => {
+    await ensureLocalHelper();
+    const response = await helperFetch('/polish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || 'CLI 润色失败');
+    return value;
+  },
+  'cli.polish.status': async ({ id }) => {
+    const response = await helperFetch(`/jobs/${encodeURIComponent(id)}`);
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || 'CLI 润色查询失败');
+    return value;
+  },
+  'cli.polish.cancel': async ({ id }) => {
     await helperFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
     return { cancelled: true };
   },
@@ -233,21 +254,20 @@ async function helperFetch(route, init = {}) {
   // 升级后第一次唤醒的可能还是旧宿主（不交令牌）；新助手启动时已把注册修好，再唤醒一次即可
   for (let attempt = 0; attempt < 2 && !await knownHelperToken(); attempt++) await wakeLocalHelper();
   if (!await knownHelperToken()) {
-    throw new Error(`本机宿主没有提供访问令牌。请在项目目录重新运行 ${installCommand()}。`);
+    throw new Error('CLI 浏览器连接没有提供令牌，请在设置页查看连接说明。');
   }
   response = await send();
-  if (response.status === 401) throw new Error(`本机助手不认可宿主给出的访问令牌。请在项目目录重新运行 ${installCommand()}。`);
+  if (response.status === 401) throw new Error('CLI 浏览器连接令牌不匹配，请重新登记连接。');
   return response;
 }
 
 const HELPER_HOST = 'com.course2md.helper';
 /** インストーラが既定で登録する拡張 ID。実際の ID が異なる場合は、案内に実 ID を含める。 */
-const DEFAULT_EXTENSION_ID = 'icceajppndlehndkedbflgimdbinmjcf';
 
 /** @param {number} timeout 毫秒 */
 function helperHealthy(timeout) {
   return fetch('http://127.0.0.1:8766/health', { signal: AbortSignal.timeout(timeout) })
-    .then((response) => response.ok, () => false);
+    .then(async (response) => response.ok && (await response.json()).engine === 'course2md-cli').catch(() => false);
 }
 
 async function ensureLocalHelper() {
@@ -265,7 +285,7 @@ function wakeLocalHelper() {
       const failure = chrome.runtime.lastError?.message;
       if (failure) return reject(new Error(hostFailure(failure)));
       if (!reply?.ok) {
-        return reject(new Error(`本机助手未能启动：${reply?.error || '宿主没有应答'}。请在项目目录重新运行 ${installCommand()}。`));
+        return reject(new Error(`CLI 浏览器连接未能启动：${reply?.error || '宿主没有应答'}。`));
       }
       resolve(reply.token);
     });
@@ -281,17 +301,14 @@ function wakeLocalHelper() {
 /** @param {string} message chrome.runtime.lastError 的原话 */
 function hostFailure(message) {
   if (/not found/i.test(message)) {
-    return `本机助手未注册，或注册指向的文件已不存在。请在项目目录运行 ${installCommand()}。`;
+    return 'CLI 浏览器连接尚未登记，请在设置页查看连接说明。';
   }
   if (/forbidden/i.test(message)) {
-    return `本机助手注册给了别的扩展 ID，当前扩展 ID 是 ${chrome.runtime.id}。请在项目目录运行 node tools/install-local-asr.mjs ${chrome.runtime.id}。`;
+    return `CLI 浏览器连接未授权此扩展（${chrome.runtime.id}），请重新登记连接。`;
   }
-  return `无法唤醒本机助手（${message}）。请在项目目录运行 ${installCommand()}，再用 npm run local:check-host 检查。`;
+  return `CLI 浏览器连接不可用：${message}。`;
 }
 
-function installCommand() {
-  return chrome.runtime.id === DEFAULT_EXTENSION_ID ? 'npm run local:install' : `node tools/install-local-asr.mjs ${chrome.runtime.id}`;
-}
 
 /**
  * 保存文本文件。

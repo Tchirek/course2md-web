@@ -273,16 +273,11 @@ export class PolishCoordinator {
    * @param {(message:string) => void} [onState]
    */
   async waitLocalPolish(signal, onState = () => {}) {
+    if (signal?.aborted) throw new AbortError();
     const started = await send({ type: 'polish.local.start' });
-    if (started.state === 'error') throw new Error(started.message);
-    let state = started;
-    while (state.state !== 'ready') {
-      if (signal?.aborted) throw new AbortError();
-      onState(state.message);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      state = await send({ type: 'polish.local.status' });
-      if (state.state === 'error') throw new Error(state.message);
-    }
+    if (signal?.aborted) throw new AbortError();
+    onState(started.message);
+    if (started.state !== 'ready') throw new Error(started.message || 'CLI 润色尚未配置');
   }
 
   /** @param {{reset?: boolean}} [options] reset：从头重润，而不是续润 */

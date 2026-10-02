@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { chat } from '../src/background/llm.js';
 import { DEFAULT_INSTRUCTION, instructionFor } from '../src/core/prompt.js';
 import { Converter } from '../src/vendor/opencc-t2cn.js';
+import { LOCAL_POLISH } from '../src/core/settings.js';
 
 test('流式润色按 SSE 增量交付，CRLF 和拆包不丢字', async () => {
   const originalFetch = globalThis.fetch;
@@ -115,7 +116,7 @@ test('润色失败自动重试，第二次尝试成功', async () => {
   }
 });
 
-test('自备 LLM 三次失败后静默回落本机 FireRedPunc+Qwen', async () => {
+test('custom LLM failures fall back to the CLI configuration', async () => {
   globalThis.window = { addEventListener() {} };
   const { polishSegments } = await import('../src/content/pipeline.js');
   const originalChrome = globalThis.chrome;
@@ -124,8 +125,12 @@ test('自备 LLM 三次失败后静默回落本机 FireRedPunc+Qwen', async () =
     { done: true, ok: false, error: '自备端点 HTTP 500' },
     { done: true, ok: false, error: '自备端点 HTTP 500' },
     { done: true, ok: false, error: '自备端点 HTTP 500' },
-    { done: true, ok: true, content: OK_CONTENT },
   ], calls);
+  const cliCalls = [];
+  globalThis.chrome.runtime.sendMessage = async (message) => {
+    cliCalls.push(message);
+    return { ok: true, value: message.type === 'cli.polish.start' ? { id: 'fallback' } : { state: 'done', segments: JSON.parse(OK_CONTENT).segments } };
+  };
   let ensured = 0;
   try {
     const segments = TWO_SEGMENTS();
@@ -134,40 +139,40 @@ test('自备 LLM 三次失败后静默回落本机 FireRedPunc+Qwen', async () =
       settings: { polishLevel: 'standard', llm: CUSTOM_LLM },
       fallback: { ensure: async () => {
         ensured++;
-        return { ...CUSTOM_LLM, baseUrl: 'http://127.0.0.1:8082/v1', model: 'FireRedPunc+Qwen3.5-2B' };
+        return { ...CUSTOM_LLM, ...LOCAL_POLISH };
       } },
     });
     assert.equal(result.failed, 0);
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 3);
     assert.equal(ensured, 1);
-    assert.equal(calls[3].baseUrl, 'http://127.0.0.1:8082/v1');
-    assert.equal(calls[3].model, 'FireRedPunc+Qwen3.5-2B');
+    assert.equal(cliCalls[0].type, 'cli.polish.start');
+    assert.equal(cliCalls[0].payload.segments.length, 2);
+    assert.ok(!cliCalls[0].payload.instruction.includes('id 必须'));
     assert.equal(segments[1].text, '第二句。');
   } finally {
     globalThis.chrome = originalChrome;
   }
 });
 
-test('本机模型失败时只重试不回落', async () => {
+test('CLI owns its retry policy and failures retain the original paragraphs', async () => {
   globalThis.window = { addEventListener() {} };
   const { polishSegments } = await import('../src/content/pipeline.js');
   const originalChrome = globalThis.chrome;
   const calls = [];
-  scriptedLlm([
-    { done: true, ok: false, error: 'FireRedPunc 不可用' },
-    { done: true, ok: false, error: 'FireRedPunc 不可用' },
-    { done: true, ok: false, error: 'FireRedPunc 不可用' },
-  ], calls);
+  globalThis.chrome = { runtime: { sendMessage: async (message) => {
+    calls.push(message);
+    return { ok: false, error: 'CLI 不可用' };
+  } } };
   try {
     const segments = TWO_SEGMENTS();
     const result = await polishSegments({
       segments, sectionIndexOf: [0, 0], meta: {},
-      settings: { polishLevel: 'standard', llm: { ...CUSTOM_LLM, baseUrl: 'http://127.0.0.1:8082/v1', model: 'FireRedPunc+Qwen3.5-2B' } },
+      settings: { polishLevel: 'standard', llm: { ...CUSTOM_LLM, ...LOCAL_POLISH } },
     });
     assert.equal(result.failed, 1);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 1);
     assert.equal(segments[0].text, '第一段');
-    assert.ok(result.firstError.includes('FireRedPunc 不可用'));
+    assert.ok(result.firstError.includes('CLI 不可用'));
   } finally {
     globalThis.chrome = originalChrome;
   }

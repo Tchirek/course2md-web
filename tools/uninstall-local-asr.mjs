@@ -1,10 +1,7 @@
-// Removes the local helper: stops its services, undoes the browser registration and autostart,
-// and deletes the host files. Downloaded runtimes and polish models are kept unless --purge is given,
-// so a later reinstall does not download them again. The speech model is never deleted here: it is
-// shared with the original course2md, which may be using it.
+// Remove the browser connection. CLI binaries, shared models and course libraries are untouched.
 //
-// npm run local:uninstall            keep runtimes and models
-// npm run local:uninstall -- --purge also delete this project's runtimes and polish models
+// npm run local:uninstall            unregister the connection
+// npm run local:uninstall -- --purge also remove transport files and temporary jobs
 import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { DATA_PARTS, LOCATION_FILE, dataDir, defaultDataDir } from './helper-data.mjs';
@@ -13,31 +10,27 @@ import { stopServices } from './services.mjs';
 
 const purge = process.argv.includes('--purge');
 
-stopServices();
+await stopServices();
 const removed = unregisterHost();
 if (purge) {
-  for (const dir of modelDirs()) {
+  for (const dir of transportDirs()) {
     if (!existsSync(dir)) continue;
     rmSync(dir, { recursive: true, force: true });
     removed.push(dir);
   }
-  // the data directory chosen with --data-dir is forgotten along with everything in it
+  // Forget only the transport's chosen location.
   rmSync(path.join(defaultDataDir(), LOCATION_FILE), { force: true });
 }
 for (const item of removed) process.stdout.write(`已删除：${item}\n`);
-process.stdout.write(purge
-  ? '本机助手已卸载，专用运行库已删除；共享模型与原版配置已保留。\n'
-  : '本机助手已卸载。下载的模型与运行库仍保留，重装时无须再下；要一并删除请运行 npm run local:uninstall -- --purge。\n');
+process.stdout.write('CLI 浏览器连接已移除，course2md 的模型、配置与课程库保留。\n');
 
 /**
- * Where this project's runtimes are downloaded: the chosen data directory and, if the data was moved
- * with --data-dir, whatever is still left in the default one.
+ * This project's transport files in the selected and default data directories.
  */
-function modelDirs() {
+function transportDirs() {
   const dirs = [];
   for (const base of new Set([dataDir(), defaultDataDir()])) {
     for (const name of DATA_PARTS) dirs.push(path.join(base, name));
   }
-  if (process.env.C2MD_POLISH_HOME) dirs.push(process.env.C2MD_POLISH_HOME);
   return dirs;
 }

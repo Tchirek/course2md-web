@@ -1,0 +1,10 @@
+{
+  "version": "v2.0.0-rc.6",
+  "assets": {
+    "windows-x86_64": {"name": "course2md-windows-x86_64.exe", "bytes": 9048576, "sha256": "3d4965333e9b3e013227fd8df3c07c0f735c693b54baa5549bbb86e4061ea330"},
+    "linux-x86_64": {"name": "course2md-linux-x86_64", "bytes": 8592624, "sha256": "fe6700bed527b1a26f7b661aae62e79dc906da0eda4048e38bf8a85bf2a9603e"},
+    "linux-aarch64": {"name": "course2md-linux-aarch64", "bytes": 7675856, "sha256": "be294e77e0be0176289bb0303eef6c49f09ee9372a075e1aa6bfaa21de230c8d"},
+    "macos-aarch64": {"name": "course2md-macos-arm64", "bytes": 26355664, "sha256": "67cd92ca37c68ab0c46f0d09a66724ebb0a14f951caadad11e8bb20a7567701a"},
+    "macos-x86_64": {"name": "course2md-macos-x86_64", "bytes": 8045824, "sha256": "5a8debc9954429c6ae6a1bc70e504d6ae945d46901c478a108d07b06ec95e8e2"}
+  }
+}

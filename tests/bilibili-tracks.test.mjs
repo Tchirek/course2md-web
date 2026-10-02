@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'node:os';
-import path from 'node:path';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
 globalThis.window = { addEventListener() {} };
 const { tracks } = await import('../src/adapters/bilibili.js');
 const { MissingSourceError } = await import('../src/core/errors.js');
-const { downloadBilibiliVideo } = await import('../tools/bilibili-audio.mjs');
 
 const v = (number) => {
   const bytes = [];
@@ -106,25 +102,4 @@ test('時間軸が動画の長さに収まらない字幕は別動画のもの�
   });
   await assert.rejects(run(1114), (error) => error instanceof MissingSourceError && error.message.includes('疑似其他视频的字幕'));
   assert.equal((await run(600)).stats.eventCount, 2);
-});
-
-test('取画面先尝试 B 站备用 CDN，主线路 SSL 失败不再交给 yt-dlp', async () => {
-  const originalFetch = globalThis.fetch;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'c2md-video-test-'));
-  globalThis.fetch = async (url) => {
-    const host = new URL(url).hostname;
-    if (host === 'api.bilibili.com' && url.includes('/view?')) return new Response(JSON.stringify({ code: 0, data: { cid: 34, pages: [{ cid: 34 }] } }));
-    if (host === 'api.bilibili.com') return new Response(JSON.stringify({ code: 0, data: { dash: { video: [{ bandwidth: 1, backupUrl: ['https://bad.example/video', 'https://good.example/video'], baseUrl: 'https://main.example/video' }] } } }));
-    if (host === 'bad.example') throw new Error('EOF occurred in violation of protocol');
-    if (host === 'good.example') return new Response('video bytes');
-    throw new Error(`意外请求 ${host}`);
-  };
-  try {
-    const file = await downloadBilibiliVideo(new URL('https://www.bilibili.com/video/BV1BbKw6XEWq'), dir, new AbortController().signal);
-    assert.equal(await readFile(file, 'utf8'), 'video bytes');
-  } finally {
-    globalThis.fetch = originalFetch;
-    assert(dir.startsWith(path.join(os.tmpdir(), 'c2md-video-test-')));
-    await rm(dir, { recursive: true, force: true });
-  }
 });

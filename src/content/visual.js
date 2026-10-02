@@ -12,15 +12,19 @@
 export function attachFrames(sections, level = 'default', cache = new Map()) {
   if (level === 'none') return sections.map((section) => ({ ...section, frames: [] }));
   const step = /** @type {Record<string, number>} */ ({ few: 180, default: 60, many: 10 })[level] ?? 60;
-  return sections.map((section) => {
+  const catalogue = [...cache.keys()].sort((a, b) => a - b);
+  return sections.map((section, index) => {
     /** @type {Frame[]} */
     const frames = [];
     let slot = -1;
-    for (const segment of section.segments) {
-      const nextSlot = Math.floor(Math.max(0, segment.start - (section.t ?? 0)) / step);
+    const times = cache.size
+      ? catalogue.filter((t) => t >= (index ? section.t ?? 0 : 0) && t < (sections[index + 1]?.t ?? Infinity))
+      : section.segments.map((segment) => segment.start);
+    for (const t of times) {
+      const nextSlot = Math.floor(Math.max(0, t - (section.t ?? 0)) / step);
       if (nextSlot !== slot) {
         slot = nextSlot;
-        frames.push({ t: segment.start, image: cache.get(segment.start) ?? '' });
+        frames.push({ t, image: cache.get(t) ?? '' });
       }
     }
     return { ...section, frames };
@@ -30,17 +34,14 @@ export function attachFrames(sections, level = 'default', cache = new Map()) {
 /** @typedef {import('../core/format.js').Frame} Frame */
 
 /**
- * 由本机服务按时刻取帧，取到一张就写进对应的 frame（原地修改）。
- * @param {string} sourceUrl
- * @param {Frame[]} frames
+ * Consume the CLI's frame catalogue at its actual timestamps.
+ * @param {import('../adapters/index.js').VideoMeta} meta
  * @param {AbortSignal} [signal]
  * @param {(frame: Frame) => Promise<void>|void} [onImage]
  * @returns {Promise<number>} 取到的张数
  */
-export async function captureSectionImages(sourceUrl, frames, signal, onImage) {
-  const times = frames.map((frame) => frame.t);
-  if (!times.length) return 0;
-  const started = await chrome.runtime.sendMessage({ type: 'frame.start', payload: { sourceUrl, times } });
+export async function captureSectionImages(meta, signal, onImage) {
+  const started = await chrome.runtime.sendMessage({ type: 'frame.start', payload: { sourceUrl: meta.url, title: meta.title, duration: meta.duration, uploader: meta.uploader } });
   if (!started?.ok || !started.value?.id) throw new Error(started?.error ?? '本机取帧服务不可用');
   const id = started.value.id;
   let seen = 0;
@@ -52,15 +53,11 @@ export async function captureSectionImages(sourceUrl, frames, signal, onImage) {
       if (!reply?.ok) throw new Error(reply?.error ?? '本机取帧失败');
       const job = reply.value;
       for (const frame of job.images ?? []) {
-        const item = frames.find((candidate) => candidate.t === frame.time);
-        if (item) {
-          item.image = frame.data;
-          kept++;
-          await onImage?.(item);
-        }
+        kept++;
+        await onImage?.({ t: frame.time, image: frame.data });
       }
       seen += job.images?.length ?? 0;
-      if (job.state === 'done') return kept;
+      if (job.state === 'done' && seen >= (job.imagesTotal ?? seen)) return kept;
       if (job.state === 'error') throw new Error(job.error);
     }
     return kept;

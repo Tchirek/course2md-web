@@ -2,16 +2,13 @@
 //! 安装脚本、助手、检查脚本都从这里取路径，保证指向同一处。
 
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 export const TOKEN_FILE = 'helper-token';
-/**
- * This project's own runtimes and polish models, removed by `local:uninstall -- --purge`. The speech model
- * is not among them: it lives in the folder shared with the original course2md (see qwen-asr.py).
- */
-export const DATA_PARTS = ['asr', 'polish'];
+/** Transport data only. Shared models, CLI configuration and course libraries are never purged. */
+export const DATA_PARTS = ['helper', 'bridge-jobs'];
 /** Written in the default directory when the user picks another one (npm run local:install -- --data-dir). */
 export const LOCATION_FILE = 'location.json';
 
@@ -23,7 +20,7 @@ export function defaultDataDir() {
 }
 
 /**
- * 数据目录（助手、原生宿主、模型与运行库都在这里）。C2MD_DATA_DIR 优先（测试用）。
+ * 浏览器连接数据目录。C2MD_DATA_DIR 优先（测试用）。
  * The location is decided once, at install time, and recorded; it never follows free disk space
  * at the moment of use. (It used to switch drives when one ran low, silently landing on a second,
  * half-installed environment.)
@@ -48,43 +45,6 @@ export function chooseDataDir(dir) {
 `);
   mkdirSync(target, { recursive: true });
   return target;
-}
-
-/**
- * Where the speech model goes when the original course2md has no say yet: a data directory moved off
- * its default place (--data-dir) usually means the system drive is short of space, so the shared model
- * should live there too. Null when the data directory is in its default place.
- */
-export function sharedModelTarget() {
-  // C2MD_DATA_DIR is for tests: never point the original's config.toml at a scratch folder
-  if (process.env.C2MD_DATA_DIR) return null;
-  return path.resolve(dataDir()) === path.resolve(defaultDataDir()) ? null : path.join(dataDir(), 'models');
-}
-
-/**
- * The faster-whisper transcription that the shared Qwen3-ASR replaced: its environment (with the CUDA
- * libraries) and its model, about 2.5 GB that nothing uses any more. Only those exact paths; the
- * models folder itself may be the one shared with the original course2md.
- * @param {(removed: string) => void} [onRemoved]
- */
-export function removeObsoleteWhisper(onRemoved = () => {}) {
-  const whisper = 'models--Systran--faster-whisper-small';
-  const targets = [];
-  // with C2MD_DATA_DIR (tests) only that directory is touched
-  const isolated = Boolean(process.env.C2MD_DATA_DIR);
-  for (const base of new Set(isolated ? [dataDir()] : [dataDir(), defaultDataDir()])) {
-    targets.push(...['venv', 'downloads', 'tmp', 'constraints.txt', '.install.lock'].map((name) => path.join(base, 'asr', name)));
-    targets.push(path.join(base, 'models', whisper), path.join(base, 'models', '.locks', whisper), path.join(base, 'models', 'verified.json'));
-  }
-  // older versions kept the model under ~/.cache on macOS / Linux (now also where the original keeps its models)
-  if (process.platform !== 'win32' && !isolated) {
-    const legacy = path.join(os.homedir(), '.cache', 'course2md', 'models');
-    targets.push(path.join(legacy, whisper), path.join(legacy, '.locks', whisper));
-  }
-  for (const target of targets.filter((item) => existsSync(item))) {
-    rmSync(target, { recursive: true, force: true });
-    onRemoved(target);
-  }
 }
 
 export function tokenPath(dir = dataDir()) {
