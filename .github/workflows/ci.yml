@@ -56,6 +56,10 @@ jobs:
           cat "$C2MD_DATA_DIR/native-helper.log" || true
           pgrep -fl cli_bridge.py || true
           lsof -n -iTCP:8766 -sTCP:LISTEN || true
+          for taskPid in $(pgrep -f '/helper/tools/cli_bridge.py$'); do
+            sample "$taskPid" 1 -file "$RUNNER_TEMP/cli-stack.txt" || true
+            head -n 160 "$RUNNER_TEMP/cli-stack.txt" || true
+          done
           curl --noproxy '*' --max-time 2 -i http://127.0.0.1:8766/health || true
       - name: Core and real CLI checks
         if: runner.os != 'Linux'
