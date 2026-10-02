@@ -1,0 +1,94 @@
+{
+  "darwin-arm64": {
+    "python": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "d3904bd6a072246e07aa0bdadee9a14e80521e42a943c0848059feb16a2816dc"
+    },
+    "node": {
+      "url": "https://nodejs.org/dist/v24.13.0/node-v24.13.0-darwin-arm64.tar.gz",
+      "sha256": "d595961e563fcae057d4a0fb992f175a54d97fcc4a14dc2d474d92ddeea3b9f8",
+      "binary": "node-v24.13.0-darwin-arm64/bin/node"
+    },
+    "ffmpeg": {
+      "url": "https://www.osxexperts.net/ffmpeg9arm.zip",
+      "sha256": "d0c06c5c68ce48af3143b262f7a9118a7c9f67de1e237fcc24ffb14df9c67af9"
+    },
+    "ffprobe": {
+      "url": "https://www.osxexperts.net/ffprobe9arm.zip",
+      "sha256": "0c94fbdd8917022f28115eca512196cf4648732bc9e5db9ec8896c7e519d02aa"
+    },
+    "yt-dlp": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+      "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202"
+    }
+  },
+  "darwin-x64": {
+    "python": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "f712a9143c8a5d248438ec7921a0b48d548bca4f1337d33c690d28c2d0504137"
+    },
+    "node": {
+      "url": "https://nodejs.org/dist/v24.13.0/node-v24.13.0-darwin-x64.tar.gz",
+      "sha256": "6f03c1b48ddbe1b129a6f8038be08e0899f05f17185b4d3e4350180ab669a7f3",
+      "binary": "node-v24.13.0-darwin-x64/bin/node"
+    },
+    "ffmpeg": {
+      "url": "https://www.osxexperts.net/ffmpeg80intel.zip",
+      "sha256": "2d24d22db78c87f394a5822867acd5c5dc5e762cd261a44bd26923f3a5af3e07"
+    },
+    "ffprobe": {
+      "url": "https://www.osxexperts.net/ffprobe80intel.zip",
+      "sha256": "0b6576104a95c1b39d4939e2df86f8f7cf1d55287ff57da48777d94605d12feb"
+    },
+    "yt-dlp": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+      "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202"
+    }
+  },
+  "linux-arm64": {
+    "python": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "01ce0ce9189feaead3298abf10d4efe998c55a489b3d5d38ca4f83dda7e7977e"
+    },
+    "node": {
+      "url": "https://nodejs.org/dist/v24.13.0/node-v24.13.0-linux-arm64.tar.gz",
+      "sha256": "0f6d40b94c6a2eb6b4c240ffc8b9fd3ada7ab044c177dd413c06e1ef9a63f081",
+      "binary": "node-v24.13.0-linux-arm64/bin/node"
+    },
+    "ffmpeg": {
+      "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-10-01-19-27/ffmpeg-N-127083-g65a3870462-linuxarm64-gpl.tar.xz",
+      "sha256": "ff0746eadeb750f8f87febf58ef41b70c53fa264454d0f8901f5039f9eab0a02"
+    },
+    "ffprobe": {
+      "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-10-01-19-27/ffmpeg-N-127083-g65a3870462-linuxarm64-gpl.tar.xz",
+      "sha256": "ff0746eadeb750f8f87febf58ef41b70c53fa264454d0f8901f5039f9eab0a02"
+    },
+    "yt-dlp": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux_aarch64",
+      "sha256": "b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc"
+    }
+  },
+  "linux-x64": {
+    "python": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "8a689a077337bea6d1c4bc0b7df1d52fcaa28f5f67e50df8bf417c1e3f9d8874"
+    },
+    "node": {
+      "url": "https://nodejs.org/dist/v24.13.0/node-v24.13.0-linux-x64.tar.gz",
+      "sha256": "6223aad1a81f9d1e7b682c59d12e2de233f7b4c37475cd40d1c89c42b737ffa8",
+      "binary": "node-v24.13.0-linux-x64/bin/node"
+    },
+    "ffmpeg": {
+      "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-10-01-19-27/ffmpeg-N-127083-g65a3870462-linux64-gpl.tar.xz",
+      "sha256": "e9c007fa3c41a3dd20539c9cdab42b81ae48836672f6c2a1749b92076f76d645"
+    },
+    "ffprobe": {
+      "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-10-01-19-27/ffmpeg-N-127083-g65a3870462-linux64-gpl.tar.xz",
+      "sha256": "e9c007fa3c41a3dd20539c9cdab42b81ae48836672f6c2a1749b92076f76d645"
+    },
+    "yt-dlp": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux",
+      "sha256": "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a"
+    }
+  }
+}

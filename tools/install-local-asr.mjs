@@ -99,7 +99,7 @@ function moveDataDir(target) {
   for (const name of existsSync(from) ? readdirSync(from) : []) {
     // Shared weights remain at the path recorded by upstream, even when helper data moves.
     if (name === LOCATION_FILE || name === 'models') continue;
-    if (!/^(asr|polish|native-helper.*|native-host\.mjs|start-helper\.vbs|helper-token|host-fingerprint)$/.test(name)) continue;
+    if (!/^(asr|polish|bin|runtime\.json|native-helper.*|native-host\.(mjs|sh)|start-helper\.vbs|helper-token|host-fingerprint)$/.test(name)) continue;
     const source = path.join(from, name);
     const destination = path.join(target, name);
     if (existsSync(destination)) {

@@ -4,7 +4,6 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$taskRoot = Split-Path -Parent $PSScriptRoot
 $taskData = if ($env:C2MD_DATA_DIR) { $env:C2MD_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'course2md' }
 $taskLocation = Join-Path $taskData 'location.json'
 if (-not $env:C2MD_DATA_DIR -and (Test-Path -LiteralPath $taskLocation)) {
@@ -54,6 +53,7 @@ if ($taskPyLauncher) {
 }
 foreach ($taskCandidate in $taskPythonCandidates) {
     if (-not $taskCandidate -or -not (Test-Path -LiteralPath $taskCandidate)) { continue }
+    if ($taskCandidate -like '*\Microsoft\WindowsApps\*') { continue } # Store aliases are not an installed Python.
     try {
         & $taskCandidate -c 'import sys, tomllib, venv; assert sys.version_info >= (3, 11)' 2>$null
         if ($LASTEXITCODE -eq 0) { $taskPython = $taskCandidate; break }

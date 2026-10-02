@@ -1,4 +1,4 @@
-//! 打包发布：产出两个 zip。
+//! 打包发布：扩展、通用助手源码包，以及当前系统的单文件安装器。
 //!
 //! 1. course2md-<ver>.zip —— 扩展本体。浏览器扩展不区分操作系统与 CPU 架构，
 //!    Windows、Linux、Intel/Apple Silicon macOS 加载的是同一个包。
@@ -26,8 +26,9 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
 /** 助手运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
 const HELPER_FILES = [
-  '安装本机助手.cmd',
   'tools/install-helper.ps1',
+  'tools/install-helper.py',
+  'tools/bootstrap-pins.json',
   'tools/engine-pins.json',
   'tools/library.py',
   'tools/fast-asr-server.mjs',
@@ -103,7 +104,14 @@ artifacts.push(await makeZip(`course2md-helper-${version}.zip`, join(DIST, 'stag
   return ['package.json', ...LEGAL_FILES, ...HELPER_FILES];
 }));
 
-// ---------- 3. 校验和 ----------
+// ---------- 3. Current platform's single-file installer ----------
+const installer = spawnSync(process.execPath, [join(ROOT, 'tools/build-installer.mjs'), artifacts[1].zipPath], { stdio: 'inherit', windowsHide: true });
+if (installer.status !== 0) process.exit(installer.status || 1);
+for (const name of readdirSync(DIST).filter((name) => /\.(exe|pkg|run)$/.test(name))) {
+  artifacts.push({ name, zipPath: join(DIST, name), files: ['embedded helper archive'] });
+}
+
+// ---------- 4. 校验和 ----------
 const sums = artifacts.map(({ name, zipPath }) =>
   `${createHash('sha256').update(readFileSync(zipPath)).digest('hex')}  ${name}`).join('\n') + '\n';
 writeFileSync(join(DIST, 'SHA256SUMS.txt'), sums);

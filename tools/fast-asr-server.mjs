@@ -19,6 +19,7 @@ import { dataDir, ensureHelperToken, removeObsoleteWhisper, sharedModelTarget, t
 import { cleanStaleHosts, registerHost, registrationOutdated } from './host-registration.mjs';
 
 process.env.C2MD_PYTHON ||= pythonCommand();
+if (process.platform === 'darwin' && existsSync('/etc/ssl/cert.pem')) process.env.SSL_CERT_FILE ||= '/etc/ssl/cert.pem';
 process.env.PATH = [path.join(dataDir(), 'bin'), path.dirname(process.execPath), process.env.PATH ?? ''].join(path.delimiter);
 
 const PORT = Number(process.env.C2MD_HELPER_PORT) || 8766;
