@@ -5,11 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -18,6 +26,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
+      - name: Version
+        id: version
+        run: echo "value=$(node tools/next-version.mjs)" >> "$GITHUB_OUTPUT"
       - name: Python syntax
         run: python -m py_compile tools/*.py
       - name: Check course2md CLI interoperability
@@ -31,42 +42,92 @@ jobs:
       # pack runs the full check first (manifest, typecheck, unit tests, layout assertions)
       # and refuses to build the zips if anything fails, so this is both the gate and a pack smoke test.
       - run: npm run pack
+        env:
+          C2MD_VERSION: ${{ steps.version.outputs.value }}
+      - name: Install Linux helper and verify native registration
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          sh "dist/course2md-helper-$VERSION-linux.run"
+          npm run local:check-host
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
+  installers:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Build native installer
+        shell: bash
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: node tools/build-installer.mjs "dist/course2md-helper-$VERSION.zip"
+      - name: Install Windows helper and verify native registration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          $taskInstaller = Join-Path $PWD "dist/course2md-helper-$env:VERSION-windows.exe"
+          $taskProcess = Start-Process -FilePath $taskInstaller -ArgumentList '--quiet' -WindowStyle Hidden -PassThru -RedirectStandardOutput install-output.log -RedirectStandardError install-error.log
+          $taskProcess.WaitForExit()
+          Get-Content install-output.log, install-error.log
+          if ($taskProcess.ExitCode -ne 0) { throw 'Installer failed' }
+          node tools/check-native-helper.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Native host check failed' }
+      - name: Install macOS helper and verify native registration
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          sudo installer -pkg "dist/course2md-helper-$VERSION-macos.pkg" -target /
+          node tools/check-native-helper.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            dist/*-windows.exe
+            dist/*-macos.pkg
+          if-no-files-found: error
+
   # main への push はすべて、検査が通ればそのままリリースになる（版は tools/next-version.mjs が決める）
   release:
-    needs: check
+    needs: [check, installers]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # 続けて push しても版が重ならないよう、一つずつ順に出す
-    concurrency:
-      group: release
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Version
-        id: version
-        run: echo "value=$(node tools/next-version.mjs)" >> "$GITHUB_OUTPUT"
-      - name: Package
-        env:
-          C2MD_VERSION: ${{ steps.version.outputs.value }}
-        run: npm run pack
+          pattern: '*'
+          path: dist/
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.zip *.exe *.pkg *.run > SHA256SUMS.txt
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: v${{ steps.version.outputs.value }}
+          VERSION: v${{ needs.check.outputs.version }}
         run: |
-          gh release create "$VERSION" dist/*.zip dist/SHA256SUMS.txt \
+          gh release create "$VERSION" dist/*.zip dist/*.exe dist/*.pkg dist/*.run dist/SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "course2md $VERSION" --generate-notes
