@@ -1,7 +1,6 @@
 # 第三方组件与许可
 
-本项目自身以 MIT 许可发布（见 `LICENSE`）。下列第三方内容或随发布包一起分发，或在
-用户机器上运行时下载。
+本项目自身以 MIT 许可发布（见 `LICENSE`）。下列内容涉及随包分发的组件和开发检查所用的外部引擎。
 
 ## 随发布包分发
 
@@ -11,19 +10,8 @@
 | [opencc-data](https://github.com/nk2028/opencc-data)（OpenCC 词典） | 内嵌于 `src/vendor/opencc-t2cn.js` | Apache-2.0 | 许可全文见 `src/vendor/OpenCC-Apache-LICENSE` 与 `src/vendor/OpenCC-THIRD_PARTY_LICENSES.md` |
 | [kill-ai-slop](https://github.com/yetone/kill-ai-slop) 设计令牌 | `src/ui/tokens.css` | Apache-2.0 | 取自 `website/src/styles/tokens.css`，数值原样保留，仅把作用域改为 `.c2md-scope`（文件头注明出处与改动）；Apache-2.0 全文同 `src/vendor/OpenCC-Apache-LICENSE` |
 
-## 运行时下载（不随发布包分发）
+## 外部处理引擎与测试二进制
 
-启用本机转录或本机润色时，本机助手按 `tools/runtime-pins.json` 里固定的版本下载下列组件
-（模型与运行库另外固定了 SHA-256，校验通过才使用）。转录模型与原版 course2md 共用同一份文件，
-原版已下载过就不再下载。本机润色的 Python 包装进本项目自己的虚拟环境，不改动用户的全局 Python：
+转录、截图与模型准备由用户安装的 [course2md CLI](https://github.com/mizorewww/course2md) 处理，本项目不分发 CLI、模型或推理运行库。相关依赖及许可以 course2md 的发行说明为准。
 
-| 组件 | 固定版本 | 许可 |
-| --- | --- | --- |
-| [ggml-org/Qwen3-ASR-1.7B-GGUF](https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF)（Q8_0 与 mmproj，本机转录，与原版 course2md 共用） | 提交 `36a6786` | Apache-2.0 |
-| 本机润色环境的依赖（transformers、tokenizers、safetensors 等，完整清单见 `polish-python`） | 见清单 | Apache-2.0 等 |
-| [FireRedASR2S](https://github.com/FireRedTeam/FireRedASR2S) 中的 `fireredpunc` 源码 | 提交 `4e7d9aa` | Apache-2.0 |
-| [FireRedTeam/FireRedPunc](https://huggingface.co/FireRedTeam/FireRedPunc) 模型 | 提交 `e448fd9` | Apache-2.0 |
-| [SoAIHQ/Qwen3.5-2B-GGUF](https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF)（Q4_K_M） | 提交 `dcd0300` | Apache-2.0 |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) 运行库（转录与润色共用） | 发布 `b11235` | MIT |
-
-本机提取服务还会调用用户自行安装的 `yt-dlp`、`ffmpeg`，本项目不分发它们。
+`tools/check-cli.py` 仅在开发／CI 检查中下载官方 CLI 测试二进制，版本与 SHA-256 记录在 `tools/engine-pins.json`。传送脚本只使用 Python 标准库；媒体工具 `yt-dlp`、`ffmpeg` 和 `ffprobe` 由用户或 CI 环境提供。

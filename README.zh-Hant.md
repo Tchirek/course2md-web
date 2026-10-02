@@ -14,7 +14,7 @@
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
 ![Zero build](https://img.shields.io/badge/build-zero--step-246a50?style=flat-square)
 ![tsc --checkJs](https://img.shields.io/badge/types-tsc%20----checkJs-3178c6?style=flat-square&logo=typescript&logoColor=white)
-![Local-first ASR](https://img.shields.io/badge/ASR-local--first-246a50?style=flat-square)
+![CLI ASR](https://img.shields.io/badge/ASR-CLI-246a50?style=flat-square)
 [![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/main)
 
 </div>
@@ -31,9 +31,9 @@
 
 > **注意：** 擴充功能的介面目前為簡體中文，文中引用的按鈕與選項名稱保留介面上的原文，例如「生成笔记」。
 
-這是 [mizorewww/course2md](https://github.com/mizorewww/course2md) 的瀏覽器版本：
-它把「影片 → 圖文講義」搬進瀏覽器。平臺字幕與可直接讀取的普通影片不需要外部工具；
-YouTube、B 站的快速音軌提取可選用 `yt-dlp` 和 `ffmpeg`。文字來源可以是**平臺字幕**，也可以是**你自己跑的本機模型轉錄**。
+course2md Web 提供頁面浮窗、字幕快取與筆記控制，轉錄和截圖使用 [course2md CLI](https://github.com/mizorewww/course2md)。平臺字幕的純文字筆記可直接在瀏覽器生成。
+
+主線從 0.4.5 繼續；0.5.0–0.7.x 的獨立助手、閱讀器與課程庫保存在 [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper)。
 
 介面與設計取捨遵循 [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop)。
 
@@ -43,7 +43,7 @@ YouTube、B 站的快速音軌提取可選用 `yt-dlp` 和 `ffmpeg`。文字來�
 
 在 YouTube 或 B 站開啟一個影片，點擴充功能圖示，選好圖片密度，點「生成笔记」。彈出視窗隨即關閉，浮動視窗顯示進度；轉錄完成後先顯示文字，再補截圖。拖動浮動視窗頂部可移動，拖右下角可調整寬高；拖到螢幕最右邊會吸附成全高側欄。
 
-更快的入口：影片標題末尾有個 ↗，點一下立即生成。這一次優先用平臺字幕（沒有就自動改用本地模型轉錄），圖片密度沿用上次選的檔位；由它開啟的自動生成，換影片後也照此辦理。
+更快的入口：影片標題末尾有個 ↗，點一下立即生成。這一次優先用平臺字幕（沒有就自動改用已設定的語音轉錄），圖片密度沿用上次選的檔位；由它開啟的自動生成，換影片後也照此辦理。
 
 - 頁面浮動視窗按畫面段落展示影片截圖和講述文字；
 - 點時間戳跳到影片對應位置；
@@ -114,7 +114,7 @@ YouTube、B 站的快速音軌提取可選用 `yt-dlp` 和 `ffmpeg`。文字來�
 | --- | --- | --- |
 | **显示讲述时刻** | 開 | 每段文字前標出 `mm:ss`，點選即可跳轉 |
 | **显示图片** | 預設 | 無／少／預設／多；只保留有變化的畫面，「多」最多每 10 秒一張 |
-| **润色文本** | 關 | 輕度／標準／深度；標準沿用原提示詞；自備 LLM 失敗會自動回落到本機 FireRedPunc+Qwen |
+| **潤色文本** | 關 | 輕度／標準／深度；CLI 設定或自備 API，原文可隨時恢復 |
 
 點過一次「生成笔记」後，切換影片自動生成；關閉浮動視窗即停止自動生成。
 
@@ -127,76 +127,33 @@ YouTube、B 站的快速音軌提取可選用 `yt-dlp` 和 `ffmpeg`。文字來�
 YouTube 優先取人工字幕，沒有再取自動生成字幕；B 站取 `player/wbi/v2` 的 CC 字幕（`player/v2` 常返回別的影片的字幕，不用）。
 按行捲動的自動字幕（例如 YouTube 自動字幕的 VTT，每條都重複上一條的末行）按整行收攏；人工字幕裡首尾相接的兩句不會被拼在一起。
 YouTube 字幕要帶播放器簽發的存取憑證才能取到；擴充功能從播放器自己的字幕請求裡拿憑證，拿不到時會讓播放器載入一次字幕再還原字幕開關。片頭廣告播放時會等廣告播完。
-取不到平臺字幕（沒有字幕、需要登入、API 不通、字幕與影片不符等）時，這一次會自動改用本地模型轉錄，浮動視窗裡只給一行提示；「文字来源」設定保持不變。
+取不到平臺字幕（沒有字幕、需要登入、API 不通、字幕與影片不符等）時，這一次會自動改用已設定的語音轉錄，浮動視窗裡只給一行提示；「文字来源」設定保持不變。
 
-### 本地模型轉錄
+### CLI 轉錄與截圖
 
-優先通過本機提取服務直接下載和處理串流音軌；可直接讀取的短影片（不超過 3 分鐘、24 MiB）在瀏覽器裡離線解碼。兩條快路徑都不等播放器走完。本機提取服務按停頓把音軌切成一段段語音（與原版 course2md 同一規則：太長的一段在最安靜處切開，內建轉錄每段不超過 20 秒，自備服務不超過設定裡的切片長度），再交給本機 ASR 服務；瀏覽器直讀與播放器錄音按切片長度切。
-YouTube、B 站下載失敗時，本機助手會用目前瀏覽器中該影片站點的登入狀態重試。擴充功能只向 `127.0.0.1` 的本機助手傳送該站點 cookie；助手把它交給 `yt-dlp` 下載，並在任務結束後刪除暫存檔。Edge 會在擴充功能更新後提示新增的站點 cookie 權限。
+<a id="cli-connection"></a>
 
-首次在專案目錄執行（Windows / macOS / Linux 通用）：
+安裝 [course2md 2.0 CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide)（已驗證 v2.0.0-rc.6），執行 `course2md doctor` 檢查依賴。線上媒體需要 `yt-dlp`，媒體處理需要 `ffmpeg` / `ffprobe`。GPU / CPU 轉錄需要 `llama-server`；Apple Silicon 可用 CoreML，支援的 Intel 裝置可用 NPU。模型由 CLI 按需準備，Web 不另建推理服務。
 
-```sh
-npm run local:install
-```
-
-本機轉錄用的是與原版 [course2md](https://github.com/mizorewww/course2md) 相同的模型：**Qwen3-ASR-1.7B**（GGUF，Q8_0 與 mmproj 兩個檔案，共約 2.5 GB），由 llama.cpp 的 `llama-server` 執行。模型放在原版的模型目錄裡，佈局也與原版一致：取原版 `config.toml`（Windows 在 `%APPDATA%\course2md\`，macOS / Linux 在 `~/.config/course2md/`）裡 `[defaults] model_dir` 指定的目錄，沒有指定就用原版的預設位置（Windows `%LOCALAPPDATA%\course2md\models`，macOS / Linux `~/.cache/course2md/models`）。裝過原版的機器不用再下載；先裝本擴充功能的，以後裝原版時模型已經就位。那裡已有的檔案與固定的 SHA-256 一致才用，不一致就原樣保留並報錯，不會覆蓋原版的檔案。原版執行時用 `--model-dir` 臨時指定的目錄，請用環境變數 `C2MD_MODEL_DIR` 告訴助手。
-
-本機轉錄需要 Node.js 22、Python 3.11 或更新版本（只用標準函式庫，不建虛擬環境）和 `ffmpeg`；YouTube、B 站快速提取還需要 `yt-dlp`。不再安裝 faster-whisper、PyTorch 或單獨的 CUDA 函式庫：llama.cpp 執行庫（固定版本 `b11235`）與本機潤色共用一份，PATH 上已有同一版本就直接用，否則下載並校驗。Windows（NVIDIA 顯示卡）與 macOS 用顯示卡加速，Linux 用 CPU；顯示卡起不來或轉錄中途出錯就改用 CPU 繼續，浮動視窗裡給一行提示。
-
-安裝命令把輕量本機助手註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫助手，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。以前版本裝過的 faster-whisper 轉錄環境與模型（約 2.5 GB）會在這一步刪掉；只拉取了新程式碼、沒重跑安裝的，本機助手啟動時也會刪。
-選擇本地模型轉錄後，助手會在任務開始時自動啟動服務；設定頁按鈕也可手動啟動，按鈕會顯示下載、載入與就緒狀態，並自動填好轉錄地址和模型名。本機轉錄與潤色模型 10 分鐘沒有任務就會退出並釋放記憶體（環境變數 `C2MD_IDLE_SECONDS` 可調），下次用到時自動重新載入。安裝只需一次：以後更新程式碼，本機助手啟動時會自動修復過時的主機註冊，無須重跑；移動了專案目錄才需要重新安裝。
-
-資料目錄（主機、存取權杖、潤色環境與執行庫）預設在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的應用程式資料目錄）；系統磁碟空間緊張時，執行 `npm run local:install -- --data-dir D:\course2md` 把它移到別的磁碟，之後一直沿用。資料目錄不在預設位置、原版既沒有指定模型目錄、預設位置也還沒有模型時，安裝（或更新程式碼後第一次本機轉錄）會把 `<資料目錄>\models` 寫進原版的 `config.toml`（其餘內容原樣保留），兩邊以後都用那裡的模型。解除安裝執行 `npm run local:uninstall`（加 `-- --purge` 連潤色環境與執行庫一起刪）；與原版共用的轉錄模型不會刪除。
-
-本機助手只監聽 `127.0.0.1`，除健康檢查外的請求都要帶存取權杖；權杖只經原生訊息交給本擴充功能，
-機器上的其他擴充功能和網頁都用不了它讀本機檔案。執行時下載的模型與執行環境都固定了版本與 SHA-256
-（`tools/runtime-pins.json`），驗證通過才使用。
-安裝最後會經剛註冊的主機拉起助手，主機不通就當場報錯。擴充功能喚不醒助手時會寫明斷在哪一環（未註冊、擴充功能 ID 不符、Node 或助手路徑失效等）。
-可執行 `npm run local:check-host` 核對瀏覽器能否找到主機並驗證主機能否從零拉起服務（預設核對瀏覽器裡已載入的所有副本，也可在命令後加 `-- <擴充功能ID>` 指定），`npm run local:check` 核對本機服務是否真的接收音訊。
-
-也可以接入自己已有的 OpenAI 相容 ASR 服務，任選其一：
+瀏覽器不能直接執行本機命令，目前 CLI 也沒有瀏覽器傳送介面，因此保留一份標準函式庫連接腳本。先載入擴充功能，安裝 Python 3.11+ 和 Node.js 22+，再從倉庫或 `course2md-cli-bridge-<版本>.zip` 登記一次：
 
 ```sh
-# whisper.cpp（預設 8080 埠，路徑剛好是 /v1/audio/transcriptions）
-./server -m models/ggml-base.bin
-
-# faster-whisper-server（預設 8000 埠）
-faster-whisper-server --model large-v3
+node tools/install-local-asr.mjs
 ```
 
-然後到擴充功能設定頁的「本地模型转录」填服務地址、模型名，點「测试连接」和「授权访问此地址」。
+登記會自動偵測擴充功能 ID，安裝至穩定的應用資料目錄。Node 僅在登記時使用；日常由 Chrome / Edge 喚醒 Python 並呼叫 CLI。Windows、macOS、Linux 使用相同協定，不設定登入自啟。設定頁的「使用 CLI」檢查連接並選用 CLI；`cli` 是設定標記，不是 HTTP 位址。
 
-沒有安裝登入後執行的本機助手時，也可手動執行提取服務：
+CLI 從 PATH、應用資料目錄的 `bin/` 或 `C2MD_UPSTREAM_EXE` 取得。沿用 `course2md/config.toml`：Windows 位於 `%APPDATA%`，其他系統位於 `$XDG_CONFIG_HOME` 或 `~/.config`。模型位置、運算後端與服務認證由 CLI 處理，Web 不修改設定或刪除共用模型與課程。API 轉錄設定會將音訊送往該 API。
 
-```sh
-npm run fast-asr
-```
+自訂本機 OpenAI 轉錄端點仍支援瀏覽器離線解碼及播放器錄音回退；CLI 失敗會直接顯示原因。截圖使用 CLI 回傳的真實時刻，密度切換只篩選同一份快取，段落及閱讀位置不變。B 站登入態透過私有暫存快照傳給 CLI；YouTube 下載使用 CLI 自身支援的認證，目前協定不能接收瀏覽器 cookie 快照。
 
-它只監聽 `127.0.0.1:8766`，用 `yt-dlp` 取網路音軌或直接讀取本地檔案，再由 `ffmpeg` 切片，最後呼叫上面配置的本機 ASR。B 站預設 CDN 失敗時會嘗試備用線路。瀏覽器能直接讀取的短媒體不需要它。
-YouTube 的 JavaScript 挑戰由現有 Node.js 執行環境處理，需 Node.js 22 或更高版本。
-
-**受限媒體的回退：**
-
-- YouTube、B 站的本機提取和瀏覽器直讀都失敗時會顯示原因並停止，不再自動錄音。其他無法快速提取的媒體才用播放器錄音；此時一小時的課至少一小時，期間**標籤頁要保持開著**。
-- 錄製期間影片會真的播放，聲音會被壓到很低但不會是靜音（元素靜音時錄到的就是靜音）。
-- 切片邊界有約 40ms 的間隙，極端情況下可能丟半個字。這是為了讓每個切片能獨立解碼。
-- 經本機提取服務轉錄時，時間戳落在每段話開始的地方；瀏覽器直讀與錄音回退按固定切片送出，服務只返回整段文字時，時間戳精度是切片級別。
+`npm run local:check-host` 檢查登記與冷啟動；`npm run check:cli` 用真實 CLI、短影片及本機測試服務驗證，不下載大模型。卸載用 `npm run local:uninstall`；`-- --purge` 只額外移除連接檔案與暫存任務，保留 CLI 模型、設定與課程庫。
 
 ## 潤色怎麼配
 
-設定頁可在「本机／自定义」間切換潤色模型。舊設定仍自動沿用已填寫的遠端模型；未填遠端時，勾選「润色文本」會啟動本機 [FireRedPunc](https://huggingface.co/FireRedTeam/FireRedPunc) 與 [Qwen3.5-2B 的 Q4 量化版](https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF)；首次使用會下載模型。8 GB 視訊記憶體機器一次只處理一塊，避免與轉錄模型搶視訊記憶體。
+「CLI 配置」沿用 course2md 的模型、端點和登入方式（包括 Ollama / Codex），可用 `course2md llm setup` 設定。「自备 API」沿用瀏覽器內的 OpenAI 相容介面；密鑰只保存在 local storage，不同步，點「授权访问此地址」授予介面權限。
 
-也可填寫任意 OpenAI 相容的 `/chat/completions` 端點。
-
-在設定頁填：服務地址（到 `/v1` 為止）、API key（本機服務留空）、模型名。
-然後點「授权访问此地址」——OpenAI 相容的端點基本都不發 CORS 頭，沒有這一步請求會被
-瀏覽器攔掉。金鑰只存在瀏覽器的 local storage，**不參與同步**。
-
-可選填兩樣東西，都很值：
-
-- **术语表**：每行一條。同音字錯得最多的永遠是專有名詞，寫下來一行就解決。
-- **自定义校对指令**：留空用內建指令。輸出格式的約束由擴充功能強制追加，改不動它。
+輕度／標準／深度、自訂指令、術語表與上一塊唯讀上下文均保留，僅作用於本次 Web 任務。瀏覽器介面逐段串流，CLI 逐塊回寫。自備 API 三次失敗後可回落至 CLI；CLI 自行處理重試，避免疊加計費。原文和失敗區塊始終可用。
 
 ### 為什麼是「分塊傳送」
 
@@ -228,44 +185,29 @@ course2md 的「本地錄製」場景。
 
 ## 開發
 
-零建置：沒有打包器，沒有建置產物。內容腳本用動態 `import()` 載入 ESM。
+原生 ESM，零建置。
 
 ```sh
-npm run check        # 清單自檢 + 型別檢查 + 單元測試 + 佈局斷言，一次跑完（CI 同款）
-npm test             # 只跑單元測試（純邏輯，node --test）
-npm run check:manifest # 清單自檢：引用的檔案都在、模組閉包可被頁面取到、權限對得上
-npm run typecheck    # tsc --checkJs 按 strict 檢查整個 src/（程式碼仍是 JS，零建置）
-npm run check:layout # 只跑幾何斷言：面板佈局、按鈕底色、無橫向溢位
-npm run check:sites  # 在真實 YouTube / B 站頁面上跑真擴充功能（需要網路，不進 CI）
-npm run check:image  # 用三次場景變化的實際影片檢查四個圖片密度檔位
-npm run shots        # 各狀態截圖 → tools/shots/
-npm run pack         # 先跑完整檢查，通過才打出兩個發行套件到 dist/（推送到 main 後 CI 會自動發布 release，版本號自動遞增）
-npm run media        # 在真實 YouTube 頁面上用本擴充功能錄製 README 的示範素材 → docs/media/
-npm run icons        # 重新生成擴充功能圖示（自己柵格化 + 自己編碼 PNG，無原生依賴）
-npm run serve        # 自測伺服器：http://127.0.0.1:8787/tools/selftest.html
+npm ci
+npm run lint
+npm test
+npm run check:cli
+npm run check:layout
+npm run check
+npm run pack
+npm run shots
+npm run serve
 ```
 
-`tools/` 裡的東西只用於開發，不參與執行。自測臺之所以需要
-`tools/chrome-mock.js`：Chrome 137 起 `--load-extension` 已被移除，想在
-Chrome 裡截圖只能給 `chrome.*` 打一層替身——產品程式碼裡沒有任何為截圖開的後門。
-
-`npm run check:manifest` 值得單獨說一句：manifest 裡寫錯一個路徑，Chrome 只會讓那個
-部件**靜默失效**；而內容腳本用 `import(chrome.runtime.getURL(…))` 動態載入的模組不在
-manifest 裡出現，`web_accessible_resources` 覆蓋不到就會在執行時報跨源錯誤。
-這個檢查會算出內容腳本的模組閉包並逐個核對——它在開發過程中確實抓到過一次
-「面板引用的 `src/ui/controls.js` 沒被頁面授權」的真實缺陷。
-
-進一步的設計說明（含與 course2md 的逐項對照、潤色分塊的完整權衡、kill-ai-slop 的
-逐條對照、以及踩過的坑）見 [DESIGN.md](DESIGN.md)。
+CLI 檢查需要媒體工具，未明確指定 CLI 時下載 SHA-256 固定的官方測試二進位。CI 在 Windows、macOS、Linux 檢查真實協定與瀏覽器宿主，直接發布驗證過的產物。傳送層僅用 Python 標準函式庫，不使用 pip、虛擬環境或另一套模型下載器。設計取捨見 [DESIGN.md](DESIGN.md)。
 
 ## 已知邊界
 
-- **上游 API 會變。** YouTube 字幕憑證、B 站字幕 API都在真實頁面上驗證過（`npm run check:sites`），
-  但隨時可能調整，`src/adapters/` 是最可能需要維護的部分。
-- **瀏覽器內 WebGPU ASR 尚未實現。** 目前的快速處理依靠瀏覽器離線解碼或本機提取服務；WebGPU 需要隨擴充功能打包可驗證的模型與推理執行環境。
-- **截圖依賴本機助手取得影片檔案。** 它用 `yt-dlp` 和 `ffmpeg` 離線取幀，不改動頁面播放進度。無法下載媒體時會阻止圖文匯出並顯示原因。各檔先按講述時間窗取候選畫面（「多」最多每 10 秒一張），再用原版 0.85 的相似度門檻，略去與兩分鐘內已保留畫面相同的。
-- **DRM 影片無法轉錄**，`captureStream()` 拿不到音軌。
-- 只有播放器錄音回退需要按真實播放速度走。
+- 平臺字幕介面可能變動；瀏覽器內 WebGPU 轉錄尚未實作。
+- CLI 及媒體／推理依賴需在本機安裝，瀏覽器連接仍需一次登記。
+- CLI 不逐句串流；轉錄檢查點提供部分文字，潤色結果逐塊回寫。
+- 圖文匯出需要可下載的媒體，DRM 不受支援；自訂介面的錄音回退依播放速度處理。
+- 獨立閱讀器、共用課程庫瀏覽及安裝器保留於 `legacy/standalone-helper`；主線保留 0.4.5 的頁面筆記流程。
 
 ## 授權
 

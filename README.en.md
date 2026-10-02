@@ -14,7 +14,7 @@
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
 ![Zero build](https://img.shields.io/badge/build-zero--step-246a50?style=flat-square)
 ![tsc --checkJs](https://img.shields.io/badge/types-tsc%20----checkJs-3178c6?style=flat-square&logo=typescript&logoColor=white)
-![Local-first ASR](https://img.shields.io/badge/ASR-local--first-246a50?style=flat-square)
+![CLI ASR](https://img.shields.io/badge/ASR-CLI-246a50?style=flat-square)
 [![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/main)
 
 </div>
@@ -31,9 +31,9 @@ Turns a video page into lecture notes **with slides, timestamps, click-to-seek a
 
 > **Note:** the extension's interface is currently in Simplified Chinese. This README quotes the on-screen labels in Chinese with a translation, e.g. 「生成笔记」 (Generate notes).
 
-This is the browser edition of [mizorewww/course2md](https://github.com/mizorewww/course2md):
-it brings "video → illustrated notes" into the browser. Platform subtitles and plain videos the browser can read need no external tools;
-fast audio extraction on YouTube and Bilibili can optionally use `yt-dlp` and `ffmpeg`. The text can come from **platform subtitles** or from **a local speech model you run yourself**.
+course2md Web provides the floating reader, subtitle fast path and browser note controls; [course2md CLI](https://github.com/mizorewww/course2md) handles transcription and screenshots. Text-only platform-subtitle notes work directly in the browser.
+
+Main continues from 0.4.5. The 0.5.0–0.7.x standalone helper, reader and library remain on [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper).
 
 The interface and design choices follow [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop).
 
@@ -43,7 +43,7 @@ The interface and design choices follow [yetone/kill-ai-slop](https://github.com
 
 Open a video on YouTube or Bilibili, click the extension icon, pick an image density and click 「生成笔记」 (Generate notes). The popup closes and a floating panel shows progress; once transcription is done the text appears first and the screenshots follow. Drag the panel's header to move it and its bottom-right corner to resize it; drag it to the right edge of the screen and it docks as a full-height sidebar.
 
-A faster way in: there is a ↗ after the video title. One click starts right away. That run prefers platform subtitles (falling back to local transcription automatically when there are none) and keeps the image density you used last; automatic generation started this way keeps doing the same when you switch videos.
+A faster way in: there is a ↗ after the video title. One click starts right away. That run prefers platform subtitles (falling back to the configured transcription service when there are none) and keeps the image density you used last; automatic generation started this way keeps doing the same when you switch videos.
 
 - The floating panel shows video screenshots and the spoken text, grouped by what is on screen;
 - Click a timestamp to jump to that moment in the video;
@@ -114,7 +114,7 @@ Drag the panel to the right edge of the screen to dock it as a full-height sideb
 | --- | --- | --- |
 | **显示讲述时刻** (Show timestamps) | On | Marks each paragraph with `mm:ss`; click to seek |
 | **显示图片** (Show images) | Default | None / few / default / many; only frames that changed are kept, "many" at most one every 10 seconds |
-| **润色文本** (Polish text) | Off | Light / standard / thorough; "standard" keeps the original prompt; if your own LLM fails it falls back to the local FireRedPunc + Qwen automatically |
+| **Polish text** | Off | Light / standard / deep; CLI settings or custom API, with original text retained |
 
 After you have clicked 「生成笔记」 once, switching videos generates automatically; closing the panel stops that.
 
@@ -127,76 +127,35 @@ With timestamps hidden, the text shows no seek buttons; unpolished transcript pa
 YouTube: human-made subtitles first, then auto-generated ones. Bilibili: CC subtitles from `player/wbi/v2` (`player/v2` often returns another video's subtitles, so it is not used).
 Auto subtitles that roll line by line (such as YouTube's auto-caption VTT, where every cue repeats the previous cue's last line) are collapsed by whole lines; two sentences in hand-made subtitles that merely meet end to end are never joined.
 YouTube subtitles need an access token issued by the player; the extension takes it from the player's own subtitle request, and if there is none it has the player load subtitles once and then restores the subtitle toggle. While a pre-roll ad plays, it waits for the ad to finish.
-When platform subtitles are unavailable (none exist, login required, the API fails, the subtitles don't match the video, …) that run switches to local transcription automatically with a one-line notice in the panel; the 「文字来源」 (text source) setting is left unchanged.
+When platform subtitles are unavailable (none exist, login required, the API fails, the subtitles don't match the video, …) that run switches to the configured transcription service with a one-line notice in the panel; the 「文字来源」 (text source) setting is left unchanged.
 
-### Local transcription
+### CLI transcription and screenshots
 
-The preferred path is the local extraction service, which downloads and processes the streamed audio directly; short videos the browser can read directly (up to 3 minutes and 24 MiB) are decoded offline in the browser. Neither fast path waits for the player to play through. The local extraction service cuts the audio at pauses into stretches of speech (the same rule as the original course2md: a stretch that is too long is cut at its quietest point; at most 20 seconds for the built-in transcription, at most the chunk length from the settings for a service of your own) and sends them to the local ASR service; direct reading and player recording cut by the chunk length.
-When a YouTube or Bilibili download fails, the local helper retries with your current browser login for that site. The extension sends that site's cookies only to the local helper on `127.0.0.1`; the helper hands them to `yt-dlp` and deletes the temporary files when the job ends. Edge asks for the added site-cookie permission after the extension updates.
+<a id="cli-connection"></a>
 
-Run once in the project folder (Windows / macOS / Linux alike):
+Install [course2md 2.0 CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide), verified against v2.0.0-rc.6, and run `course2md doctor`. Online media needs `yt-dlp`; media processing needs `ffmpeg` / `ffprobe`. GPU / CPU recognition needs `llama-server`; Apple Silicon can use CoreML and supported Intel devices can use NPU. The CLI prepares and downloads models on demand.
 
-```sh
-npm run local:install
-```
-
-Local transcription uses the same model as the original [course2md](https://github.com/mizorewww/course2md): **Qwen3-ASR-1.7B** (GGUF, the Q8_0 and mmproj files, about 2.5 GB together), run by llama.cpp's `llama-server`. The model lives in the original's model folder, in the original's layout: the folder named by `[defaults] model_dir` in the original's `config.toml` (in `%APPDATA%\course2md\` on Windows, `~/.config/course2md/` on macOS / Linux), or else the original's default (`%LOCALAPPDATA%\course2md\models` on Windows, `~/.cache/course2md/models` on macOS / Linux). A machine that has the original needs no download; if you install this extension first, the model is already in place when you install the original later. Files already there are used only if they match the pinned SHA-256; otherwise they are left untouched and an error is shown, so the original's files are never overwritten. For a folder passed to the original with `--model-dir` at run time, tell the helper with the `C2MD_MODEL_DIR` environment variable.
-
-Local transcription needs Node.js 22, Python 3.11 or later (standard library only, no virtual environment) and `ffmpeg`; fast extraction on YouTube and Bilibili also needs `yt-dlp`. Nothing like faster-whisper, PyTorch or separate CUDA libraries is installed any more: the llama.cpp runtime (pinned release `b11235`) is shared with local polishing, and the same release already on PATH is used as is; otherwise it is downloaded and verified. Windows (NVIDIA GPU) and macOS use the GPU, Linux the CPU; if the GPU cannot start, or fails in the middle of a job, the job continues on the CPU with a one-line notice in the panel.
-
-The install command registers the lightweight local helper as a native messaging host (which is how the extension wakes it up) and makes it start at login. Windows uses the registry and a compiled exe host; macOS / Linux write the browser's `NativeMessagingHosts` folder and start at login via LaunchAgent and XDG autostart respectively. The installer finds this extension among those loaded in Edge / Chrome (an unpacked extension's ID depends on its folder) and allows only those to call the helper, so load the extension in the browser before running it; you can also pass the ID: `node tools/install-local-asr.mjs <extension ID>`. The faster-whisper environment and model that earlier versions installed (about 2.5 GB) are deleted in this step; if you only pulled the new code without re-running it, the helper deletes them when it starts.
-With local transcription selected, the helper starts the service when a job begins; the button on the settings page starts it by hand too, showing downloading, loading and ready, and fills in the transcription address and model name. The local transcription and polishing models exit and free their memory after 10 minutes without work (tunable with the `C2MD_IDLE_SECONDS` environment variable) and reload the next time they are needed. Installing once is enough: after later code updates the helper repairs an outdated host registration when it starts, so there is nothing to re-run; only moving the project folder needs a reinstall.
-
-The data directory (host, access token, polishing environment and runtimes) defaults to `%LOCALAPPDATA%\course2md` (the usual application-data folder on macOS / Linux); if the system drive is short of space, `npm run local:install -- --data-dir D:\course2md` moves it to another drive for good. When the data directory is not in its default place, the original names no model folder of its own and has no model in its default place yet, the installer (or, after a code update, the first local transcription) writes `<data directory>\models` into the original's `config.toml` (keeping everything else in it), and both programs use the model there from then on. To uninstall run `npm run local:uninstall` (add `-- --purge` to delete the polishing environment and runtimes too); the transcription model shared with the original is never deleted.
-
-The local helper listens only on `127.0.0.1`, and every request except the health check needs an access token; the token is handed only to this extension over native messaging,
-so other extensions and web pages on the machine cannot use the helper to read local files. Models and runtimes downloaded at run time are pinned to a version and SHA-256
-(`tools/runtime-pins.json`) and used only after they verify.
-The installer ends by starting the helper through the host it just registered and reports an error on the spot if the host doesn't work. When the extension can't wake the helper it says which link broke (not registered, extension ID mismatch, broken Node or helper path, …).
-`npm run local:check-host` checks that the browser can find the host and that the host can start the service from scratch (by default for every copy loaded in the browser; append `-- <extension ID>` for one), and `npm run local:check` checks that the local service really accepts audio.
-
-You can also connect an OpenAI-compatible ASR service you already run, for example either of:
+Browsers cannot launch local commands directly, and the current CLI has no browser transport. One small standard-library script connects them. Load the extension, install Python 3.11+ and Node.js 22+, then register once from this checkout or `course2md-cli-bridge-<version>.zip`:
 
 ```sh
-# whisper.cpp (port 8080 by default; the path is exactly /v1/audio/transcriptions)
-./server -m models/ggml-base.bin
-
-# faster-whisper-server (port 8000 by default)
-faster-whisper-server --model large-v3
+node tools/install-local-asr.mjs
 ```
 
-Then, in the settings page under 「本地模型转录」 (local transcription), fill in the service address and model name and click 「测试连接」 (Test connection) and 「授权访问此地址」 (Allow access to this address).
+Registration detects extension IDs and installs stable transport files for Chrome / Edge. Node is needed only for registration; normal use wakes Python through the browser and runs the CLI. Windows, macOS and Linux share the same protocol. Nothing is added to login startup. 「使用 CLI」 checks the connection and selects CLI transcription; `cli` is a settings marker, not an HTTP endpoint.
 
-Without the login-started helper you can also run the extraction service by hand:
+The CLI is located through PATH, the application's `bin/` directory or `C2MD_UPSTREAM_EXE`. It uses `course2md/config.toml` under `%APPDATA%` on Windows and `$XDG_CONFIG_HOME` or `~/.config` elsewhere. The CLI owns model locations, backend selection and service authentication. Web does not rewrite that configuration or remove shared models and courses. An API transcription provider sends audio to that configured API.
 
-```sh
-npm run fast-asr
-```
+Custom loopback OpenAI transcription endpoints still support browser offline decoding and player recording as fallbacks. CLI failures show their cause directly.
 
-It listens only on `127.0.0.1:8766`, fetches network audio with `yt-dlp` or reads local files directly, cuts it with `ffmpeg` and calls the local ASR configured above. When Bilibili's default CDN fails it tries a backup route. Short media the browser can read directly doesn't need it.
-YouTube's JavaScript challenge is solved with the Node.js runtime you already have; Node.js 22 or later is required.
+Screenshots retain the CLI's actual timestamps. Density switches filter one cached catalogue without moving paragraphs. Bilibili browser cookies are passed in a private temporary snapshot; YouTube downloads use the CLI's own supported authentication because its protocol cannot receive browser cookie snapshots.
 
-**Fallbacks for restricted media:**
-
-- If both local extraction and direct reading fail on YouTube or Bilibili, the reason is shown and the run stops — it no longer falls back to recording. Only other media that can't be extracted quickly is recorded from the player; then an hour-long lecture takes at least an hour, and **the tab must stay open** meanwhile.
-- While recording, the video really plays; its sound is turned down very low but not muted (a muted element records silence).
-- There is a gap of about 40 ms at chunk boundaries, so in extreme cases half a word may be lost. This keeps every chunk independently decodable.
-- Through the local extraction service, timestamps land where each stretch of speech begins; direct reading and the recording fallback send fixed chunks, and when the service returns only plain text, timestamps are at chunk level.
+`npm run local:check-host` checks registration and cold starts. `npm run check:cli` exercises the real CLI with short media and loopback test services, without large model downloads. Uninstall with `npm run local:uninstall`; `-- --purge` additionally removes only transport files and temporary jobs. Shared models, CLI settings and course libraries remain intact.
 
 ## Setting up polishing
 
-The settings page switches the polishing model between 「本机」 (local) and 「自定义」 (custom). Older settings keep using the remote model already filled in; with no remote model, ticking 「润色文本」 starts the local [FireRedPunc](https://huggingface.co/FireRedTeam/FireRedPunc) and [Qwen3.5-2B, Q4 quantised](https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF); the models are downloaded on first use. Machines with 8 GB of VRAM polish one chunk at a time so the transcription model keeps its memory.
+「CLI 配置」 uses the model, endpoint and login configured in course2md, including Ollama / Codex. Configure it with `course2md llm setup`. 「自备 API」 keeps browser-managed OpenAI-compatible settings; keys stay in local storage and are not synced. 「授权访问此地址」 grants access to that endpoint.
 
-Any OpenAI-compatible `/chat/completions` endpoint works as well.
-
-On the settings page fill in the service address (up to `/v1`), the API key (leave empty for local services) and the model name.
-Then click 「授权访问此地址」 — OpenAI-compatible endpoints almost never send CORS headers, and without this step the browser
-blocks the requests. The key lives only in the browser's local storage and is **not synced**.
-
-Two optional fields are well worth filling in:
-
-- **术语表 (Glossary)**: one entry per line. Proper nouns are always what homophones get wrong most; one line fixes them.
-- **自定义校对指令 (Custom proofreading instructions)**: leave empty for the built-in ones. The output-format constraints are always appended by the extension and cannot be changed.
+Light / standard / deep polishing, custom instructions, the glossary and preceding read-only context still apply to each Web task. Browser API results stream by paragraph; CLI results arrive by chunk. After three custom API failures, the CLI configuration can handle the fallback. The CLI owns its own retries so paid requests are not multiplied. Original text remains available, including failed chunks.
 
 ### Why "send in chunks"
 
@@ -228,44 +187,31 @@ course2md's "local recording" case.
 
 ## Development
 
-Zero build: no bundler, no build output. Content scripts load ESM with dynamic `import()`.
+Native ESM, no build step.
 
 ```sh
-npm run check        # manifest self-check + type check + unit tests + layout assertions, all at once (same as CI)
-npm test             # unit tests only (pure logic, node --test)
-npm run check:manifest # manifest self-check: referenced files exist, the module closure is reachable from pages, permissions line up
-npm run typecheck    # tsc --checkJs over all of src/ in strict mode (the code stays JS, zero build)
-npm run check:layout # geometry assertions only: panel layout, button fills, no horizontal overflow
-npm run check:sites  # run the real extension on real YouTube / Bilibili pages (needs network, not in CI)
-npm run check:image  # check the four image densities against a real video with three scene changes
-npm run shots        # screenshots of every state → tools/shots/
-npm run pack         # runs the full check first, and only then writes the two release packages to dist/ (every push to main is released by CI, with the version bumped automatically)
-npm run media        # record the README demos with this extension on real YouTube pages → docs/media/
-npm run icons        # regenerate the extension icons (own rasteriser + own PNG encoder, no native deps)
-npm run serve        # self-test server: http://127.0.0.1:8787/tools/selftest.html
+npm ci
+npm run lint         # manifest and strict types
+npm test             # browser logic, streaming, auth and lifetimes
+npm run check:cli    # real CLI integration
+npm run check:layout # headless Chrome layout and scroll anchoring
+npm run check        # complete gate
+npm run pack         # checked extension, transport and SHA256SUMS
+npm run shots
+npm run serve
 ```
 
-Everything in `tools/` is for development only and never runs in the product. The self-test bench needs
-`tools/chrome-mock.js` because Chrome 137 removed `--load-extension`: taking screenshots in
-Chrome means putting a stand-in under `chrome.*` — the product code has no back doors opened for screenshots.
+CLI checks require media tools. Without an explicitly selected CLI, the check downloads an official binary pinned by SHA-256. CI exercises Windows, macOS and Linux, then publishes the checked artifacts. The transport uses Python's standard library: no pip, virtual environment or independent model downloader.
 
-`npm run check:manifest` deserves a word: a wrong path in the manifest makes Chrome **silently disable**
-just that part; and modules that content scripts load with `import(chrome.runtime.getURL(…))` never appear in the
-manifest, so if `web_accessible_resources` doesn't cover them they fail at run time with a cross-origin error.
-This check computes the content scripts' module closure and verifies each one — during development it really did catch
-a real defect: "`src/ui/controls.js`, used by the panel, is not exposed to pages".
-
-More design notes (an item-by-item comparison with course2md, the full trade-offs of chunked polishing, a point-by-point
-check against kill-ai-slop, and the pitfalls hit along the way) are in [DESIGN.md](DESIGN.md) (in Chinese).
+See [DESIGN.md](DESIGN.md) for the ownership boundaries and UI decisions.
 
 ## Known limits
 
-- **Upstream APIs change.** The YouTube subtitle token and the Bilibili subtitle API are both verified on real pages (`npm run check:sites`),
-  but they can change at any time; `src/adapters/` is the part most likely to need maintenance.
-- **In-browser WebGPU ASR is not implemented yet.** Fast processing currently relies on offline decoding in the browser or the local extraction service; WebGPU would need a verifiable model and inference runtime shipped with the extension.
-- **Screenshots depend on the local helper getting the video file.** It extracts frames offline with `yt-dlp` and `ffmpeg` and never touches the page's playback position. If the media can't be downloaded, the illustrated export is blocked and the reason is shown. Each density takes candidate frames within the spoken time windows ("many": at most one every 10 seconds); then, at the original's 0.85 similarity threshold, a frame identical to one kept in the last two minutes is left out.
-- **DRM videos can't be transcribed**: `captureStream()` gets no audio track.
-- Only the player-recording fallback has to run at real playback speed.
+- Platform subtitle interfaces can change. In-browser WebGPU transcription is not implemented.
+- CLI processing requires the local CLI and its media / inference dependencies. Browser registration is still required once.
+- The CLI does not stream individual transcript sentences; saved checkpoints supply partial text, and polishing returns by chunk.
+- Illustrated export needs downloadable media. DRM media is unsupported; custom-endpoint recording fallbacks follow playback speed.
+- The standalone reader, shared-library browser and native installers remain on `legacy/standalone-helper`. Main preserves the 0.4.5 browser note workflow.
 
 ## License
 
