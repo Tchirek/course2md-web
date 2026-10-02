@@ -44,6 +44,8 @@ class HelperSetup
                 Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script + "\"",
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
                 StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
+            // A PowerShell 7 parent can pass incompatible module paths into Windows PowerShell 5.1.
+            start.EnvironmentVariables.Remove("PSModulePath");
             using (Process child = new Process { StartInfo = start })
             {
                 child.OutputDataReceived += (sender, e) => log(e.Data);
