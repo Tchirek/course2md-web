@@ -78,7 +78,9 @@ async function init() {
   renderDisplay();
   renderPolishEngine();
   renderTheme();
-  bindActions();
+  await bindActions();
+  checkHelper();
+  window.addEventListener('focus', checkHelper);
   send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch(() => {});
   send({ type: 'polish.local.status' }).then(showLocalPolishStatus).catch(() => {});
 
@@ -188,18 +190,17 @@ function renderTheme() {
 
 // ---------- 动作 ----------
 
-function bindActions() {
+async function bindActions() {
   const installer = /** @type {HTMLAnchorElement} */ (byId('helper-install'));
   const version = chrome.runtime.getManifest().version;
-  installer.href = `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}.zip`;
+  const { os } = await chrome.runtime.getPlatformInfo();
+  const suffix = os === 'win' ? 'windows.exe' : os === 'mac' ? 'macos.pkg' : os === 'linux' ? 'linux.run' : '';
+  installer.href = suffix ? `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}-${suffix}`
+    : `https://github.com/Tchirek/course2md-web/releases/tag/v${version}`;
   installer.target = '_blank';
   installer.rel = 'noopener';
-  installer.addEventListener('click', () => flash('helper-result', '解压安装包，双击「安装本机助手.cmd」，完成后点「检查连接」。', null));
-  byId('helper-check').addEventListener('click', async () => {
-    flash('helper-result', '正在检查连接', null);
-    try { await send({ type: 'helper.check' }); flash('helper-result', '本机助手已连接', true); }
-    catch (error) { flash('helper-result', errorText(error), false); }
-  });
+  installer.addEventListener('click', () => flash('helper-result', '运行下载的安装器，完成后返回此页即可。', null));
+  byId('helper-check').addEventListener('click', checkHelper);
   for (const [id, path, kind] of FIELDS) {
     const node = field(id);
     if (!node) continue;
@@ -236,6 +237,21 @@ function bindActions() {
       flash('reset-result', '已恢复默认。', true);
     }
   });
+}
+
+async function checkHelper() {
+  flash('helper-result', '正在连接本机助手', null);
+  const installer = byId('helper-install');
+  try {
+    await send({ type: 'helper.check' });
+    installer.textContent = '更新助手';
+    installer.classList.add('c2md-button--quiet');
+    flash('helper-result', '本机助手已连接', true);
+  } catch (error) {
+    installer.textContent = '安装本机助手';
+    installer.classList.remove('c2md-button--quiet');
+    flash('helper-result', errorText(error), false);
+  }
 }
 
 async function startLocalAsr() {

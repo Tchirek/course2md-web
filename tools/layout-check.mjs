@@ -517,11 +517,21 @@ try {
     }
     if (name === 'options') {
       const installer = await page.$eval('#helper-install', (a) => a.getAttribute('href'));
-      installer.endsWith('/v0.6.0/course2md-helper-0.6.0.zip') ? pass('options 安装包匹配扩展版本') : fail(name, installer);
+      installer.endsWith('/v0.7.0/course2md-helper-0.7.0-windows.exe') ? pass('options 安装器匹配扩展版本与系统') : fail(name, installer);
+      await page.waitForFunction(() => document.getElementById('helper-install').textContent === '更新助手');
+      pass('options 已安装时自动连接并收起安装提示');
       await page.click('#helper-check');
       await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('已连接'));
       pass('options 可以检查助手连接');
     }
+    await page.close();
+  }
+  for (const [os, suffix] of [['win', 'windows.exe'], ['mac', 'macos.pkg'], ['linux', 'linux.run']]) {
+    const page = await browser.newPage();
+    await page.goto(`${BASE}/src/ui/options.html?helper=missing&os=${os}`, { waitUntil: 'networkidle0' });
+    const installer = await page.$eval('#helper-install', (a) => ({ href: a.href, label: a.textContent }));
+    installer.href.endsWith(`-${suffix}`) && installer.label === '安装本机助手'
+      ? pass(`options/${os} 首次使用直接下载安装器`) : fail(`options/${os}`, JSON.stringify(installer));
     await page.close();
   }
   // Original/native and browser documents use the same reader, including narrow screens.

@@ -132,7 +132,8 @@
 
   const chromeMock = {
     runtime: {
-      getManifest: () => ({ version: '0.6.0' }),
+      getManifest: () => ({ version: '0.7.0' }),
+      getPlatformInfo: async () => ({ os: initialQuery.get('os') || 'win', arch: 'x86-64', nacl_arch: 'x86-64' }),
       // 相对扩展根目录解析，与真实语义一致：'/src/ui/tokens.css'
       getURL: (path) => new URL(String(path).replace(/^\.?\//, ''), location.origin + '/').toString(),
       id: 'selftest-mock-extension-id',
@@ -164,7 +165,9 @@
           };
         }
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
-        if (type === 'helper.check') return { ok: true, value: { ready: true } };
+        if (type === 'helper.check') return initialQuery.get('helper') === 'missing'
+          ? { ok: false, error: '首次使用请安装本机助手。', setupRequired: true }
+          : { ok: true, value: { ready: true } };
         if (type === 'library.request') {
           const { action, input = {} } = message.payload;
           if (initialQuery.get('helper') === 'missing') return { ok: false, error: '请点击「安装本机助手」', setupRequired: true };
