@@ -138,7 +138,7 @@ export function normalizeSettings(raw) {
   s.subtitle.preferLang = String(s.subtitle.preferLang ?? '').trim();
 
   if (s.source === 'asr' && s.asr.endpoint !== 'cli' && !isHttpUrl(s.asr.endpoint)) {
-    notes.push('本地模型转录需要填写本机 ASR 服务的地址，否则转录会失败。');
+    notes.push('语音转录需要选择 CLI 配置，或填写本机 ASR 接口地址。');
   }
 
   return { settings: s, notes };
