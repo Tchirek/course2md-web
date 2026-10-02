@@ -124,7 +124,7 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
     await writeFile(join(dir, 'native-helper.config'), `${findPython()}${configEol}${join(dir, 'fixture.py')}${configEol}${health}${configEol}${join(dir, 'helper-token')}${configEol}`);
     // .exe ホストは自身の置き場所から設定を探すので、隔離ディレクトリ内のコピーを実行しないと実インストールの設定を読んでしまう
     const child = scriptSource
-      ? spawn(command, [hostPath, '--native-host'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+      ? spawn(command, [hostPath, '--native-host'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, http_proxy: 'http://127.0.0.1:9', https_proxy: 'http://127.0.0.1:9', no_proxy: '' } })
       : spawn(hostPath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     const body = Buffer.from('{"action":"start"}');
     const size = Buffer.alloc(4);
@@ -147,8 +147,8 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
     if (!reply.ok) throw new Error(reply.error || '本机宿主未启动服务');
     if (reply.token !== token) throw new Error('本机宿主没有交出访问令牌（宿主是旧版本？重新运行 npm run local:install）');
     console.log(`${label}可自动拉起服务`);
-    await fetch(`http://127.0.0.1:${port}/shutdown`);
+    await (await fetch(`http://127.0.0.1:${port}/shutdown`)).text();
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries:10, retryDelay:100 });
   }
 }

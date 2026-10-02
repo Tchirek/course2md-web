@@ -442,20 +442,24 @@ def native_host():
         python, script, health, token_file = config.read_text(encoding="utf-8").splitlines()[:4]
         if not 1 <= length <= 4096 or json.loads(sys.stdin.buffer.read(length)).get("action") != "start":
             raise ValueError("无效的本机消息")
+        # Loopback health must bypass system proxies, including macOS proxy discovery.
+        local = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         def healthy():
             try:
-                with urllib.request.urlopen(health, timeout=.5) as response:
+                with local.open(health, timeout=.5) as response:
                     return response.status == 200 and json.load(response).get("engine") == "course2md-cli"
             except (OSError, ValueError):
                 return False
         if not healthy():
             env = dict(os.environ, C2MD_DATA_DIR=str(Path(token_file).parent))
-            child = subprocess.Popen([python, script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, start_new_session=sys.platform != "win32", **hidden())
-            for _ in range(50):
+            with (Path(token_file).parent / "native-helper.log").open("w", encoding="utf-8") as errors:
+                child = subprocess.Popen([python, script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors, env=env, start_new_session=sys.platform != "win32", **hidden())
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
                 if healthy():
                     break
                 if child.poll() is not None:
-                    raise ValueError("course2md 连接进程启动失败")
+                    raise ValueError(f"course2md 连接进程启动失败（代码 {child.returncode}，详见 native-helper.log）")
                 time.sleep(.2)
         if not healthy():
             raise ValueError("course2md 连接超时")
