@@ -11,6 +11,7 @@
     "128": "src/ui/icons/icon-128.png"
   },
   "permissions": ["storage", "activeTab", "scripting", "downloads", "cookies", "nativeMessaging", "clipboardWrite"],
+  "optional_permissions": ["downloads.open"],
   "host_permissions": ["http://127.0.0.1:8766/*", "http://127.0.0.1:8081/*", "http://127.0.0.1:8082/*", "https://*.youtube.com/*", "https://*.bilibili.com/*", "https://*.hdslb.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {

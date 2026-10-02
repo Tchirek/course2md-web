@@ -34,6 +34,18 @@ let settings = withDefaults({});
 let asrPoll;
 /** @type {ReturnType<typeof setInterval>|undefined} */
 let polishPoll;
+let helperReady = false;
+let helperAsset = '';
+let helperCanOpen = false;
+/** @type {chrome.downloads.DownloadItem|undefined} */
+let helperDownload;
+/** @type {ReturnType<typeof setTimeout>|undefined} */
+let helperDownloadPoll;
+/** @type {ReturnType<typeof setTimeout>|undefined} */
+let helperConnectPoll;
+let helperWaitUntil = 0;
+let helperInstalling = false;
+let helperChecking = false;
 const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8081/v1/audio/transcriptions';
 
 init();
@@ -79,8 +91,8 @@ async function init() {
   renderPolishEngine();
   renderTheme();
   await bindActions();
-  checkHelper();
-  window.addEventListener('focus', checkHelper);
+  checkHelper(true);
+  window.addEventListener('focus', () => checkHelper(helperWaitUntil > Date.now() || Boolean(helperDownload)));
   send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch(() => {});
   send({ type: 'polish.local.status' }).then(showLocalPolishStatus).catch(() => {});
 
@@ -191,16 +203,16 @@ function renderTheme() {
 // ---------- 动作 ----------
 
 async function bindActions() {
-  const installer = /** @type {HTMLAnchorElement} */ (byId('helper-install'));
   const version = chrome.runtime.getManifest().version;
   const { os } = await chrome.runtime.getPlatformInfo();
   const suffix = os === 'win' ? 'windows.exe' : os === 'mac' ? 'macos.pkg' : os === 'linux' ? 'linux.run' : '';
-  installer.href = suffix ? `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}-${suffix}`
-    : `https://github.com/Tchirek/course2md-web/releases/tag/v${version}`;
-  installer.target = '_blank';
-  installer.rel = 'noopener';
-  installer.addEventListener('click', () => flash('helper-result', '运行下载的安装器，完成后返回此页即可。', null));
-  byId('helper-check').addEventListener('click', checkHelper);
+  helperAsset = suffix ? `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}-${suffix}` : '';
+  helperCanOpen = os === 'win' || os === 'mac';
+  if (os === 'linux') byId('helper-description').textContent = '连接课程库、截图和本机模型。Linux 首次安装需运行下载的 .run 文件；之后自动连接。';
+  if (!suffix) byId('helper-description').textContent = '当前系统暂不支持本机助手。';
+  buttonById('helper-install').addEventListener('click', installHelper);
+  byId('helper-check').addEventListener('click', () => checkHelper());
+  refreshHelperDownload();
   for (const [id, path, kind] of FIELDS) {
     const node = field(id);
     if (!node) continue;
@@ -239,19 +251,110 @@ async function bindActions() {
   });
 }
 
-async function checkHelper() {
-  flash('helper-result', '正在连接本机助手', null);
-  const installer = byId('helper-install');
+/** @param {boolean} [quiet] */
+async function checkHelper(quiet = false) {
+  if (helperChecking) return;
+  helperChecking = true;
+  clearTimeout(helperConnectPoll);
+  if (!quiet) flash('helper-result', '正在连接本机助手', null);
   try {
     await send({ type: 'helper.check' });
-    installer.textContent = '更新助手';
-    installer.classList.add('c2md-button--quiet');
-    flash('helper-result', '本机助手已连接', true);
+    helperReady = true;
+    helperWaitUntil = 0;
+    clearTimeout(helperConnectPoll);
+    if (!helperDownload || helperDownload.state === 'complete') flash('helper-result', '本机助手已连接', true);
   } catch (error) {
-    installer.textContent = '安装本机助手';
-    installer.classList.remove('c2md-button--quiet');
+    helperReady = false;
+    if (!quiet) flash('helper-result', errorText(error), false);
+  } finally {
+    helperChecking = false;
+  }
+  renderHelperInstaller();
+  if (helperWaitUntil > Date.now()) helperConnectPoll = setTimeout(() => checkHelper(true), 2000);
+}
+
+function renderHelperInstaller() {
+  const button = buttonById('helper-install');
+  const downloading = helperDownload?.state === 'in_progress';
+  const needsConfirmation = downloading && ['file', 'uncommon'].includes(helperDownload?.danger ?? '');
+  button.disabled = helperInstalling || !helperAsset || (downloading && !needsConfirmation && !helperDownload?.paused) || (helperDownload?.state === 'complete' && !helperCanOpen);
+  button.textContent = needsConfirmation ? '确认下载' : downloading ? (helperDownload?.paused ? '继续下载' : '正在下载')
+    : helperDownload?.state === 'complete' && (!helperReady || !helperCanOpen) ? (helperCanOpen ? '打开安装器' : '安装器已下载')
+    : helperReady ? '更新助手' : '安装本机助手';
+  button.classList.toggle('c2md-button--quiet', helperReady);
+}
+
+async function refreshHelperDownload() {
+  clearTimeout(helperDownloadPoll);
+  if (!helperAsset) return;
+  try {
+    const items = await chrome.downloads.search(helperDownload ? { id: helperDownload.id } : { url: helperAsset, orderBy: ['-startTime'] });
+    helperDownload = items.find((item) => item.byExtensionId === chrome.runtime.id && (item.state !== 'complete' || item.exists));
+    renderHelperInstaller();
+    if (helperDownload?.state === 'in_progress') {
+      const { danger, bytesReceived, totalBytes, paused } = helperDownload;
+      const progress = totalBytes > 0 ? ` ${Math.floor(bytesReceived * 100 / totalBytes)}%` : '';
+      flash('helper-result', ['file', 'uncommon'].includes(danger) ? '浏览器需要确认这次下载。'
+        : paused ? '下载已暂停，点击「继续下载」。' : `正在下载安装器${progress}`, null);
+      helperDownloadPoll = setTimeout(refreshHelperDownload, 1000);
+    } else if (helperDownload?.state === 'interrupted') {
+      flash('helper-result', `下载未完成（${helperDownload.error || '已中断'}），点击可重试。`, false);
+    } else if (helperDownload?.state === 'complete' && !helperReady) {
+      flash('helper-result', helperCanOpen ? '下载完成，点击「打开安装器」继续。' : '安装器已保存到下载目录。Linux 首次安装仍需运行此文件。', null);
+      if (helperCanOpen) watchHelper();
+    }
+  } catch (error) {
+    helperDownload = undefined;
+    renderHelperInstaller();
     flash('helper-result', errorText(error), false);
   }
+}
+
+async function installHelper() {
+  const button = buttonById('helper-install');
+  helperInstalling = true;
+  button.disabled = true;
+  try {
+    if (helperDownload?.state === 'complete' && helperCanOpen) {
+      // Opening needs a fresh user gesture; never launch an installer from a download callback.
+      const id = helperDownload.id;
+      // Keep the user gesture through the permission callback; open() promises require Chrome 123.
+      await new Promise((resolve, reject) => chrome.permissions.request({ permissions: ['downloads.open'] }, (granted) => {
+        const failure = chrome.runtime.lastError?.message;
+        if (failure || !granted) return reject(new Error(failure || '未允许打开安装器，文件仍保留在浏览器下载列表中。'));
+        chrome.downloads.open(id, () => {
+          const failure = chrome.runtime.lastError?.message;
+          if (failure) reject(new Error(failure));
+          else resolve(undefined);
+        });
+      }));
+      flash('helper-result', '请在系统安装窗口确认，完成后会自动连接。', null);
+      watchHelper();
+    } else if (helperDownload?.state === 'in_progress') {
+      if (['file', 'uncommon'].includes(helperDownload.danger)) await chrome.downloads.acceptDanger(helperDownload.id);
+      else await chrome.downloads.resume(helperDownload.id);
+      await refreshHelperDownload();
+    } else {
+      flash('helper-result', '正在下载安装器', null);
+      const id = await chrome.downloads.download({ url: helperAsset, saveAs: false });
+      helperDownload = (await chrome.downloads.search({ id }))[0];
+      await refreshHelperDownload();
+    }
+  } catch (error) {
+    flash('helper-result', errorText(error), false);
+    // search() also notices installers deleted since the page was opened.
+    if (helperDownload?.state === 'complete' && !(await chrome.downloads.search({ id: helperDownload.id }).catch(() => [])).some((item) => item.exists)) helperDownload = undefined;
+  } finally {
+    helperInstalling = false;
+    renderHelperInstaller();
+  }
+}
+
+function watchHelper() {
+  if (helperReady || helperWaitUntil > Date.now()) return;
+  helperWaitUntil = Date.now() + 10 * 60_000;
+  clearTimeout(helperConnectPoll);
+  helperConnectPoll = setTimeout(() => checkHelper(true), 2000);
 }
 
 async function startLocalAsr() {

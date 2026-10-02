@@ -516,8 +516,6 @@ try {
       fail(name, '主按钮没有底色');
     }
     if (name === 'options') {
-      const installer = await page.$eval('#helper-install', (a) => a.getAttribute('href'));
-      installer.endsWith('/v0.7.0/course2md-helper-0.7.0-windows.exe') ? pass('options 安装器匹配扩展版本与系统') : fail(name, installer);
       await page.waitForFunction(() => document.getElementById('helper-install').textContent === '更新助手');
       pass('options 已安装时自动连接并收起安装提示');
       await page.click('#helper-check');
@@ -529,9 +527,77 @@ try {
   for (const [os, suffix] of [['win', 'windows.exe'], ['mac', 'macos.pkg'], ['linux', 'linux.run']]) {
     const page = await browser.newPage();
     await page.goto(`${BASE}/src/ui/options.html?helper=missing&os=${os}`, { waitUntil: 'networkidle0' });
-    const installer = await page.$eval('#helper-install', (a) => ({ href: a.href, label: a.textContent }));
-    installer.href.endsWith(`-${suffix}`) && installer.label === '安装本机助手'
-      ? pass(`options/${os} 首次使用直接下载安装器`) : fail(`options/${os}`, JSON.stringify(installer));
+    const tabs = (await browser.pages()).length;
+    await page.click('#helper-install');
+    await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('50%'));
+    const started = await page.evaluate(() => ({ options: chrome.__mock.downloadOptions[0], disabled: document.getElementById('helper-install').disabled, opened: chrome.__mock.openedDownloads.length }));
+    started.options.url.endsWith(`/v0.7.0/course2md-helper-0.7.0-${suffix}`) && started.options.saveAs === false && started.disabled && !started.opened && (await browser.pages()).length === tabs
+      ? pass(`options/${os} 在设置页下载对应安装器、显示进度且不自动执行`) : fail(`options/${os}`, JSON.stringify(started));
+    if (os === 'win') {
+      await page.evaluate(() => { chrome.__mock.downloadItems[0].paused = true; });
+      await page.waitForFunction(() => document.getElementById('helper-install').textContent === '继续下载');
+      await page.click('#helper-install');
+      await page.waitForFunction(() => !chrome.__mock.downloadItems[0].paused);
+      await page.evaluate(() => Object.assign(chrome.__mock.downloadItems[0], { state: 'interrupted', exists: false, error: 'NETWORK_FAILED' }));
+      await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('点击可重试'));
+      await page.click('#helper-install');
+      await page.waitForFunction(() => chrome.__mock.downloadItems.length === 2);
+      pass('options 下载暂停可继续，断网后可直接重试');
+      await page.evaluate(() => Object.assign(chrome.__mock.downloadItems.at(-1), { danger: 'uncommon', bytesReceived: 100 }));
+      await page.waitForFunction(() => document.getElementById('helper-install').textContent === '确认下载');
+      await page.click('#helper-install');
+      await page.waitForFunction(() => chrome.__mock.downloadItems.at(-1).danger === 'accepted');
+      pass('options 下载警告由用户明确确认');
+    } else {
+      await page.evaluate(() => { chrome.__mock.downloadItems[0].state = 'complete'; });
+    }
+    await page.waitForFunction((label) => document.getElementById('helper-install').textContent === label, {}, os === 'linux' ? '安装器已下载' : '打开安装器');
+    if (os === 'win') {
+      await page.setViewport({ width: 390, height: 650 });
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      overflow <= 1 ? pass('options 窄屏安装提示无横向溢出') : fail('options/setup-layout', String(overflow));
+      mkdirSync(join(ROOT, 'tools', 'shots'), { recursive: true });
+      await page.screenshot({ path: join(ROOT, 'tools', 'shots', 'helper-setup.png') });
+    }
+    if (os !== 'linux') {
+      await page.click('#helper-install');
+      const opened = await page.evaluate(() => ({ files: chrome.__mock.openedDownloads, permission: chrome.__mock.permissionRequests.at(-1) }));
+      opened.files.length === 1 && opened.permission.permissions[0] === 'downloads.open'
+        ? pass(`options/${os} 用户再次点击才打开系统安装器`) : fail(`options/${os}`, JSON.stringify(opened));
+      await page.evaluate(() => chrome.__mock.connectHelper());
+      await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('已连接'));
+      pass(`options/${os} 安装后自动连接，无需检查按钮`);
+    } else {
+      const linux = await page.evaluate(() => ({ disabled: document.getElementById('helper-install').disabled, opens: chrome.__mock.openedDownloads.length, text: document.getElementById('helper-result').textContent }));
+      linux.disabled && !linux.opens && linux.text.includes('仍需运行此文件')
+        ? pass('options/Linux 明确首次安装边界，不把打开脚本当成安装') : fail('options/linux', JSON.stringify(linux));
+    }
+    await page.close();
+  }
+  {
+    const page = await browser.newPage();
+    await page.goto(`${BASE}/src/ui/options.html?helper=missing&permission=denied`, { waitUntil: 'networkidle0' });
+    await page.click('#helper-install');
+    await page.evaluate(() => {
+      const item = chrome.__mock.downloadItems[0];
+      item.state = 'complete';
+      sessionStorage.setItem('c2md-mock-downloads', JSON.stringify([item, { ...item, id: 2, byExtensionId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }]));
+    });
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.getElementById('helper-install').textContent === '打开安装器');
+    await page.click('#helper-install');
+    await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('未允许'));
+    const denied = await page.evaluate(() => ({ opens: chrome.__mock.openedDownloads.length, downloads: chrome.__mock.downloadOptions.length }));
+    !denied.opens && !denied.downloads ? pass('options 刷新恢复本扩展的下载，拒绝打开权限不会执行或重下') : fail('options/permission', JSON.stringify(denied));
+    await page.goto(`${BASE}/src/ui/options.html?helper=missing`, { waitUntil: 'networkidle0' });
+    await page.click('#helper-install');
+    await page.waitForFunction(() => chrome.__mock.openedDownloads.length === 1);
+    const id = await page.evaluate(() => chrome.__mock.openedDownloads[0]);
+    id === 1 ? pass('options 仅复用本扩展发起的安装器下载') : fail('options/download-owner', String(id));
+    await page.evaluate(() => { chrome.__mock.downloadItems[0].exists = false; });
+    await page.click('#helper-install');
+    await page.waitForFunction(() => document.getElementById('helper-install').textContent === '安装本机助手');
+    pass('options 安装器被删除后可重新下载');
     await page.close();
   }
   // Original/native and browser documents use the same reader, including narrow screens.

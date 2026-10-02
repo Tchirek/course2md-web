@@ -9,6 +9,11 @@
   if (window.chrome?.runtime?.getURL) return; // 真的扩展环境，别覆盖
   const initialQuery = new URLSearchParams(location.search);
   let engineReady = initialQuery.get('engine') !== 'missing';
+  let helperReady = initialQuery.get('helper') !== 'missing';
+  const downloadItems = JSON.parse(sessionStorage.getItem('c2md-mock-downloads') || '[]');
+  const downloadOptions = [];
+  const openedDownloads = [];
+  const permissionRequests = [];
 
   const DEFAULTS = {
     source: 'subtitle',
@@ -132,6 +137,7 @@
 
   const chromeMock = {
     runtime: {
+      id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       getManifest: () => ({ version: '0.7.0' }),
       getPlatformInfo: async () => ({ os: initialQuery.get('os') || 'win', arch: 'x86-64', nacl_arch: 'x86-64' }),
       // 相对扩展根目录解析，与真实语义一致：'/src/ui/tokens.css'
@@ -165,7 +171,7 @@
           };
         }
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
-        if (type === 'helper.check') return initialQuery.get('helper') === 'missing'
+        if (type === 'helper.check') return !helperReady
           ? { ok: false, error: '首次使用请安装本机助手。', setupRequired: true }
           : { ok: true, value: { ready: true } };
         if (type === 'library.request') {
@@ -221,8 +227,11 @@
       },
     },
     permissions: {
-      async request() {
-        return true;
+      async request(request, callback) {
+        permissionRequests.push(request);
+        const granted = initialQuery.get('permission') !== 'denied';
+        if (callback) callback(granted);
+        return granted;
       },
       async contains() {
         return true;
@@ -234,14 +243,39 @@
       },
     },
     downloads: {
-      async download() {
-        return 1;
+      async download(options) {
+        downloadOptions.push(options);
+        const id = downloadItems.length + 1;
+        downloadItems.push({ id, url: options.url, byExtensionId: chromeMock.runtime.id, state: 'in_progress', danger: 'safe', bytesReceived: 50, totalBytes: 100, exists: true });
+        return id;
+      },
+      async search(query) {
+        return structuredClone(downloadItems.filter((item) => (query.id == null || item.id === query.id) && (!query.url || item.url === query.url)).toReversed());
+      },
+      open(id, callback) {
+        const item = downloadItems.find((item) => item.id === id);
+        if (!item || item.state !== 'complete' || !item.exists) {
+          chromeMock.runtime.lastError = { message: '安装器文件已不存在。' };
+        } else {
+          openedDownloads.push(id);
+        }
+        callback();
+        delete chromeMock.runtime.lastError;
+      },
+      async acceptDanger(id) {
+        const item = downloadItems.find((item) => item.id === id);
+        item.danger = 'accepted';
+        item.state = 'complete';
+      },
+      async resume(id) {
+        downloadItems.find((item) => item.id === id).paused = false;
       },
     },
   };
 
   /** 只暴露给自测页用，方便在控制台里改设置看效果。 */
-  chromeMock.__mock = { store, settingsStatus, changeListeners,
+  chromeMock.__mock = { store, settingsStatus, changeListeners, downloadItems, downloadOptions, openedDownloads, permissionRequests,
+    connectHelper: () => { helperReady = true; },
     emitState: (payload) => messageListeners.forEach((fn) => fn({ type: 'c2md.state', payload })),
   };
 
