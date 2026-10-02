@@ -48,6 +48,15 @@ jobs:
         run: |
           npm run local:install
           npm run local:check-host
+      - name: macOS connection diagnostics
+        if: failure() && runner.os == 'macOS'
+        env:
+          C2MD_DATA_DIR: ${{ runner.temp }}/course2md-browser
+        run: |
+          cat "$C2MD_DATA_DIR/native-helper.log" || true
+          pgrep -fl cli_bridge.py || true
+          lsof -n -iTCP:8766 -sTCP:LISTEN || true
+          curl --noproxy '*' --max-time 2 -i http://127.0.0.1:8766/health || true
       - name: Core and real CLI checks
         if: runner.os != 'Linux'
         run: |
