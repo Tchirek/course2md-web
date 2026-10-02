@@ -6,7 +6,7 @@
 //!  - 「测试连接」：真的发一次请求，把服务端的原话带回来，而不是只说「失败」。
 
 import { segmented, displayToggleRows, polishEngineRow, applyTheme } from './controls.js';
-import { withDefaults } from '../core/settings.js';
+import { withDefaults, useLocalPolish } from '../core/settings.js';
 import { reloadIfCodeChanged } from '../core/build.js';
 
 /** 字段表：DOM id -> 设置路径。声明式绑定，省掉一堆重复的 addEventListener。 */
@@ -30,11 +30,7 @@ const FIELDS = [
 
 // init() 读到存储里的设置之前先用默认值
 let settings = withDefaults({});
-/** @type {ReturnType<typeof setInterval>|undefined} */
-let asrPoll;
-/** @type {ReturnType<typeof setInterval>|undefined} */
-let polishPoll;
-const LOCAL_ASR_ENDPOINT = 'http://127.0.0.1:8081/v1/audio/transcriptions';
+const LOCAL_ASR_ENDPOINT = 'cli';
 
 init();
 
@@ -122,6 +118,20 @@ async function commit(path, value) {
 
 function renderPolishEngine() {
   byId('llm-engine').replaceChildren(polishEngineRow(settings, (patch) => commit('polishEngine', patch.polishEngine)));
+  for (const id of ['llm-url', 'llm-key', 'llm-model', 'llm-concurrency']) field(id)?.closest('.row')?.toggleAttribute('hidden', useLocalPolish(settings));
+  for (const id of ['llm-grant', 'llm-test']) byId(id).hidden = useLocalPolish(settings);
+}
+
+function renderAsr() {
+  const cli = settings.asr.endpoint === LOCAL_ASR_ENDPOINT;
+  byId('asr-engine').replaceChildren(segmented({
+    options: [{ value: 'cli', label: 'CLI 配置' }, { value: 'custom', label: '自配接口' }],
+    value: cli ? 'cli' : 'custom',
+    onChange: async (value) => { await commit('asr.endpoint', value === 'cli' ? LOCAL_ASR_ENDPOINT : ''); fillFields(); },
+  }));
+  for (const id of ['asr-endpoint', 'asr-key', 'asr-model', 'asr-language', 'asr-rate']) field(id)?.closest('.row')?.toggleAttribute('hidden', cli);
+  for (const id of ['asr-grant', 'asr-test']) byId(id).hidden = cli;
+  buttonById('asr-start').textContent = cli ? '检查 CLI 连接' : '使用 CLI';
 }
 
 function fillFields() {
@@ -136,6 +146,7 @@ function fillFields() {
     // 密码框不用额外做掩码：type=password 本身就显示成圆点，
     // 已存的密钥既看得见长度又能直接改
   }
+  renderAsr();
 }
 
 // ---------- 勾选（与弹窗同源） ----------
@@ -230,12 +241,11 @@ function bindActions() {
 async function startLocalAsr() {
   const button = buttonById('asr-start');
   button.disabled = true;
-  flash('asr-result', '正在启动本机转录服务…', null);
+  flash('asr-result', '正在连接 CLI…', null);
   try {
-    const granted = await chrome.permissions.request({ origins: ['http://127.0.0.1:8081/*'] });
-    if (!granted) throw new Error('没有授予本机转录端点的访问权限。');
     const status = await send({ type: 'asr.local.start' });
-    await commitPatch({ source: 'asr', asr: { endpoint: LOCAL_ASR_ENDPOINT, model: status.model || 'Qwen3-ASR-1.7B', apiKey: '' } });
+    if (status.state !== 'ready') throw new Error(status.message || 'CLI 连接不可用');
+    await commitPatch({ source: 'asr', asr: { endpoint: LOCAL_ASR_ENDPOINT } });
     fillFields();
     showLocalAsrStatus(status);
   } catch (error) {
@@ -248,9 +258,11 @@ async function startLocalPolish() {
   const button = buttonById('llm-local-start');
   button.disabled = true;
   try {
+    const status = await send({ type: 'polish.local.start' });
+    if (status.state !== 'ready') throw new Error(status.message || 'CLI 润色尚未配置');
     await commit('polishEngine', 'local');
     renderPolishEngine();
-    showLocalPolishStatus(await send({ type: 'polish.local.start' }));
+    showLocalPolishStatus(status);
   } catch (error) {
     button.disabled = false;
     flash('llm-local-result', errorText(error), false);
@@ -259,39 +271,19 @@ async function startLocalPolish() {
 
 /** @param {LocalServiceStatus} status */
 function showLocalPolishStatus(status) {
-  const running = ['starting', 'installing', 'downloading', 'loading'].includes(status.state);
   const button = buttonById('llm-local-start');
-  button.disabled = running;
-  button.textContent = status.state === 'ready' ? '本机润色已就绪' : '启用本机润色';
-  if (status.state !== 'idle') flash('llm-local-result', status.message, status.state === 'ready' ? true : status.state === 'error' ? false : null);
-  if (polishPoll) clearInterval(polishPoll);
-  if (running) polishPoll = setInterval(() => {
-    send({ type: 'polish.local.status' }).then(showLocalPolishStatus).catch((error) => {
-      clearInterval(polishPoll);
-      polishPoll = undefined;
-      button.disabled = false;
-      flash('llm-local-result', errorText(error), false);
-    });
-  }, 1000);
+  button.disabled = false;
+  button.textContent = '使用 CLI 润色配置';
+  if (status.state !== 'idle') flash('llm-local-result', [status.message, status.model].filter(Boolean).join(' · '), status.state === 'ready' ? true : status.state === 'error' ? false : null);
 }
 
 /** @param {LocalServiceStatus} status */
 function showLocalAsrStatus(status) {
-  const running = ['starting', 'installing', 'downloading', 'loading'].includes(status.state);
   const button = buttonById('asr-start');
   const configured = settings.asr.endpoint === LOCAL_ASR_ENDPOINT;
-  button.disabled = running;
-  button.textContent = status.state === 'ready' ? configured ? '本机服务已启动 · 检查' : '使用本机转录服务' : '启动本机转录服务';
-  if (status.state !== 'idle') flash('asr-result', status.message, status.state === 'ready' ? true : status.state === 'error' ? false : null);
-  if (asrPoll) clearInterval(asrPoll);
-  if (running) asrPoll = setInterval(() => {
-    send({ type: 'asr.local.status' }).then(showLocalAsrStatus).catch((error) => {
-      clearInterval(asrPoll);
-      asrPoll = undefined;
-      button.disabled = false;
-      flash('asr-result', errorText(error), false);
-    });
-  }, 1000);
+  button.disabled = false;
+  button.textContent = configured ? '检查 CLI 连接' : '使用 CLI';
+  if (status.state !== 'idle') flash('asr-result', [status.message, status.model].filter(Boolean).join(' · '), status.state === 'ready' ? true : status.state === 'error' ? false : null);
 }
 
 /**
@@ -302,6 +294,10 @@ function showLocalAsrStatus(status) {
  */
 async function grantFor(inputId, resultId) {
   const raw = valueOf(inputId).trim();
+  if (raw === 'cli') {
+    flash(resultId, 'CLI 通过浏览器连接调用，无需接口地址授权。', true);
+    return;
+  }
   if (!raw) {
     flash(resultId, '先填地址，再点授权。', false);
     return;

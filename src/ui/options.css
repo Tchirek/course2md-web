@@ -82,7 +82,8 @@ body {
 /* [hidden] 的默认 display:none 会被 `.row { display: grid }` 覆盖掉——
    同权重下后声明的 display 生效，所以「按转录方式隐藏不相关字段」会静默失效。
    这里补一条更高权重的规则把它压回来。 */
-.row[hidden] {
+.row[hidden],
+.block-actions > [hidden] {
   display: none;
 }
 

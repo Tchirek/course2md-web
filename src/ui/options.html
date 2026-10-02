@@ -38,14 +38,16 @@
       </section>
 
       <section class="block" id="block-asr">
-        <h2>本地模型转录</h2>
+        <h2>转录</h2>
+        <p class="c2md-meta">CLI 沿用 course2md 的配置与模型目录，首次使用时由 CLI 准备模型。<a href="https://github.com/Tchirek/course2md-web#cli-connection" target="_blank" rel="noopener">连接说明</a></p>
         <div class="rows">
+          <div class="row"><span class="row-label">转录方式</span><div id="asr-engine"></div></div>
           <div class="row">
             <label for="asr-endpoint">
-              服务地址
-              <span class="c2md-meta">内置 8081 · whisper.cpp 8080</span>
+              转录接口
+              <span class="c2md-meta">本机 OpenAI 兼容转录端点</span>
             </label>
-            <input id="asr-endpoint" type="text" spellcheck="false" />
+            <input id="asr-endpoint" type="text" placeholder="http://127.0.0.1:8080/v1/audio/transcriptions" spellcheck="false" />
           </div>
 
           <div class="row">
@@ -87,7 +89,7 @@
         </div>
 
         <div class="block-actions">
-          <button type="button" class="c2md-button" id="asr-start">启动本机转录服务</button>
+          <button type="button" class="c2md-button" id="asr-start">使用 CLI</button>
           <button type="button" class="c2md-button" id="asr-grant">授权访问此地址</button>
           <button type="button" class="c2md-button" id="asr-test">测试连接</button>
           <span class="c2md-meta" id="asr-result"></span>
@@ -99,7 +101,7 @@
         <div class="rows">
           <div class="row"><span class="row-label">润色方式</span><div id="llm-engine"></div></div>
         </div>
-        <div class="block-actions"><button type="button" class="c2md-button" id="llm-local-start">启用本机润色</button><span class="c2md-meta" id="llm-local-result"></span></div>
+        <div class="block-actions"><button type="button" class="c2md-button" id="llm-local-start">使用 CLI 润色配置</button><span class="c2md-meta" id="llm-local-result"></span></div>
 
         <div class="rows">
           <div class="row">

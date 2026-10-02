@@ -460,7 +460,7 @@ try {
   // 设置页另有本机／自定义润色模型选择。
   for (const [name, path, size, expectedSegments] of [
     ['popup', '/src/ui/popup.html', { width: 360, height: 620 }, 2],
-    ['options', '/src/ui/options.html', { width: 860, height: 900 }, 4],
+    ['options', '/src/ui/options.html', { width: 860, height: 900 }, 5],
   ]) {
     const page = await browser.newPage();
     await page.setViewport({ ...size });
@@ -482,6 +482,19 @@ try {
     if (m.segmentedSelected !== expectedSegments) {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);
     } else pass(`${name} 分段选择选中项数正确（${expectedSegments}）`);
+    if (name === 'options') {
+      const modes = await page.evaluate(async () => {
+        const hidden = (id) => document.getElementById(id).getBoundingClientRect().height === 0;
+        const cli = hidden('asr-model') && hidden('asr-endpoint') && hidden('asr-grant');
+        [...document.querySelectorAll('#asr-engine button')].find((button) => button.textContent === '自配接口').click();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const custom = !hidden('asr-model') && !hidden('asr-endpoint') && !hidden('asr-grant');
+        [...document.querySelectorAll('#llm-engine button')].find((button) => button.textContent === 'CLI 配置').click();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return cli && custom && hidden('llm-model') && hidden('llm-grant') && !hidden('llm-glossary');
+      });
+      modes ? pass('options CLI 配置与自配字段明确分开，术语保留') : fail('options', '接口字段没有随处理方式切换');
+    }
     if (name === 'popup') {
       // 勾选「润色文本」后，强度与方式两行直接出现
       const after = await page.evaluate(() => new Promise((resolve) => {

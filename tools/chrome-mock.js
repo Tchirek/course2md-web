@@ -17,7 +17,7 @@
     polishEngine: 'auto',
     showPanel: true,
     subtitle: { preferLang: '', allowAuto: true },
-    asr: {      endpoint: 'http://127.0.0.1:8081/v1/audio/transcriptions',
+    asr: { endpoint: 'cli',
       apiKey: '',
       model: 'whisper-1',
       language: '',
@@ -159,6 +159,9 @@
             ok: true,
             value: { ok: true, message: '转写请求成功，服务可用。' },
           };
+        }
+        if (/^(asr|polish)\.local\.(start|status)$/.test(type)) {
+          return { ok: true, value: { state: 'ready', message: 'CLI 已连接 · 模型按需准备', model: type.startsWith('asr') ? 'Qwen3-ASR-1.7B' : 'test-llm' } };
         }
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
         return { ok: true, value: null };

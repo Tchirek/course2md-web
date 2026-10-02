@@ -29,7 +29,7 @@ export const DISPLAY_TOGGLES = [
     label: '润色文本',
     // 未配置时换成一句能直接照做的事——面板比较窄，
     // 长句会折行并和「去设置」挤在一起
-    unconfiguredHint: '将启用本机润色',
+    unconfiguredHint: '使用 CLI 润色配置',
   },
 ];
 
@@ -289,14 +289,14 @@ export function displayToggleRows({ settings, onChange, onSetup, showPolishLevel
 }
 
 /**
- * 润色方式选择：本机内置模型 or 自备 API（兼容旧的 auto 语义）。
+ * 润色方式选择：CLI 配置或自备 API（兼容旧的 auto 语义）。
  * @param {import('../core/settings.js').Settings} settings
  * @param {(patch:{polishEngine: string}) => void} onChange
  */
 export function polishEngineRow(settings, onChange) {
   return segmented({
     options: [
-      { value: 'local', label: '本机', title: '内置 FireRedPunc + Qwen3.5-2B，在本机免费运行' },
+      { value: 'local', label: 'CLI 配置', title: '沿用 course2md 已配置的润色服务' },
       { value: 'custom', label: '自备 API', title: '使用你自己配置的 OpenAI 兼容 LLM' },
     ],
     value: settings.polishEngine === 'auto'

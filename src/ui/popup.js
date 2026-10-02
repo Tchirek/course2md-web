@@ -98,7 +98,7 @@ function renderSource() {
     segmented({
       options: [
         { value: 'subtitle', label: '平台字幕', title: '直接取平台已有的字幕，最快' },
-        { value: 'asr', label: '本地模型', title: '用你自己跑的本机模型从音频转写' },
+        { value: 'asr', label: '语音转录', title: '按 CLI 配置转录，或使用自定义本机接口' },
       ],
       value: settings.source,
       onChange: (value) => patch({ source: value }),
