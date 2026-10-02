@@ -1,6 +1,6 @@
 // Verify the installed native host can launch an HTTP helper from a cold state.
 // まずブラウザがホストを探すのと同じ経路で実際の登録を確かめる（レジストリ/マニフェスト →
-// ホスト本体 → 許可された拡張 ID → 設定内の Node とヘルパースクリプト）。続いて Windows の
+// ホスト本体 → 許可された拡張 ID → 設定内の Python と MizoreLink スクリプト）。続いて Windows の
 // .exe ホストとクロスプラットフォームの Node ホスト（macOS/Linux で実際に使う方）に同じ
 // コールドスタート手順を踏ませる：それぞれ隔離ディレクトリに置き、使い捨ての fixture
 // サービスを指させて、ゼロから起動して応答させる。
@@ -95,7 +95,7 @@ function manifestProblem(manifestPath) {
   if (!existsSync(configPath)) return `→ 宿主配置不存在：${configPath}`;
   const [pythonPath, helperPath] = readFileSync(configPath, 'utf8').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!pythonPath || !existsSync(pythonPath)) return `→ 配置里的 Python 不存在：${pythonPath}`;
-  if (!helperPath || !existsSync(helperPath)) return `→ 配置里的助手脚本不存在：${helperPath}`;
+  if (!helperPath || !existsSync(helperPath)) return `→ 配置里的 MizoreLink 脚本不存在：${helperPath}`;
   return null;
 }
 

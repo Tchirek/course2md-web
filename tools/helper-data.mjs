@@ -1,5 +1,5 @@
-//! 本机助手的数据目录（原生宿主及其配置、访问令牌）与令牌的读写。
-//! 安装脚本、助手、检查脚本都从这里取路径，保证指向同一处。
+//! MizoreLink 的数据目录（原生宿主及其配置、访问令牌）与令牌的读写。
+//! 安装脚本、MizoreLink、检查脚本都从这里取路径，保证指向同一处。
 
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -67,6 +67,6 @@ export function ensureHelperToken(dir = dataDir()) {
 
 export function readHelperToken(dir = dataDir()) {
   const token = readFileSync(tokenPath(dir), 'utf8').trim();
-  if (!/^[0-9a-f]{64}$/.test(token)) throw new Error(`本机助手的访问令牌文件已损坏：${tokenPath(dir)}`);
+  if (!/^[0-9a-f]{64}$/.test(token)) throw new Error(`MizoreLink 的访问令牌文件已损坏：${tokenPath(dir)}`);
   return token;
 }

@@ -21,7 +21,7 @@ export async function stopServices() {
         await fetch(`http://127.0.0.1:${process.env.C2MD_HELPER_PORT || 8766}/health`, { signal: AbortSignal.timeout(500) });
       } catch { return; }
     }
-    throw new Error('CLI 浏览器连接尚未停止');
+    throw new Error('MizoreLink 尚未停止');
   }
   if (process.platform === 'win32') {
     const pattern = SERVICES.map((name) => name.replaceAll('.', '\\.')).join('|');

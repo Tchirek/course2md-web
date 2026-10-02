@@ -71,7 +71,7 @@ def token():
         pass
     value = file.read_text().strip()
     if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
-        raise ValueError("连接令牌损坏，请重新连接扩展")
+        raise ValueError("MizoreLink 令牌损坏，请重新连接扩展")
     return value
 
 
@@ -470,10 +470,10 @@ def native_host():
                 if healthy():
                     break
                 if child.poll() is not None:
-                    raise ValueError(f"course2md 连接进程启动失败（代码 {child.returncode}，详见 native-helper.log）")
+                    raise ValueError(f"MizoreLink 进程启动失败（代码 {child.returncode}，详见 native-helper.log）")
                 time.sleep(.2)
         if not healthy():
-            raise ValueError("course2md 连接超时")
+            raise ValueError("MizoreLink 连接超时")
         result = {"ok": True, "token": Path(token_file).read_text().strip()}
     except (OSError, ValueError) as error:
         result["error"] = str(error)

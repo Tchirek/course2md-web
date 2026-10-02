@@ -49,11 +49,11 @@ Both keep floating notes, fast subtitles, timestamps, image controls and custom 
 
 | 版本 · Edition | 侧重 · Best for | 本机处理需要 · Local processing needs | 下载 · Download |
 | --- | --- | --- | --- |
-| **独立版 · Standalone ${standalone.tag_name}** | Web 管理模型与本机处理 · Web-managed models and processing | Web 本机助手，无需另装 CLI · Web helper, no separate CLI | ${ext(standalone)} |
-| **CLI 版 · CLI ${cli.tag_name}** | 复用 CLI 模型、配置与处理能力 · Reuse CLI models, settings and processing | course2md 2.0 CLI + 浏览器连接 · CLI + browser connection | ${ext(cli)} |
+| **独立版 · Standalone ${standalone.tag_name}** | Web 管理模型与本机处理 · Web-managed models and processing | MizoreLink，无需另装 CLI · MizoreLink, no separate CLI | ${ext(standalone)} |
+| **CLI 版 · CLI ${cli.tag_name}** | 复用 CLI 模型、配置与处理能力 · Reuse CLI models, settings and processing | course2md 2.0 CLI + MizoreLink | ${ext(cli)} |
 
-- **独立版组件 · Standalone helper:** ${installer('Windows .exe', 'windows.exe')} · ${installer('macOS .pkg', 'macos.pkg')} · ${installer('Linux .run', 'linux.run')} · ${link(standalone, `course2md-helper-${version(standalone)}.zip`, '脚本包 · Script ZIP')} · ${link(standalone, 'SHA256SUMS.txt', 'SHA-256')}. [安装说明 · Setup](${repo}/blob/${standalone.tag_name}/README.md).
-- **CLI 版组件 · CLI connection:** ${link(cli, `course2md-cli-bridge-${version(cli)}.zip`, '浏览器连接 ZIP · Browser connection ZIP')} · ${link(cli, 'SHA256SUMS.txt', 'SHA-256')}. Install [course2md CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide), then [登记浏览器连接一次 · register the browser connection once](${repo}/blob/${cli.tag_name}/README.md#cli-connection).
+- **MizoreLink · Standalone:** ${installer('Windows .exe', 'windows.exe')} · ${installer('macOS .pkg', 'macos.pkg')} · ${installer('Linux .run', 'linux.run')} · ${link(standalone, `course2md-helper-${version(standalone)}.zip`, '脚本包 · Script ZIP')} · ${link(standalone, 'SHA256SUMS.txt', 'SHA-256')}. [安装说明 · Setup](${repo}/blob/${standalone.tag_name}/README.md).
+- **MizoreLink · CLI:** ${link(cli, `course2md-cli-bridge-${version(cli)}.zip`, 'MizoreLink ZIP')} · ${link(cli, 'SHA256SUMS.txt', 'SHA-256')}. Install [course2md CLI](https://github.com/mizorewww/course2md/wiki/CLI-Guide), then [登记 MizoreLink 一次 · register MizoreLink once](${repo}/blob/${cli.tag_name}/README.md#cli-connection).
 
 平台字幕的纯文字笔记可直接使用扩展；转录和截图再安装所选版本的本机组件。
 Text-only platform-subtitle notes need just the extension. Install your edition's local components for transcription and screenshots.

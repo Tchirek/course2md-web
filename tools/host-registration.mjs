@@ -43,7 +43,7 @@ export function manifestLocations() {
 export function findPython() {
   const command = process.env.C2MD_PYTHON || (isWin ? 'python' : 'python3');
   const result = spawnSync(command, ['-c', 'import sys, tomllib; print(sys.executable)'], { encoding: 'utf8', windowsHide: true });
-  if (result.status !== 0) throw new Error('浏览器连接需要 Python 3.11 或更新版本，仅使用标准库');
+  if (result.status !== 0) throw new Error('MizoreLink 需要 Python 3.11 或更新版本，仅使用标准库');
   return result.stdout.trim();
 }
 
@@ -94,13 +94,13 @@ export function registerHost({ extensionIds = [] } = {}) {
     chmodSync(host, 0o755);
   }
   writeFileSync(manifestPath, JSON.stringify({
-    name: HOST_NAME, description: 'course2md CLI browser connection', path: host, type: 'stdio', allowed_origins: allowedOrigins,
+    name: HOST_NAME, description: 'MizoreLink CLI launcher', path: host, type: 'stdio', allowed_origins: allowedOrigins,
   }, null, 2));
 
   for (const location of manifestLocations()) {
     if (isWin) {
       const result = spawnSync('reg.exe', ['add', location, '/ve', '/t', 'REG_SZ', '/d', manifestPath, '/f'], { encoding: 'utf8' });
-      if (result.status !== 0) throw new Error(result.stderr || '无法注册本机助手');
+      if (result.status !== 0) throw new Error(result.stderr || '无法注册 MizoreLink');
     } else {
       mkdirSync(path.dirname(location), { recursive: true });
       copyFileSync(manifestPath, location);

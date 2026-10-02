@@ -199,7 +199,7 @@ function localPolish(action) {
   return localHelperRequest(`/polish/${action}`, action === 'start' ? 'POST' : 'GET', 1500);
 }
 
-/** ヘルパーが動いていなければホスト経由で一度だけ起こして再試行する。それでも失敗するなら「未起動」ではないので、そのまま報告し起動を繰り返さない。 */
+/** MizoreLinkが動いていなければホスト経由で一度だけ起こして再試行する。それでも失敗するなら「未起動」ではないので、そのまま報告し起動を繰り返さない。 */
 /**
  * @param {string} route
  * @param {string} method
@@ -214,9 +214,9 @@ async function localHelperRequest(route, method, timeout) {
     // 令牌之类有明确原因的错误原样抛出；超时与连接失败才说成「没有应答」
     const failure = /** @type {{name?: string, message?: string}} */ (error);
     if (failure?.name !== 'TimeoutError' && failure?.name !== 'TypeError') throw error;
-    throw new Error(`本机助手已在运行，但 ${route} 没有应答：${failure?.message ?? error}`);
+    throw new Error(`MizoreLink 已在运行，但 ${route} 没有应答：${failure?.message ?? error}`);
   }
-  if (!response.ok) throw new Error(`本机助手返回 HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`MizoreLink 返回 HTTP ${response.status}`);
   return response.json();
 }
 
@@ -244,7 +244,7 @@ async function rememberHelperToken(token) {
 }
 
 /**
- * 发往本机助手的请求（/health 以外）：带上访问令牌。令牌对不上（例如重装后换了）
+ * 发往 MizoreLink 的请求（/health 以外）：带上访问令牌。令牌对不上（例如重装后换了）
  * 就经原生宿主取新令牌，只重试一次。
  */
 /**
@@ -258,17 +258,17 @@ async function helperFetch(route, init = {}) {
   });
   let response = await send();
   if (response.status !== 401) return response;
-  // 後台のコードがディスク上で更新済みなら、古い後台のまま助手と話さず自分を読み込み直す
+  // 後台のコードがディスク上で更新済みなら、古い後台のままMizoreLinkと話さず自分を読み込み直す
   if (await reloadIfCodeChanged().catch(() => false)) throw new Error('扩展刚更新，已自动重新加载；请刷新页面后重试。');
   helperToken = null;
   await chrome.storage.session.remove('helperToken').catch(() => {});
-  // 升级后第一次唤醒的可能还是旧宿主（不交令牌）；新助手启动时已把注册修好，再唤醒一次即可
+  // 升级后第一次唤醒的可能还是旧宿主（不交令牌）；新 MizoreLink 启动时已把注册修好，再唤醒一次即可
   for (let attempt = 0; attempt < 2 && !await knownHelperToken(); attempt++) await wakeLocalHelper();
   if (!await knownHelperToken()) {
-    throw new Error('CLI 浏览器连接没有提供令牌，请在设置页查看连接说明。');
+    throw new Error('MizoreLink 没有提供令牌，请在设置页查看连接说明。');
   }
   response = await send();
-  if (response.status === 401) throw new Error('CLI 浏览器连接令牌不匹配，请重新登记连接。');
+  if (response.status === 401) throw new Error('MizoreLink 令牌不匹配，请重新登记连接。');
   return response;
 }
 
@@ -282,29 +282,29 @@ function helperHealthy(timeout) {
 }
 
 async function ensureLocalHelper() {
-  // 助手在跑、令牌也已知，就不必惊动宿主；否则经宿主唤醒助手并取得令牌
+  // MizoreLink 在跑、令牌也已知，就不必惊动宿主；否则经宿主唤醒 MizoreLink 并取得令牌
   if (await helperHealthy(700) && await knownHelperToken()) return;
   await wakeLocalHelper();
 }
 
 /** @type {Promise<void>|null} */
 let wakingHelper = null;
-/** ネイティブメッセージングホスト経由でローカルヘルパーを起動する。失敗時は漠然とした「起動できない」ではなく、どこで途切れたかを示すエラーを投げる。 */
+/** ネイティブメッセージングホスト経由でMizoreLinkを起動する。失敗時は漠然とした「起動できない」ではなく、どこで途切れたかを示すエラーを投げる。 */
 function wakeLocalHelper() {
   wakingHelper ??= new Promise((/** @type {(token: unknown) => void} */ resolve, reject) => {
     chrome.runtime.sendNativeMessage(HELPER_HOST, { action: 'start' }, (reply) => {
       const failure = chrome.runtime.lastError?.message;
       if (failure) return reject(new Error(hostFailure(failure)));
       if (!reply?.ok) {
-        return reject(new Error(`CLI 浏览器连接未能启动：${reply?.error || '宿主没有应答'}。`));
+        return reject(new Error(`MizoreLink 未能启动：${reply?.error || '宿主没有应答'}。`));
       }
       resolve(reply.token);
     });
   }).then(async (token) => {
-    // 旧版宿主不带令牌；此时照旧继续，旧版助手也不要求令牌
+    // 旧版宿主不带令牌；此时照旧继续，旧版 MizoreLink 也不要求令牌
     if (typeof token === 'string' && /^[0-9a-f]{64}$/.test(token)) await rememberHelperToken(token);
     // ホストは起動を確認済みだが、拡張側からも確かめる。ポートを別のプログラムが握っている場合もここで分かる
-    if (!await helperHealthy(2000)) throw new Error('本机宿主报告助手已启动，但扩展访问不到 127.0.0.1:8766。');
+    if (!await helperHealthy(2000)) throw new Error('本机宿主报告 MizoreLink 已启动，但扩展访问不到 127.0.0.1:8766。');
   }).finally(() => { wakingHelper = null; });
   return wakingHelper;
 }
@@ -312,12 +312,12 @@ function wakeLocalHelper() {
 /** @param {string} message chrome.runtime.lastError 的原话 */
 function hostFailure(message) {
   if (/not found/i.test(message)) {
-    return 'CLI 浏览器连接尚未登记，请在设置页查看连接说明。';
+    return 'MizoreLink 尚未登记，请在设置页查看连接说明。';
   }
   if (/forbidden/i.test(message)) {
-    return `CLI 浏览器连接未授权此扩展（${chrome.runtime.id}），请重新登记连接。`;
+    return `MizoreLink 未授权此扩展（${chrome.runtime.id}），请重新登记连接。`;
   }
-  return `CLI 浏览器连接不可用：${message}。`;
+  return `MizoreLink 不可用：${message}。`;
 }
 
 

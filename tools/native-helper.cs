@@ -28,8 +28,8 @@ class NativeHelper {
         output.Flush();
     }
 
-    // 读取配置第 4 行指向的助手访问令牌。这个应答只会送到 allowed_origins 里的扩展，
-    // 所以令牌只交给本扩展。文件缺失或损坏（例如旧版助手）就不附带
+    // 读取配置第 4 行指向的 MizoreLink 访问令牌。这个应答只会送到 allowed_origins 里的扩展，
+    // 所以令牌只交给本扩展。文件缺失或损坏（例如旧版 MizoreLink）就不附带
     static string ReadToken(string[] config) {
         try {
             if (config.Length < 4) return null;
@@ -68,7 +68,7 @@ class NativeHelper {
             if (!Encoding.UTF8.GetString(body).Contains("\"start\"")) throw new Exception("不支持的操作");
             if (!Healthy()) {
                 if (!File.Exists(config[0])) throw new Exception("找不到 Python：" + config[0]);
-                if (!File.Exists(config[1])) throw new Exception("找不到助手脚本：" + config[1]);
+                if (!File.Exists(config[1])) throw new Exception("找不到 MizoreLink 脚本：" + config[1]);
                 var start = new ProcessStartInfo(config[0], "\"" + config[1] + "\"");
                 start.UseShellExecute = true;
                 start.WindowStyle = ProcessWindowStyle.Hidden;
@@ -76,12 +76,12 @@ class NativeHelper {
                 for (int i = 0; i < 50 && !Healthy(); i++) {
                     // プロセスが終了済みなら 10 秒待つ必要はない：ポート競合やスクリプトのエラーでこうなる
                     if (child != null && child.HasExited && !Healthy()) {
-                        throw new Exception("CLI 连接进程启动后立即退出（代码 " + child.ExitCode + "）");
+                        throw new Exception("MizoreLink 进程启动后立即退出（代码 " + child.ExitCode + "）");
                     }
                     Thread.Sleep(200);
                 }
             }
-            if (!Healthy()) Reply(false, "助手进程 10 秒内未在 " + healthUrl + " 应答");
+            if (!Healthy()) Reply(false, "MizoreLink 进程 10 秒内未在 " + healthUrl + " 应答");
             else Reply(true, "", ReadToken(config));
         } catch (Exception error) { Reply(false, error.Message); }
     }

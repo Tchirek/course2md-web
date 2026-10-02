@@ -22,7 +22,7 @@ if (purge) {
   rmSync(path.join(defaultDataDir(), LOCATION_FILE), { force: true });
 }
 for (const item of removed) process.stdout.write(`已删除：${item}\n`);
-process.stdout.write('CLI 浏览器连接已移除，course2md 的模型、配置与课程库保留。\n');
+process.stdout.write('MizoreLink 已移除，course2md 的模型、配置与课程库保留。\n');
 
 /**
  * This project's transport files in the selected and default data directories.

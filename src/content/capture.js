@@ -95,7 +95,7 @@ export async function captureAudio(el, opts) {
           break;
         }
         if (el.ended) break;
-        throw new Error('播放器录音器未产出音频，已停止以免页面卡死。请使用本机提取服务。');
+        throw new Error('播放器录音器未产出音频，已停止以免页面卡死。请使用 MizoreLink。');
       }
 
       const end = Math.min(el.currentTime, totalSec);

@@ -162,8 +162,8 @@ const PERMISSION_USES = {
   activeTab: { needles: ['chrome.scripting.executeScript'], why: '在用户点开弹窗的当前页注入内容脚本' },
   scripting: { needles: ['chrome.scripting'], why: '在其他页面按需注入内容脚本' },
   downloads: { needles: ['chrome.downloads'], why: '保存 .md 文件' },
-  cookies: { needles: ['chrome.cookies'], why: '向本机提取服务提供当前站点登录态' },
-  nativeMessaging: { needles: ['sendNativeMessage', 'connectNative'], why: '经本机宿主唤醒本机助手并取得访问令牌' },
+  cookies: { needles: ['chrome.cookies'], why: '向 MizoreLink 提供当前站点登录态' },
+  nativeMessaging: { needles: ['sendNativeMessage', 'connectNative'], why: '经本机宿主唤醒 MizoreLink 并取得访问令牌' },
   clipboardWrite: { needles: ["execCommand('copy')"], why: '从弹窗触发复制时页面没有用户激活，execCommand 需要此权限' },
 };
 for (const [perm, { needles, why }] of Object.entries(PERMISSION_USES)) {

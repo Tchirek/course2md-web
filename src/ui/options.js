@@ -62,7 +62,7 @@ function buttonById(id) {
 }
 
 /**
- * 本机服务（转录、润色）的状态，由后台转述本机助手的回答。
+ * 本机服务（转录、润色）的状态，由后台转述 MizoreLink 的回答。
  * @typedef {{state: string, message?: string, model?: string}} LocalServiceStatus
  */
 

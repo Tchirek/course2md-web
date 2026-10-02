@@ -2,7 +2,7 @@
 //!
 //! 1. course2md-<ver>.zip —— 扩展本体。浏览器扩展不区分操作系统与 CPU 架构，
 //!    Windows、Linux、Intel/Apple Silicon macOS 加载的是同一个包。
-//! 2. course2md-cli-bridge-<ver>.zip —— CLI 浏览器连接：传送、登记与检查
+//! 2. course2md-cli-bridge-<ver>.zip —— MizoreLink：传送、登记与检查
 //!    脚本。标准库实现，同样全平台一份；目录保持 tools/ 前缀，
 //!    安装脚本里的相对路径才能原样工作。
 //!
@@ -65,7 +65,7 @@ artifacts.push(await makeZip(`course2md-${version}.zip`, join(DIST, 'stage-ext')
   return ['manifest.json', ...LEGAL_FILES, ...allFiles(join(ROOT, 'src'), 'src')];
 }));
 
-// ---------- 2. 本机助手 zip ----------
+// ---------- 2. MizoreLink zip ----------
 artifacts.push(await makeZip(`course2md-cli-bridge-${version}.zip`, join(DIST, 'stage-helper'), async (stage) => {
   writeFileSync(join(stage, 'package.json'), JSON.stringify({
     name: pkg.name,

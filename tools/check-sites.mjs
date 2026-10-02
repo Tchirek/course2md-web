@@ -5,7 +5,7 @@
 //   npm run check:sites                 run every case
 //   npm run check:sites -- youtube      only cases whose name contains "youtube"
 //
-// Needs Chrome and network access; the "no captions" cases also need the local helper
+// Needs Chrome and network access; the "no captions" cases also need MizoreLink
 // (npm run local:install). Not suitable for CI: sites rate-limit and challenge automation.
 import puppeteer from 'puppeteer-core';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
