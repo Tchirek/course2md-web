@@ -7,17 +7,19 @@
 
 [简体中文](README.md) · [正體中文](README.zh-Hant.md) · **English** · [日本語](README.ja.md)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=legacy%2Fstandalone-helper&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/tag/v0.7.1)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
 ![Zero build](https://img.shields.io/badge/build-zero--step-246a50?style=flat-square)
 ![tsc --checkJs](https://img.shields.io/badge/types-tsc%20----checkJs-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Local-first ASR](https://img.shields.io/badge/ASR-local--first-246a50?style=flat-square)
-[![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/main)
+[![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/legacy/standalone-helper)
 
 </div>
+
+This branch keeps the standalone helper, reader and library introduced in 0.5.0. The CLI edition continues on [main](https://github.com/Tchirek/course2md-web/tree/main). Download links below point to v0.7.1 of this edition; future releases are labelled standalone helper.
 
 # course2md — browser extension
 

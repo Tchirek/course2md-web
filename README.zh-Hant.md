@@ -7,17 +7,19 @@
 
 [简体中文](README.md) · **正體中文** · [English](README.en.md) · [日本語](README.ja.md)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=legacy%2Fstandalone-helper&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/tag/v0.7.1)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
 ![Zero build](https://img.shields.io/badge/build-zero--step-246a50?style=flat-square)
 ![tsc --checkJs](https://img.shields.io/badge/types-tsc%20----checkJs-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Local-first ASR](https://img.shields.io/badge/ASR-local--first-246a50?style=flat-square)
-[![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/main)
+[![Last commit](https://img.shields.io/github/last-commit/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/commits/legacy/standalone-helper)
 
 </div>
+
+此分支保留 0.5.0 起的獨立助手、閱讀器與課程庫。CLI 主線見 [main](https://github.com/Tchirek/course2md-web/tree/main)；下方下載連結固定至此分支的 v0.7.1，後續發行標為 standalone helper。
 
 # course2md — 瀏覽器擴充功能版
 
