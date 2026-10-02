@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [legacy/standalone-helper]
   pull_request:
 
 concurrency:
@@ -108,7 +108,7 @@ jobs:
   # main への push はすべて、検査が通ればそのままリリースになる（版は tools/next-version.mjs が決める）
   release:
     needs: [check, installers]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/legacy/standalone-helper'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -130,4 +130,6 @@ jobs:
           VERSION: v${{ needs.check.outputs.version }}
         run: |
           gh release create "$VERSION" dist/*.zip dist/*.exe dist/*.pkg dist/*.run dist/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --title "course2md $VERSION" --generate-notes
+            --target "$GITHUB_SHA" --title "course2md Web $VERSION · standalone helper" --latest=false \
+            --notes "Standalone helper, reader and library edition. Continued on legacy/standalone-helper." \
+            --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^)" --generate-notes
