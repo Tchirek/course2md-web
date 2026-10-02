@@ -31,7 +31,7 @@ Turns a video page into lecture notes **with slides, timestamps, click-to-seek a
 
 > **Note:** the extension's interface is currently in Simplified Chinese. This README quotes the on-screen labels in Chinese with a translation, e.g. 「生成笔记」 (Generate notes).
 
-course2md Web provides the floating reader, subtitle fast path and browser note controls; [course2md CLI](https://github.com/mizorewww/course2md) handles transcription and screenshots. Text-only platform-subtitle notes work directly in the browser.
+course2md Web provides the floating notes, subtitle fast path and browser note controls; [course2md CLI](https://github.com/mizorewww/course2md) handles transcription and screenshots. Text-only platform-subtitle notes work directly in the browser.
 
 Web offers Standalone and CLI editions. Pick either on the [release page](https://github.com/Tchirek/course2md-web/releases/latest). This branch maintains the CLI edition; Standalone source lives on [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper).
 
@@ -171,13 +171,19 @@ never "the text is misaligned".
 
 Turning off 「润色文本」 shows the original immediately — it is always kept, so viewing it needs no new model request.
 
+## Send notes to course2md
+
+The sync button is hidden by default. Enable 「显示 course2md 同步按钮」 in settings, then click it once notes are ready. It writes notes to the desktop default save location. Reading and course management belong to the desktop app; neither Web edition includes those screens.
+
+An existing desktop location is reused. Before desktop installation, notes go to `desktop-local-library` in the same configuration directory, ready for the desktop app to read later. No absolute path field is needed; repair a missing registered location in the desktop app. Text, originals, frames and subtitle timelines use course2md 2.0 schema 1. Retries cannot roll back newer versions. Sync needs the chosen edition's local connection and does not create desktop task records.
+
 ## Installation
 
 The [release page](https://github.com/Tchirek/course2md-web/releases/latest) lists both editions' latest checked extension ZIPs, matching components and setup instructions. Their versions advance independently; choose one extension:
 
 | Edition | Best for | Transcription and screenshots need |
 | --- | --- | --- |
-| **Standalone** | Built-in reader, course library and Web-managed local models | Web helper, with Windows / macOS / Linux installers; no separate CLI |
+| **Standalone** | Web-managed local models, transcription, screenshots and polishing | Web helper, with Windows / macOS / Linux installers; no separate CLI |
 | **CLI** | A smaller connection layer that reuses course2md CLI models, settings and processing | course2md 2.0 CLI + one-time browser registration |
 
 Both keep floating notes, fast subtitles, image controls and custom APIs. Text-only platform-subtitle notes need just the extension. This README covers the CLI edition.
@@ -220,7 +226,7 @@ See [DESIGN.md](DESIGN.md) for the ownership boundaries and UI decisions.
 - CLI processing requires the local CLI and its media / inference dependencies. Browser registration is still required once.
 - The CLI does not stream individual transcript sentences; saved checkpoints supply partial text, and polishing returns by chunk.
 - Illustrated export needs downloadable media. DRM media is unsupported; custom-endpoint recording fallbacks follow playback speed.
-- The standalone reader, shared-library browser and native installers remain on `legacy/standalone-helper`. Main preserves the 0.4.5 browser note workflow.
+- Both editions keep the 0.4.5 browser note workflow. Reading and course management belong to the course2md desktop app.
 
 ## License
 
