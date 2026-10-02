@@ -531,7 +531,7 @@ try {
     await page.click('#helper-install');
     await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('50%'));
     const started = await page.evaluate(() => ({ options: chrome.__mock.downloadOptions[0], disabled: document.getElementById('helper-install').disabled, opened: chrome.__mock.openedDownloads.length }));
-    started.options.url.endsWith(`/v0.7.0/course2md-helper-0.7.0-${suffix}`) && started.options.saveAs === false && started.disabled && !started.opened && (await browser.pages()).length === tabs
+    started.options.url.endsWith(`/v0.7.1/course2md-helper-0.7.1-${suffix}`) && started.options.saveAs === false && started.disabled && !started.opened && (await browser.pages()).length === tabs
       ? pass(`options/${os} 在设置页下载对应安装器、显示进度且不自动执行`) : fail(`options/${os}`, JSON.stringify(started));
     if (os === 'win') {
       await page.evaluate(() => { chrome.__mock.downloadItems[0].paused = true; });

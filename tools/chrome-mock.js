@@ -138,7 +138,7 @@
   const chromeMock = {
     runtime: {
       id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      getManifest: () => ({ version: '0.7.0' }),
+      getManifest: () => ({ version: '0.7.1' }),
       getPlatformInfo: async () => ({ os: initialQuery.get('os') || 'win', arch: 'x86-64', nacl_arch: 'x86-64' }),
       // 相对扩展根目录解析，与真实语义一致：'/src/ui/tokens.css'
       getURL: (path) => new URL(String(path).replace(/^\.?\//, ''), location.origin + '/').toString(),
