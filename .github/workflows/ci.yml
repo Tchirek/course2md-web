@@ -17,8 +17,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      C2MD_DATA_DIR: ${{ runner.temp }}/course2md-browser
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
@@ -45,6 +43,8 @@ jobs:
       - name: Python syntax
         run: python -m py_compile tools/cli_bridge.py tools/check-cli.py
       - name: Native browser connection
+        env:
+          C2MD_DATA_DIR: ${{ runner.temp }}/course2md-browser
         run: |
           npm run local:install
           npm run local:check-host
