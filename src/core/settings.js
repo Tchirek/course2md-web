@@ -21,6 +21,8 @@ export const DEFAULT_SETTINGS = {
 
   /** 生成后自动展开页面内面板 */
   showPanel: true,
+  /** 可选的桌面写入入口；默认保持纯页面笔记界面。 */
+  desktopSync: false,
 
   subtitle: {
     /** 首选语言代码（'' = 跟随页面/自动挑选） */
@@ -76,6 +78,7 @@ export const LOCAL_POLISH = {
  */
 export function withDefaults(stored) {
   const settings = /** @type {Settings & Record<string, unknown>} */ (deepMerge(structuredClone(DEFAULT_SETTINGS), stored ?? {}));
+  settings.desktopSync = settings.desktopSync === true;
   delete settings.clickToSeek; // 旧版开关由 showTimestamps 取代
   delete settings.autoRun; // 旧版开关：现在切换视频一律自动生成
   if (settings.asr.endpoint === 'http://127.0.0.1:8080/v1/audio/transcriptions' && settings.asr.model === 'small') {

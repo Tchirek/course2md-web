@@ -206,7 +206,7 @@ export function toPlainText(doc, opts = {}) {
 }
 
 /**
- * 网页文档 JSON；原版 document.json 用 upstreamSnapshot 显式转换。
+ * 网页文档 JSON；course2md document.json 用 desktopSnapshot 显式转换。
  * @param {Doc} doc
  * @param {{pretty?: boolean}} [opts]
  */
@@ -220,14 +220,14 @@ export function shownSections(sections, original) {
     segments: section.segments.map((p) => ({ ...p, text: p.raw ?? p.text, state: /** @type {const} */ ('kept') })) })) : sections;
 }
 
-/** @typedef {{schema: number, meta: {title: string, uploader: string, duration: number, webpage_url: string, extractor: string, id: string}, sections: {t: number, end: number, image: string, speech: import('./model.js').TranscriptEvent[]}[], summary?: {tldr: string, key_points: string[], outline: {t: number, title: string, detail: string}[]}|null}} UpstreamDocument */
+/** @typedef {{schema: number, meta: {title: string, uploader: string, duration: number, webpage_url: string, extractor: string, id: string}, sections: {t: number, end: number, image: string, speech: import('./model.js').TranscriptEvent[]}[], summary?: {tldr: string, key_points: string[], outline: {t: number, title: string, detail: string}[]}|null}} DesktopDocument */
 
 /**
- * 一段只归属一次；章节与所有图片保存在网页伴随文档中，原版每节只接收一张图。
+ * 一段只归属一次；章节与所有图片保存在网页伴随文档中，course2md 每节只接收一张图。
  * @param {Doc} doc
  * @param {DocSection[]} sections
  */
-export function upstreamSnapshot(doc, sections) {
+export function desktopSnapshot(doc, sections) {
   /** @type {Record<string, string>} */
   const images = {};
   const web = buildDoc(doc.meta, sections);
@@ -255,7 +255,7 @@ export function upstreamSnapshot(doc, sections) {
   }
   const marks = new Map(web.sections.map((s) => [s.t, '']));
   for (const s of web.sections) for (const f of s.frames ?? []) if (f.image) marks.set(f.t, f.image);
-  /** @type {UpstreamDocument} */
+  /** @type {DesktopDocument} */
   const document = {
     schema: 1,
     meta: { title: doc.meta.title ?? '', uploader: doc.meta.uploader ?? '', duration: doc.meta.duration ?? 0,
@@ -278,15 +278,6 @@ export function upstreamSnapshot(doc, sections) {
   return { document, web, images, markdown: toMarkdown({ ...web, sections: shown }, { timestamps: doc.meta.showTimestamps, images: true }) };
 }
 
-/** @param {UpstreamDocument} document */
-export function fromUpstream(document) {
-  if (document.schema !== 1) throw new Error('不支持此课程文档版本');
-  let id = 0;
-  return buildDoc({ title: document.meta.title, uploader: document.meta.uploader,
-    duration: document.meta.duration, url: document.meta.webpage_url, site: document.meta.extractor, source: 'upstream' },
-  document.sections.map((s) => ({ t: s.t, end: s.end, segments: s.speech.map((p) => ({ ...p, id: id++ })),
-    frames: s.image ? [{ t: s.t, image: s.image }] : [] })));
-}
 
 /**
  * @param {number} sec
@@ -337,7 +328,6 @@ function countSegments(doc) {
 
 /** @param {unknown} source */
 export function sourceLabel(source) {
-  if (source === 'upstream') return '课程正文';
   return source === 'asr' ? '本地模型转录' : '平台字幕';
 }
 

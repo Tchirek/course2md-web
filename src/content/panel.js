@@ -25,6 +25,8 @@ import { all, button, el, one, plain } from './panel-dom.js';
  * @property {boolean} [imagesPending]
  * @property {boolean} [exportReady]
  * @property {boolean} [exportBusy]
+ * @property {boolean} [desktopSyncing]
+ * @property {boolean} [desktopSynced]
  * @property {Record<'copy'|'download', boolean>} [pendingExport]
  * @property {Record<'copy'|'download', boolean>} [exportFlash]
  */
@@ -39,7 +41,7 @@ export class Panel {
    * @param {() => unknown} [handlers.onCopy]
    * @param {() => unknown} [handlers.onCopyText]
    * @param {() => unknown} [handlers.onDownload]
-   * @param {() => unknown} [handlers.onLibrary]
+   * @param {() => unknown} [handlers.onDesktopSync]
    * @param {() => unknown} [handlers.onRerun]
    * @param {() => unknown} [handlers.onRepolish]
    * @param {(section?:string) => unknown} [handlers.onOptions]
@@ -416,10 +418,11 @@ export class Panel {
     copyText.disabled = !ready && !(status === 'running' && this.state.sections?.some((section) =>
       section.segments.some((seg) => seg.raw ?? seg.text)));
     foot.appendChild(copyText);
-    if (this.handlers.onLibrary) {
-      const library = iconButton({ iconName: 'open', label: '存入课程库', onClick: () => this.handlers.onLibrary?.() });
-      library.disabled = !ready || this.state.exportBusy || !this.state.exportReady;
-      foot.appendChild(library);
+    if (settings?.desktopSync && this.handlers.onDesktopSync) {
+      const sync = iconButton({ iconName: 'open', label: this.state.desktopSyncing ? '正在同步' : this.state.desktopSynced ? '已同步到 course2md' : '同步到 course2md',
+        onClick: () => this.handlers.onDesktopSync?.() });
+      sync.disabled = !ready || this.state.exportBusy || !this.state.exportReady || this.state.desktopSyncing === true;
+      foot.appendChild(sync);
     }
 
     return foot;

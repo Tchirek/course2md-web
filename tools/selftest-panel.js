@@ -20,6 +20,7 @@ const settings = withDefaults({
   imageLevel: 'default',
   polish: scenario === 'polished',
   theme: params.get('theme') ?? 'auto',
+  desktopSync: params.get('desktop') === 'on',
   // 已润色却不接 LLM 是自相矛盾的状态，截图里会同时出现「已润色」和「去设置」。
   // 造数据就把 LLM 也算上，让这个场景自洽。
   llm:
@@ -37,7 +38,7 @@ const panel = new Panel({
   onCopy: () => {},
   onCopyText: () => {},
   onDownload: () => {},
-  onLibrary: () => {},
+  onDesktopSync: () => {},
   onRerun: () => {},
   onRepolish: () => {},
   onOptions: () => {},

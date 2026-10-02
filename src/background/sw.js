@@ -145,36 +145,17 @@ const HANDLERS = {
 
   'file.save': (payload) => saveFile(payload),
   'file.saveBundle': (payload) => saveBundle(payload),
-  'library.request': async (payload, _message, sender) => {
-    const actions = ['discover', 'connect', 'list', 'read', 'image', 'publish', 'engine', 'export'];
-    if (!actions.includes(payload.action)) throw new Error('未知的课程库操作');
-    if (payload.action !== 'publish' && !sender.url?.startsWith(chrome.runtime.getURL(''))) {
-      throw new Error('请在扩展课程库页面操作');
-    }
+  'desktop.publish': async (payload, _message, sender) => {
+    if (sender.id !== chrome.runtime.id) throw new Error('仅接受本扩展的同步请求');
     await ensureLocalHelper();
-    if (payload.action === 'publish' && !payload.input?.library) {
-      const discovery = await (await helperFetch('/library/discover', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: '{}' })).json();
-      if (!discovery.defaultLibrary) throw new Error('默认课程库不可用，请在课程库页面选择保存位置');
-      payload.input = { ...payload.input, library: discovery.defaultLibrary };
-      await chrome.storage.local.set({ selectedLibrary: discovery.defaultLibrary });
-    }
-    const response = await helperFetch(`/library/${payload.action}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload.input ?? {}), signal: AbortSignal.timeout(65_000),
-    });
+    const response = await helperFetch('/desktop/publish', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(65_000) });
     const value = await response.json();
-    if (response.status === 404) throw new Error('本机助手版本过旧，请更新助手文件并重启，再连接课程库');
-    if (!response.ok) throw new Error(value.error ?? '课程库操作失败');
+    if (response.status === 404) throw new Error('浏览器连接需要更新后才能同步');
+    if (!response.ok) throw new Error(value.error ?? '同步失败');
     return value;
   },
-  'ui.openLibrary': async ({ query = '' }) => {
-    const params = new URLSearchParams(String(query));
-    const allowed = new URLSearchParams();
-    for (const name of ['library', 'course', 'version']) if (params.has(name)) allowed.set(name, params.get(name) ?? '');
-    await chrome.tabs.create({ url: chrome.runtime.getURL(`src/ui/library.html?${allowed}`) });
-    return { opened: true };
-  },
+
   /** 打开设置页（弹窗里的链接用，避免弹窗内嵌 options）。 */
   'ui.openOptions': async (payload) => {
     if (payload.section) {

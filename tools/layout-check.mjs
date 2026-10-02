@@ -458,6 +458,27 @@ try {
     await page.close();
   }
 
+  // Desktop integration is opt-in; the narrow toolbar keeps just one accessible action.
+  for (const desktop of ['off', 'on']) {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 360, height: 760 });
+    await page.goto(`${BASE}/tools/selftest-panel.html?state=ready&theme=dark&desktop=${desktop}`, { waitUntil: 'networkidle2' });
+    await page.waitForFunction('window.__selftestReady === true');
+    const m = await page.evaluate(() => {
+      const panel = window.__selftestPanel;
+      panel.setState({ exportReady: true, exportBusy: false });
+      panel.host.style.width = '340px';
+      const foot = panel.scope.querySelector('.c2md-panel-foot');
+      const button = foot.querySelector('button[aria-label="同步到 course2md"]');
+      return { count: Number(Boolean(button)), disabled: button?.disabled,
+        overflow: foot.scrollWidth - foot.clientWidth };
+    });
+    m.count === (desktop === 'on' ? 1 : 0) && (desktop !== 'on' || !m.disabled) && m.overflow <= 1
+      ? pass(`panel desktop=${desktop} 窄屏同步入口符合设置`)
+      : fail(`panel desktop=${desktop}`, JSON.stringify(m));
+    await page.close();
+  }
+
   // ---- 弹窗与设置页：不能横向溢出 ----
   // 设置页另有本机／自定义润色模型选择。
   for (const [name, path, size, expectedSegments] of [
@@ -487,9 +508,6 @@ try {
     if (name === 'popup') {
       mkdirSync(join(ROOT, 'tools', 'shots'), { recursive: true });
       await page.screenshot({ path: join(ROOT, 'tools', 'shots', 'popup-ready.png') });
-      const nav = await page.$eval('#open-library', (a) => ({ tag: a.tagName, href: a.getAttribute('href'), border: getComputedStyle(a).borderStyle }));
-      nav.tag === 'A' && nav.href === 'library.html' && nav.border === 'none'
-        ? pass('popup 课程库使用轻量导航') : fail('popup', JSON.stringify(nav));
       // 勾选「润色文本」后，强度与方式两行直接出现
       const after = await page.evaluate(() => new Promise((resolve) => {
         const polish = [...document.querySelectorAll('.c2md-check')]
@@ -516,6 +534,9 @@ try {
       fail(name, '主按钮没有底色');
     }
     if (name === 'options') {
+      const disabled = await page.evaluate(() => document.getElementById('desktop-sync')?.checked === false);
+      disabled ? pass('options 同步默认关闭') : fail('options', '同步默认开启');
+
       await page.waitForFunction(() => document.getElementById('helper-install').textContent === '更新助手');
       pass('options 已安装时自动连接并收起安装提示');
       await page.click('#helper-check');
@@ -600,73 +621,7 @@ try {
     pass('options 安装器被删除后可重新下载');
     await page.close();
   }
-  // Original/native and browser documents use the same reader, including narrow screens.
-  for (const [width, theme] of [[1280, 'light'], [390, 'light'], [1280, 'dark']]) {
-    const page = await browser.newPage();
-    const errors = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.setViewport({ width, height: 800 });
-    await page.goto(`${BASE}/src/ui/library.html?library=demo&course=web-course&theme=${theme}`, { waitUntil: 'networkidle0' });
-    await page.waitForSelector('.paragraph-text');
-    const name = `reader/${width}/${theme}`;
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-    overflow <= 1 ? pass(`${name} 无横向溢出`) : fail(name, `横向溢出 ${overflow}px`);
-    const behavior = await page.evaluate(() => {
-      const toggle = (id) => { const input = document.getElementById(id); input.click(); };
-      const polished = document.querySelector('.paragraph-text').textContent;
-      const hidden = document.querySelector('[data-state="skipped"]').hidden;
-      toggle('original');
-      const original = document.querySelector('.paragraph-text').textContent;
-      const restored = !document.querySelector('[data-state="skipped"]').hidden;
-      toggle('timestamps');
-      toggle('images');
-      const timestamps = getComputedStyle(document.querySelector('.timestamp')).display;
-      const images = getComputedStyle(document.querySelector('.reader-frame')).display;
-      const query = document.getElementById('query'); query.value = '原始字幕'; query.dispatchEvent(new Event('input'));
-      document.getElementById('find').dispatchEvent(new Event('submit', { cancelable: true }));
-      return { polished, original, hidden, restored, timestamps, images, marks: document.querySelectorAll('mark').length,
-        match: document.getElementById('matches').textContent, url: document.querySelector('.timestamp').href };
-    });
-    behavior.polished.includes('润色') && behavior.original.includes('原始字幕') && behavior.hidden && behavior.restored
-      ? pass(`${name} 原文切换恢复被跳过的段落`) : fail(name, JSON.stringify(behavior));
-    behavior.timestamps === 'none' && behavior.images === 'none' && behavior.marks === 24 && behavior.match.startsWith('1 / 24')
-      ? pass(`${name} 图片、时间戳与搜索有效`) : fail(name, JSON.stringify(behavior));
-    new URL(behavior.url).searchParams.get('p') === '2' && new URL(behavior.url).searchParams.get('t') === '0'
-      ? pass(`${name} 视频跳转保留 B 站分 P`) : fail(name, behavior.url);
-    await page.select('#versions', 'old');
-    await page.waitForFunction(() => new URL(location.href).searchParams.get('version') === 'old');
-    pass(`${name} 切换历史版本`);
-    await page.evaluate(() => [...document.querySelectorAll('.course-row')].find((b) => b.textContent.includes('线性代数入门')).click());
-    await page.waitForFunction(() => document.getElementById('title').textContent === '线性代数入门');
-    await page.waitForSelector('.paragraph-text');
-    errors.length ? fail(name, errors.join('; ')) : pass(`${name} 课程文档读取无运行时错误`);
-    await page.click('#native-export');
-    await page.waitForFunction(() => document.getElementById('status').textContent.includes('/demo/exports/course.zip'));
-    pass(`${name} 图文导出显示保存位置`);
-    if (width === 1280) {
-      mkdirSync(join(ROOT, 'tools', 'shots'), { recursive: true });
-      await page.screenshot({ path: join(ROOT, 'tools', 'shots', `reader-${theme}.png`), fullPage: false });
-    }
-    await page.close();
-  }
-  for (const missing of ['helper', 'engine']) {
-    const page = await browser.newPage();
-    const errors = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.setViewport({ width: 390, height: 800 });
-    await page.goto(`${BASE}/src/ui/library.html?library=demo&course=web-course&${missing}=missing`, { waitUntil: 'networkidle0' });
-    if (missing === 'helper') {
-      await page.waitForFunction(() => !document.getElementById('helper-setup').hidden);
-      pass('reader 缺少助手时提供安装入口');
-    } else {
-      await page.waitForFunction(() => document.getElementById('native-export').textContent === '安装 CLI 并导出');
-      await page.click('#native-export');
-      await page.waitForFunction(() => document.getElementById('status').textContent.includes('/demo/exports/course.zip'));
-      pass('reader 可安装 CLI 后继续导出');
-    }
-    errors.length ? fail(`reader/${missing}`, errors.join('; ')) : pass(`reader/${missing} 无运行时错误`);
-    await page.close();
-  }
+
 } finally {
   await browser.close();
   server.kill();

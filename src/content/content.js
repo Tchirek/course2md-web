@@ -6,7 +6,7 @@
 import { pickAdapter, siteLabel } from '../adapters/index.js';
 import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
-import { buildDoc, fileNameFor, upstreamSnapshot } from '../core/format.js';
+import { buildDoc, fileNameFor, desktopSnapshot } from '../core/format.js';
 import { runSubtitlePipeline, runAsrPipeline, finalize, organize, MissingSourceError, AbortError } from './pipeline.js';
 import { copyText, send } from './messaging.js';
 import { imageBundle, markdownOf, plainTextOf } from './exporter.js';
@@ -54,6 +54,8 @@ export class Controller {
     this.previewSections = [];
     /** @type {import('../core/format.js').Doc|null} */
     this.doc = null;
+    this.desktopSyncing = false;
+    this.desktopSynced = false;
     /** @type {Status} */
     this.status = 'idle';
     /** @type {ErrorState|null} */
@@ -84,7 +86,6 @@ export class Controller {
     /** @type {Partial<Record<ExportKind, ReturnType<typeof setTimeout>>>} */
     this.exportFlashTimers = {};
     this.panelDismissed = false;
-    this.librarySaving = false;
     /** @type {import('../core/model.js').TranscriptEvent[]|null} 转录途中已到手的事件 */
     this.liveEvents = null;
     /** @type {DocSection[]|null} 转录途中先组织出来的分节 */
@@ -102,8 +103,8 @@ export class Controller {
       onSeek: (sec) => this.seek(sec),
       onCopy: () => this.requestExport('copy'),
       onCopyText: () => this.copyPlainText(),
+      onDesktopSync: () => this.syncDesktop(),
       onDownload: () => this.requestExport('download'),
-      onLibrary: () => this.saveLibrary(),
       onRerun: () => {
         this.autoRunArmed = true;
         this.autoRunOverrides = null;
@@ -326,6 +327,8 @@ export class Controller {
       exportBusy: this.exportBusy(),
       pendingExport: { ...this.pendingExport },
       exportFlash: { ...this.exportFlash },
+      desktopSyncing: this.desktopSyncing,
+      desktopSynced: this.desktopSynced,
     };
   }
 
@@ -641,31 +644,33 @@ export class Controller {
     }
   }
 
-  async saveLibrary() {
-    if (!this.doc || this.librarySaving) return;
-    if (!this.exportReady() || this.exportBusy()) return;
-    const { selectedLibrary } = await chrome.storage.local.get('selectedLibrary');
-    this.librarySaving = true;
+  async syncDesktop() {
+    if (!this.settings.desktopSync || !this.doc || this.desktopSyncing || !this.exportReady() || this.exportBusy()) return;
+    const currentDoc = this.doc;
+    this.desktopSyncing = true;
+    this.desktopSynced = false;
+    this.panel.setState(this.panelState());
     try {
-      const doc = { ...this.doc, meta: { ...this.doc.meta, polished: Boolean(this.settings.polish && this.polisher.progress.hasResult),
+      const doc = { ...currentDoc, meta: { ...currentDoc.meta, polished: Boolean(this.settings.polish && this.polisher.progress.hasResult),
         showTimestamps: this.settings.showTimestamps, imageLevel: this.settings.imageLevel } };
       const sections = this.settings.imageLevel === 'none'
-        ? (this.built?.sections ?? this.doc.sections).map((s) => ({ ...s, frames: [] })) : this.previewSections;
-      const snapshot = upstreamSnapshot(doc, sections);
-      const input = { ...snapshot, events: this.built?.originalEvents ?? [] };
+        ? (this.built?.sections ?? currentDoc.sections).map((s) => ({ ...s, frames: [] })) : this.previewSections;
+      const input = { ...desktopSnapshot(doc, sections), events: this.built?.originalEvents ?? [] };
       const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
       const requestId = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
-      const value = await send({ type: 'library.request', payload: { action: 'publish', input: {
-        ...input, library: typeof selectedLibrary === 'string' ? selectedLibrary : '', requestId,
-      } } });
-      const params = new URLSearchParams({ library: value.library, course: value.course, version: value.version });
-      await send({ type: 'ui.openLibrary', payload: { query: params.toString() } });
+      const saved = await send({ type: 'desktop.publish', payload: { ...input, requestId } });
+      if (this.doc === currentDoc) {
+        this.desktopSynced = Boolean(saved.saved);
+        setTimeout(() => { this.desktopSynced = false; this.panel.setState(this.panelState()); }, 1800);
+      }
+      return saved;
     } catch (error) {
-      this.error = toErrorState(error);
+      if (this.doc === currentDoc) this.error = toErrorState(error);
+    } finally {
+      this.desktopSyncing = false;
       this.panel.setState(this.panelState());
-    } finally { this.librarySaving = false; }
+    }
   }
-
 
   /** @param {string} [section] 设置页要打开的分区 */
   async openOptions(section) {

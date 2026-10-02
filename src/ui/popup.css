@@ -40,18 +40,6 @@ body {
   color: var(--ink);
 }
 
-.popup-library {
-  font-size: var(--t-meta);
-  color: var(--ink-3);
-  padding: var(--s-2) 0;
-  text-decoration: none;
-}
-
-.popup-library:hover,
-.popup-library:focus-visible {
-  color: var(--ink);
-}
-
 /* ---------- 当前页面 ---------- */
 .popup-page {
   padding: 0 var(--s-3) var(--s-2);

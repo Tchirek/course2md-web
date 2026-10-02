@@ -98,10 +98,10 @@ http.createServer(async (req, res) => {
     res.writeHead(401);
     return res.end('{"error":"缺少或错误的访问令牌"}');
   }
-  if (req.method === 'POST' && /^\/library\/(discover|connect|list|read|image|publish|engine|export)$/.test(req.url ?? '')) {
+  if (req.method === 'POST' && req.url === '/desktop/publish') {
     try {
       const payload = JSON.parse(await readBody(req, 64 * 1024 * 1024));
-      const value = await libraryRequest(req.url.slice('/library/'.length), payload);
+      const value = await desktopSyncRequest(payload);
       return res.end(JSON.stringify(value));
     } catch (error) {
       res.writeHead(400);
@@ -584,14 +584,14 @@ async function readBody(req, limit = MAX_BODY) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function libraryRequest(action, payload) {
+function desktopSyncRequest(payload) {
   return new Promise((resolve, reject) => {
     const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-    const child = spawn(python, ['-u', fileURLToPath(new URL('./library.py', import.meta.url))], {
+    const child = spawn(python, ['-u', fileURLToPath(new URL('./desktop_sync.py', import.meta.url))], {
       windowsHide: true, env: { ...process.env, C2MD_DATA_DIR: dataDir() }, stdio: ['pipe', 'pipe', 'pipe'],
     });
     let output = '', errors = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error('课程库操作超时，请重试')); }, 60_000);
+    const timer = setTimeout(() => { child.kill(); reject(new Error('同步超时，请重试')); }, 60_000);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
@@ -604,12 +604,12 @@ function libraryRequest(action, payload) {
       clearTimeout(timer);
       try {
         const value = JSON.parse(output);
-        if (code || value.error) throw new Error(value.error || errors || '课程库操作失败');
+        if (code || value.error) throw new Error(value.error || errors || '同步失败');
         resolve(value);
       } catch (error) { reject(error); }
     });
     child.stdin.on('error', reject);
-    child.stdin.end(JSON.stringify({ action, payload }));
+    child.stdin.end(JSON.stringify(payload));
   });
 }
 

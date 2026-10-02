@@ -14,6 +14,7 @@ import { reloadIfCodeChanged } from '../core/build.js';
 const FIELDS = [
   ['sub-lang', 'subtitle.preferLang', 'text'],
   ['sub-auto', 'subtitle.allowAuto', 'bool'],
+  ['desktop-sync', 'desktopSync', 'bool'],
   ['asr-endpoint', 'asr.endpoint', 'text'],
   ['asr-key', 'asr.apiKey', 'text'],
   ['asr-model', 'asr.model', 'text'],
@@ -208,7 +209,7 @@ async function bindActions() {
   const suffix = os === 'win' ? 'windows.exe' : os === 'mac' ? 'macos.pkg' : os === 'linux' ? 'linux.run' : '';
   helperAsset = suffix ? `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}-${suffix}` : '';
   helperCanOpen = os === 'win' || os === 'mac';
-  if (os === 'linux') byId('helper-description').textContent = '连接课程库、截图和本机模型。Linux 首次安装需运行下载的 .run 文件；之后自动连接。';
+  if (os === 'linux') byId('helper-description').textContent = '提供转录、截图和本机模型。Linux 首次安装需运行下载的 .run 文件；之后自动连接。';
   if (!suffix) byId('helper-description').textContent = '当前系统暂不支持本机助手。';
   buttonById('helper-install').addEventListener('click', installHelper);
   byId('helper-check').addEventListener('click', () => checkHelper());

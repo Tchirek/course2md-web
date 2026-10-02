@@ -4,7 +4,7 @@ if (!process.env.C2MD_UPSTREAM_EXE) {
   process.exit(1);
 }
 const python = process.env.C2MD_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-const result = spawnSync(python, ['tests/library.test.py', 'LibraryTest.test_latest_engine_reprocesses_and_shares_publish_lock'], {
+const result = spawnSync(python, ['tests/desktop-sync.test.py', 'DesktopSyncTest.test_latest_engine_reprocesses_and_shares_publish_lock'], {
   windowsHide: true, stdio: 'inherit',
 });
 if (result.error) console.error(result.error.message);
