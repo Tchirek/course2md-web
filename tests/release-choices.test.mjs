@@ -33,4 +33,6 @@ test('each release offers both complete editions and preserves its changelog whe
   assert.equal(choiceNotes(choices, notes), notes);
   assert.equal(notes.match(/edition-choices:start/g).length, 1);
   assert.ok(!notes.includes('原版'));
+  assert.ok(!notes.includes('Built-in reader'));
+  assert.ok(notes.includes('Web-managed models and processing'));
 });
