@@ -19,7 +19,7 @@
 
 </div>
 
-Web 提供獨立版和 CLI 版，可在[發行頁](https://github.com/Tchirek/course2md-web/releases/latest)直接選擇。本分支維護獨立版的助手與本機處理；CLI 版原始碼位於 [main](https://github.com/Tchirek/course2md-web/tree/main)。
+Web 提供獨立版和 CLI 版，可在[發行頁](https://github.com/Tchirek/course2md-web/releases/latest)直接選擇。本分支維護獨立版的 MizoreLink 與本機處理；CLI 版原始碼位於 [main](https://github.com/Tchirek/course2md-web/tree/main)。
 
 # course2md — 瀏覽器擴充功能版
 
@@ -133,28 +133,28 @@ YouTube 字幕要帶播放器簽發的存取憑證才能取到；擴充功能從
 
 ### 本地模型轉錄
 
-優先通過本機提取服務直接下載和處理串流音軌；可直接讀取的短影片（不超過 3 分鐘、24 MiB）在瀏覽器裡離線解碼。兩條快路徑都不等播放器走完。本機提取服務按停頓把音軌切成一段段語音（與原版 course2md 同一規則：太長的一段在最安靜處切開，內建轉錄每段不超過 20 秒，自備服務不超過設定裡的切片長度），再交給本機 ASR 服務；瀏覽器直讀與播放器錄音按切片長度切。
-YouTube、B 站下載失敗時，本機助手會用目前瀏覽器中該影片站點的登入狀態重試。擴充功能只向 `127.0.0.1` 的本機助手傳送該站點 cookie；助手把它交給 `yt-dlp` 下載，並在任務結束後刪除暫存檔。Edge 會在擴充功能更新後提示新增的站點 cookie 權限。
+優先通過 MizoreLink 直接下載和處理串流音軌；可直接讀取的短影片（不超過 3 分鐘、24 MiB）在瀏覽器裡離線解碼。兩條快路徑都不等播放器走完。MizoreLink 按停頓把音軌切成一段段語音（與原版 course2md 同一規則：太長的一段在最安靜處切開，內建轉錄每段不超過 20 秒，自備服務不超過設定裡的切片長度），再交給本機 ASR 服務；瀏覽器直讀與播放器錄音按切片長度切。
+YouTube、B 站下載失敗時，MizoreLink 會用目前瀏覽器中該影片站點的登入狀態重試。擴充功能只向 `127.0.0.1` 的 MizoreLink 傳送該站點 cookie；MizoreLink 把它交給 `yt-dlp` 下載，並在任務結束後刪除暫存檔。Edge 會在擴充功能更新後提示新增的站點 cookie 權限。
 
-在設定頁點「安裝本機助手」，下載進度、繼續下載與重試都在當前頁完成。Windows / macOS 下載後再點「開啟安裝器」，按瀏覽器和系統提示確認；安裝完成會自動連線，無須尋找腳本、解壓縮原始碼或填寫路徑。Linux 提供單檔 `.run`，首次安裝仍需執行它（`sh 安裝器檔名.run`）；擴充功能無法替瀏覽器執行腳本。安裝器沿用既有執行環境，缺少的 Node、Python、FFmpeg 與 yt-dlp 按固定版本和 SHA-256 自動準備，隨後部署、註冊並啟動助手。原始碼壓縮包與以下命令供開發者使用：
+在設定頁點「安裝 MizoreLink」，下載進度、繼續下載與重試都在當前頁完成。Windows / macOS 下載後再點「開啟安裝器」，按瀏覽器和系統提示確認；安裝完成會自動連線，無須尋找腳本、解壓縮原始碼或填寫路徑。Linux 提供單檔 `.run`，首次安裝仍需執行它（`sh 安裝器檔名.run`）；擴充功能無法替瀏覽器執行腳本。安裝器沿用既有執行環境，缺少的 Node、Python、FFmpeg 與 yt-dlp 按固定版本和 SHA-256 自動準備，隨後部署、註冊並啟動 MizoreLink。原始碼壓縮包與以下命令供開發者使用：
 
 ```sh
 npm run local:install
 ```
 
-本機轉錄用的是與原版 [course2md](https://github.com/mizorewww/course2md) 相同的模型：**Qwen3-ASR-1.7B**（GGUF，Q8_0 與 mmproj 兩個檔案，共約 2.5 GB），由 llama.cpp 的 `llama-server` 執行。模型放在原版的模型目錄裡，佈局也與原版一致：取原版 `config.toml`（Windows 在 `%APPDATA%\course2md\`，macOS / Linux 在 `~/.config/course2md/`）裡 `[defaults] model_dir` 指定的目錄，沒有指定就用原版的預設位置（Windows `%LOCALAPPDATA%\course2md\models`，macOS / Linux `~/.cache/course2md/models`）。裝過原版的機器不用再下載；先裝本擴充功能的，以後裝原版時模型已經就位。那裡已有的檔案與固定的 SHA-256 一致才用，不一致就原樣保留並報錯，不會覆蓋原版的檔案。原版執行時用 `--model-dir` 臨時指定的目錄，請用環境變數 `C2MD_MODEL_DIR` 告訴助手。
+本機轉錄用的是與原版 [course2md](https://github.com/mizorewww/course2md) 相同的模型：**Qwen3-ASR-1.7B**（GGUF，Q8_0 與 mmproj 兩個檔案，共約 2.5 GB），由 llama.cpp 的 `llama-server` 執行。模型放在原版的模型目錄裡，佈局也與原版一致：取原版 `config.toml`（Windows 在 `%APPDATA%\course2md\`，macOS / Linux 在 `~/.config/course2md/`）裡 `[defaults] model_dir` 指定的目錄，沒有指定就用原版的預設位置（Windows `%LOCALAPPDATA%\course2md\models`，macOS / Linux `~/.cache/course2md/models`）。裝過原版的機器不用再下載；先裝本擴充功能的，以後裝原版時模型已經就位。那裡已有的檔案與固定的 SHA-256 一致才用，不一致就原樣保留並報錯，不會覆蓋原版的檔案。原版執行時用 `--model-dir` 臨時指定的目錄，請用環境變數 `C2MD_MODEL_DIR` 告訴 MizoreLink。
 
 本機轉錄需要 Node.js 22、Python 3.11 或更新版本（只用標準函式庫，不建虛擬環境）和 `ffmpeg`；YouTube、B 站快速提取還需要 `yt-dlp`。不再安裝 faster-whisper、PyTorch 或單獨的 CUDA 函式庫：llama.cpp 執行庫（固定版本 `b11235`）與本機潤色共用一份，PATH 上已有同一版本就直接用，否則下載並校驗。Windows（NVIDIA 顯示卡）與 macOS 用顯示卡加速，Linux 用 CPU；顯示卡起不來或轉錄中途出錯就改用 CPU 繼續，浮動視窗裡給一行提示。
 
-安裝命令把輕量本機助手註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫助手，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。以前版本裝過的 faster-whisper 轉錄環境與模型（約 2.5 GB）會在這一步刪掉；只拉取了新程式碼、沒重跑安裝的，本機助手啟動時也會刪。
-選擇本地模型轉錄後，助手會在任務開始時自動啟動服務；設定頁按鈕也可手動啟動，按鈕會顯示下載、載入與就緒狀態，並自動填好轉錄地址和模型名。本機轉錄與潤色模型 10 分鐘沒有任務就會退出並釋放記憶體（環境變數 `C2MD_IDLE_SECONDS` 可調），下次用到時自動重新載入。安裝只需一次：以後更新程式碼，本機助手啟動時會自動修復過時的主機註冊，無須重跑；移動了專案目錄才需要重新安裝。
+安裝命令把輕量 MizoreLink 註冊為原生訊息主機（擴充功能因此能自動喚醒它），並設定登入後執行。Windows 用登錄檔加編譯的 exe 主機；macOS / Linux 寫瀏覽器的 `NativeMessagingHosts` 目錄，登入自啟分別走 LaunchAgent 和 XDG autostart。安裝腳本會在 Edge / Chrome 的配置裡找出已載入的本擴充功能（以未封裝方式載入的擴充功能 ID 隨所在資料夾而變），只允許這些擴充功能呼叫 MizoreLink，所以請先在瀏覽器載入擴充功能再執行；也可以直接帶上 ID：`node tools/install-local-asr.mjs <擴充功能ID>`。以前版本裝過的 faster-whisper 轉錄環境與模型（約 2.5 GB）會在這一步刪掉；只拉取了新程式碼、沒重跑安裝的，MizoreLink 啟動時也會刪。
+選擇本地模型轉錄後，MizoreLink 會在任務開始時自動啟動服務；設定頁按鈕也可手動啟動，按鈕會顯示下載、載入與就緒狀態，並自動填好轉錄地址和模型名。本機轉錄與潤色模型 10 分鐘沒有任務就會退出並釋放記憶體（環境變數 `C2MD_IDLE_SECONDS` 可調），下次用到時自動重新載入。安裝只需一次：以後更新程式碼，MizoreLink 啟動時會自動修復過時的主機註冊，無須重跑；移動了專案目錄才需要重新安裝。
 
 資料目錄（主機、存取權杖、潤色環境與執行庫）預設在 `%LOCALAPPDATA%\course2md`（macOS / Linux 在各自的應用程式資料目錄）；系統磁碟空間緊張時，執行 `npm run local:install -- --data-dir D:\course2md` 把它移到別的磁碟，之後一直沿用。資料目錄不在預設位置、原版既沒有指定模型目錄、預設位置也還沒有模型時，安裝（或更新程式碼後第一次本機轉錄）會把 `<資料目錄>\models` 寫進原版的 `config.toml`（其餘內容原樣保留），兩邊以後都用那裡的模型。解除安裝執行 `npm run local:uninstall`（加 `-- --purge` 連潤色環境與執行庫一起刪）；與原版共用的轉錄模型不會刪除。
 
-本機助手只監聽 `127.0.0.1`，除健康檢查外的請求都要帶存取權杖；權杖只經原生訊息交給本擴充功能，
+MizoreLink 只監聽 `127.0.0.1`，除健康檢查外的請求都要帶存取權杖；權杖只經原生訊息交給本擴充功能，
 機器上的其他擴充功能和網頁都用不了它讀本機檔案。執行時下載的模型與執行環境都固定了版本與 SHA-256
 （`tools/runtime-pins.json`），驗證通過才使用。
-安裝最後會經剛註冊的主機拉起助手，主機不通就當場報錯。擴充功能喚不醒助手時會寫明斷在哪一環（未註冊、擴充功能 ID 不符、Node 或助手路徑失效等）。
+安裝最後會經剛註冊的主機拉起 MizoreLink，主機不通就當場報錯。擴充功能喚不醒 MizoreLink 時會寫明斷在哪一環（未註冊、擴充功能 ID 不符、Node 或 MizoreLink 路徑失效等）。
 可執行 `npm run local:check-host` 核對瀏覽器能否找到主機並驗證主機能否從零拉起服務（預設核對瀏覽器裡已載入的所有副本，也可在命令後加 `-- <擴充功能ID>` 指定），`npm run local:check` 核對本機服務是否真的接收音訊。
 
 也可以接入自己已有的 OpenAI 相容 ASR 服務，任選其一：
@@ -169,7 +169,7 @@ faster-whisper-server --model large-v3
 
 然後到擴充功能設定頁的「本地模型转录」填服務地址、模型名，點「测试连接」和「授权访问此地址」。
 
-沒有安裝登入後執行的本機助手時，也可手動執行提取服務：
+也可手動啟動 MizoreLink：
 
 ```sh
 npm run fast-asr
@@ -183,7 +183,7 @@ YouTube 的 JavaScript 挑戰由現有 Node.js 執行環境處理，需 Node.js 
 - YouTube、B 站的本機提取和瀏覽器直讀都失敗時會顯示原因並停止，不再自動錄音。其他無法快速提取的媒體才用播放器錄音；此時一小時的課至少一小時，期間**標籤頁要保持開著**。
 - 錄製期間影片會真的播放，聲音會被壓到很低但不會是靜音（元素靜音時錄到的就是靜音）。
 - 切片邊界有約 40ms 的間隙，極端情況下可能丟半個字。這是為了讓每個切片能獨立解碼。
-- 經本機提取服務轉錄時，時間戳落在每段話開始的地方；瀏覽器直讀與錄音回退按固定切片送出，服務只返回整段文字時，時間戳精度是切片級別。
+- 經 MizoreLink 轉錄時，時間戳落在每段話開始的地方；瀏覽器直讀與錄音回退按固定切片送出，服務只返回整段文字時，時間戳精度是切片級別。
 
 ## 潤色怎麼配
 
@@ -218,7 +218,7 @@ YouTube 的 JavaScript 挑戰由現有 Node.js 執行環境處理，需 Node.js 
 
 預設不顯示同步入口。需要時，在設定頁勾選「显示 course2md 同步按钮」，生成完成後點浮窗的同步圖示。它只把筆記寫入桌面端的預設保存位置，不開啟閱讀頁，也不管理課程。兩版都不內建閱讀器或課程庫介面。
 
-有登記的桌面保存位置就直接沿用；尚未安裝桌面端時使用同一設定目錄的 `desktop-local-library`，日後可由桌面端讀取。無須填寫絕對路徑；失效的位置需在桌面端重新選擇。正文、原文、截圖和字幕時間線以 course2md 2.0 schema 1 保存，重複同步不會回退較新的版本。同步需要所選版本的本機連接，不建立桌面任務紀錄。
+有登記的桌面保存位置就直接沿用；尚未安裝桌面端時使用同一設定目錄的 `desktop-local-library`，日後可由桌面端讀取。無須填寫絕對路徑；失效的位置需在桌面端重新選擇。正文、原文、截圖和字幕時間線以 course2md 2.0 schema 1 保存，重複同步不會回退較新的版本。同步需要所選版本的 MizoreLink，不建立桌面任務紀錄。
 
 ## 安裝
 
@@ -226,8 +226,8 @@ YouTube 的 JavaScript 挑戰由現有 Node.js 執行環境處理，需 Node.js 
 
 | 版本 | 適合 | 轉錄與截圖需要 |
 | --- | --- | --- |
-| **獨立版 · Standalone** | 由 Web 管理本機模型、轉錄、截圖與潤色 | Web 本機助手，提供 Windows / macOS / Linux 安裝器；無須另裝 CLI |
-| **CLI 版 · CLI** | 透過精簡連接層沿用 course2md CLI 的模型、設定與處理能力 | course2md 2.0 CLI + 一次瀏覽器連接登記 |
+| **獨立版 · Standalone** | 由 Web 管理本機模型、轉錄、截圖與潤色 | MizoreLink，提供 Windows / macOS / Linux 安裝器；無須另裝 CLI |
+| **CLI 版 · CLI** | 透過精簡連接層沿用 course2md CLI 的模型、設定與處理能力 | course2md 2.0 CLI + MizoreLink（登記一次） |
 
 兩版都有浮窗、字幕快取、圖片密度與自備 API；平臺字幕的純文字筆記可直接使用擴充功能。本說明對應獨立版。
 
@@ -279,8 +279,8 @@ manifest 裡出現，`web_accessible_resources` 覆蓋不到就會在執行時�
 
 - **上游 API 會變。** YouTube 字幕憑證、B 站字幕 API都在真實頁面上驗證過（`npm run check:sites`），
   但隨時可能調整，`src/adapters/` 是最可能需要維護的部分。
-- **瀏覽器內 WebGPU ASR 尚未實現。** 目前的快速處理依靠瀏覽器離線解碼或本機提取服務；WebGPU 需要隨擴充功能打包可驗證的模型與推理執行環境。
-- **截圖依賴本機助手取得影片檔案。** 它用 `yt-dlp` 和 `ffmpeg` 離線取幀，不改動頁面播放進度。無法下載媒體時會阻止圖文匯出並顯示原因。各檔先按講述時間窗取候選畫面（「多」最多每 10 秒一張），再用原版 0.85 的相似度門檻，略去與兩分鐘內已保留畫面相同的。
+- **瀏覽器內 WebGPU ASR 尚未實現。** 目前的快速處理依靠瀏覽器離線解碼或 MizoreLink；WebGPU 需要隨擴充功能打包可驗證的模型與推理執行環境。
+- **截圖依賴 MizoreLink 取得影片檔案。** 它用 `yt-dlp` 和 `ffmpeg` 離線取幀，不改動頁面播放進度。無法下載媒體時會阻止圖文匯出並顯示原因。各檔先按講述時間窗取候選畫面（「多」最多每 10 秒一張），再用原版 0.85 的相似度門檻，略去與兩分鐘內已保留畫面相同的。
 - **DRM 影片無法轉錄**，`captureStream()` 拿不到音軌。
 - 只有播放器錄音回退需要按真實播放速度走。
 
