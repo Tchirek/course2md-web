@@ -14,6 +14,7 @@ import { reloadIfCodeChanged } from '../core/build.js';
 const FIELDS = [
   ['sub-lang', 'subtitle.preferLang', 'text'],
   ['sub-auto', 'subtitle.allowAuto', 'bool'],
+  ['desktop-sync', 'desktopSync', 'bool'],
   ['asr-endpoint', 'asr.endpoint', 'text'],
   ['asr-key', 'asr.apiKey', 'text'],
   ['asr-model', 'asr.model', 'text'],

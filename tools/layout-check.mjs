@@ -456,6 +456,27 @@ try {
     await page.close();
   }
 
+  // Desktop integration is opt-in; the narrow toolbar keeps just one accessible action.
+  for (const desktop of ['off', 'on']) {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 360, height: 760 });
+    await page.goto(`${BASE}/tools/selftest-panel.html?state=ready&theme=dark&desktop=${desktop}`, { waitUntil: 'networkidle2' });
+    await page.waitForFunction('window.__selftestReady === true');
+    const m = await page.evaluate(() => {
+      const panel = window.__selftestPanel;
+      panel.setState({ exportReady: true, exportBusy: false });
+      panel.host.style.width = '340px';
+      const foot = panel.scope.querySelector('.c2md-panel-foot');
+      const button = foot.querySelector('button[aria-label="同步到 course2md"]');
+      return { count: Number(Boolean(button)), disabled: button?.disabled,
+        overflow: foot.scrollWidth - foot.clientWidth };
+    });
+    m.count === (desktop === 'on' ? 1 : 0) && (desktop !== 'on' || !m.disabled) && m.overflow <= 1
+      ? pass(`panel desktop=${desktop} 窄屏同步入口符合设置`)
+      : fail(`panel desktop=${desktop}`, JSON.stringify(m));
+    await page.close();
+  }
+
   // ---- 弹窗与设置页：不能横向溢出 ----
   // 设置页另有本机／自定义润色模型选择。
   for (const [name, path, size, expectedSegments] of [
@@ -483,6 +504,9 @@ try {
       fail(name, `分段选择有 ${m.segmentedSelected} 个选中项，应为 ${expectedSegments} 个`);
     } else pass(`${name} 分段选择选中项数正确（${expectedSegments}）`);
     if (name === 'options') {
+      const disabled = await page.evaluate(() => document.getElementById('desktop-sync')?.checked === false);
+      disabled ? pass('options 同步默认关闭') : fail('options', '同步默认开启');
+
       const modes = await page.evaluate(async () => {
         const hidden = (id) => document.getElementById(id).getBoundingClientRect().height === 0;
         const cli = hidden('asr-model') && hidden('asr-endpoint') && hidden('asr-grant');

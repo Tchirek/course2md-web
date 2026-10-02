@@ -37,6 +37,7 @@ export { MissingSourceError, AbortError };
  * @property {{title: string, t: number}[]} [chapters] プラットフォームの章
  * @property {PipelineStats} stats
  * @property {string[]} warnings 需要如实告诉用户的问题
+ * @property {import('../core/model.js').TranscriptEvent[]} [originalEvents] 处理前的细粒度字幕
  */
 
 /** @typedef {{message?: string, ratio?: number, currentSec?: number, totalSec?: number}} ProgressInfo 进度的附带信息 */
@@ -98,10 +99,12 @@ export async function runSubtitlePipeline({ adapter, meta, settings, onProgress,
   }
   if (signal?.aborted) throw new AbortError();
 
+  const originalEvents = structuredClone(events);
   await simplifyBilibili(events, adapter.id);
   const built = organize(events, meta, {});
   return {
     ...built,
+    originalEvents,
     stats: {
       source: 'subtitle',
       trackLabel: trackLabel(track),

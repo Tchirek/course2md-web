@@ -22,6 +22,7 @@ import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
+import desktop_sync
 
 
 class LoopbackServer(ThreadingHTTPServer):
@@ -421,14 +422,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, {"cancelled": bool(job)})
             if self.command == "POST" and url.path in ("/asr/start", "/polish/start"):
                 return self.reply(200, service_status("polish" if "polish" in url.path else "asr"))
-            kind = {"/transcribe": "transcribe", "/frames": "frames", "/polish": "polish"}.get(url.path)
+            kind = {"/transcribe": "transcribe", "/frames": "frames", "/polish": "polish", "/desktop/publish": "desktop"}.get(url.path)
             if self.command == "POST" and kind:
                 size = int(self.headers.get("Content-Length", 0))
-                if size < 1 or size > 16 * 1024 * 1024:
+                if size < 1 or size > (desktop_sync.LIMIT if kind == "desktop" else 16 * 1024 * 1024):
                     raise ValueError("请求大小无效")
                 payload = json.loads(self.rfile.read(size))
                 if not isinstance(payload, dict):
                     raise ValueError("请求必须为 JSON 对象")
+                if kind == "desktop":
+                    return self.reply(200, desktop_sync.publish_snapshot(payload))
                 # ponytail: one process owns the small job cache; use persistent tasks if reconnects across restarts are needed.
                 expire_jobs()
                 return self.reply(200, start_job(kind, payload))

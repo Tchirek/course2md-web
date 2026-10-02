@@ -163,6 +163,17 @@ const HANDLERS = {
     return { cancelled: true };
   },
 
+  'desktop.publish': async (payload, _message, sender) => {
+    if (sender.id !== chrome.runtime.id) throw new Error('仅接受本扩展的同步请求');
+    await ensureLocalHelper();
+    const response = await helperFetch('/desktop/publish', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(65_000) });
+    const value = await response.json();
+    if (response.status === 404) throw new Error('浏览器连接需要更新后才能同步');
+    if (!response.ok) throw new Error(value.error ?? '同步失败');
+    return value;
+  },
+
   'file.save': (payload) => saveFile(payload),
   'file.saveBundle': (payload) => saveBundle(payload),
   /** 打开设置页（弹窗里的链接用，避免弹窗内嵌 options）。 */

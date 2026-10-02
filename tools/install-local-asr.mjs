@@ -18,7 +18,7 @@ await stopServices();
 const source = path.dirname(fileURLToPath(import.meta.url));
 const installed = path.join(dataDir(), 'helper', 'tools');
 mkdirSync(installed, { recursive: true });
-for (const name of ['cli_bridge.py', 'native-helper.cs', 'host-registration.mjs', 'helper-data.mjs', 'extension-ids.mjs']) {
+for (const name of ['cli_bridge.py', 'desktop_sync.py', 'native-helper.cs', 'host-registration.mjs', 'helper-data.mjs', 'extension-ids.mjs']) {
   if (path.resolve(source) !== path.resolve(installed)) copyFileSync(path.join(source, name), path.join(installed, name));
 }
 const { registerHost } = await import(pathToFileURL(path.join(installed, 'host-registration.mjs')).href);

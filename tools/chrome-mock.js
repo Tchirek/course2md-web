@@ -163,6 +163,7 @@
         if (/^(asr|polish)\.local\.(start|status)$/.test(type)) {
           return { ok: true, value: { state: 'ready', message: 'CLI 已连接 · 模型按需准备', model: type.startsWith('asr') ? 'Qwen3-ASR-1.7B' : 'test-llm' } };
         }
+        if (type === 'desktop.publish') return { ok: true, value: { saved: true, course: 'demo', version: 'web-demo' } };
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
         return { ok: true, value: null };
       },

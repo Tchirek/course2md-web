@@ -25,6 +25,8 @@ import { all, button, el, one, plain } from './panel-dom.js';
  * @property {boolean} [imagesPending]
  * @property {boolean} [exportReady]
  * @property {boolean} [exportBusy]
+ * @property {boolean} [desktopSyncing]
+ * @property {boolean} [desktopSynced]
  * @property {Record<'copy'|'download', boolean>} [pendingExport]
  * @property {Record<'copy'|'download', boolean>} [exportFlash]
  */
@@ -37,6 +39,7 @@ export class Panel {
    * @param {(patch:object) => unknown} handlers.onSettings
    * @param {(seconds:number) => unknown} handlers.onSeek
    * @param {() => unknown} [handlers.onCopy]
+   * @param {() => unknown} [handlers.onDesktopSync]
    * @param {() => unknown} [handlers.onCopyText]
    * @param {() => unknown} [handlers.onDownload]
    * @param {() => unknown} [handlers.onRerun]
@@ -403,6 +406,13 @@ export class Panel {
     });
 
     foot.append(copy, save);
+
+    if (settings?.desktopSync && this.handlers.onDesktopSync) {
+      const sync = iconButton({ iconName: 'open', label: this.state.desktopSyncing ? '正在同步' : this.state.desktopSynced ? '已同步到 course2md' : '同步到 course2md',
+        onClick: () => this.handlers.onDesktopSync?.() });
+      sync.disabled = !ready || this.state.exportBusy || !this.state.exportReady || this.state.desktopSyncing === true;
+      foot.appendChild(sync);
+    }
 
     const spacer = el('div', 'c2md-actions-spacer');
     foot.appendChild(spacer);

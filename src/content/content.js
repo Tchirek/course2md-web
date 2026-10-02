@@ -6,7 +6,7 @@
 import { pickAdapter, siteLabel } from '../adapters/index.js';
 import { toErrorState } from './errors.js';
 import { Panel } from './panel.js';
-import { buildDoc, fileNameFor } from '../core/format.js';
+import { buildDoc, fileNameFor, desktopSnapshot } from '../core/format.js';
 import { runSubtitlePipeline, runAsrPipeline, finalize, organize, MissingSourceError, AbortError } from './pipeline.js';
 import { copyText, send } from './messaging.js';
 import { imageBundle, markdownOf, plainTextOf } from './exporter.js';
@@ -54,6 +54,8 @@ export class Controller {
     this.previewSections = [];
     /** @type {import('../core/format.js').Doc|null} */
     this.doc = null;
+    this.desktopSyncing = false;
+    this.desktopSynced = false;
     /** @type {Status} */
     this.status = 'idle';
     /** @type {ErrorState|null} */
@@ -101,6 +103,7 @@ export class Controller {
       onSeek: (sec) => this.seek(sec),
       onCopy: () => this.requestExport('copy'),
       onCopyText: () => this.copyPlainText(),
+      onDesktopSync: () => this.syncDesktop(),
       onDownload: () => this.requestExport('download'),
       onRerun: () => {
         this.autoRunArmed = true;
@@ -324,6 +327,8 @@ export class Controller {
       exportBusy: this.exportBusy(),
       pendingExport: { ...this.pendingExport },
       exportFlash: { ...this.exportFlash },
+      desktopSyncing: this.desktopSyncing,
+      desktopSynced: this.desktopSynced,
     };
   }
 
@@ -554,7 +559,7 @@ export class Controller {
   }
 
   markdown() {
-    return markdownOf(this.doc, this.settings);
+    return markdownOf(this.doc, this.settings, this.built?.sections ?? this.doc?.sections);
   }
 
   plainText() {
@@ -638,7 +643,33 @@ export class Controller {
       return { saved: false };
     }
   }
-
+  async syncDesktop() {
+    if (!this.settings.desktopSync || !this.doc || this.desktopSyncing || !this.exportReady() || this.exportBusy()) return;
+    const currentDoc = this.doc;
+    this.desktopSyncing = true;
+    this.desktopSynced = false;
+    this.panel.setState(this.panelState());
+    try {
+      const doc = { ...currentDoc, meta: { ...currentDoc.meta, polished: Boolean(this.settings.polish && this.polisher.progress.hasResult),
+        showTimestamps: this.settings.showTimestamps, imageLevel: this.settings.imageLevel } };
+      const sections = this.settings.imageLevel === 'none'
+        ? (this.built?.sections ?? currentDoc.sections).map((s) => ({ ...s, frames: [] })) : this.previewSections;
+      const input = { ...desktopSnapshot(doc, sections), events: this.built?.originalEvents ?? [] };
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
+      const requestId = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const saved = await send({ type: 'desktop.publish', payload: { ...input, requestId } });
+      if (this.doc === currentDoc) {
+        this.desktopSynced = Boolean(saved.saved);
+        setTimeout(() => { this.desktopSynced = false; this.panel.setState(this.panelState()); }, 1800);
+      }
+      return saved;
+    } catch (error) {
+      if (this.doc === currentDoc) this.error = toErrorState(error);
+    } finally {
+      this.desktopSyncing = false;
+      this.panel.setState(this.panelState());
+    }
+  }
 
   /** @param {string} [section] 设置页要打开的分区 */
   async openOptions(section) {

@@ -66,20 +66,23 @@ export async function meta() {
   const data = state?.videoData;
   const bvid = bvidFrom(location);
   const part = new URLSearchParams(location.search).get('p');
-  const url = `https://www.bilibili.com/video/${bvid}${/^[1-9]\d*$/.test(part ?? '') ? `?p=${part}` : ''}`;
+  const number = /^[1-9]\d*$/.test(part ?? '') ? Number(part) : 1;
+  const url = `https://www.bilibili.com/video/${bvid}${/^[1-9]\d*$/.test(part ?? '') || data?.pages?.length > 1 ? `?p=${number}` : ''}`;
 
   if (data) {
+    const selected = data.pages?.[number - 1];
+    const title = String(data.title ?? '').trim() || document.title;
     return {
-      title: String(data.title ?? '').trim() || document.title,
+      title: data.pages?.length > 1 ? `${title} · ${selected?.part || `第 ${number} 节`}` : title,
       uploader: String(data.owner?.name ?? '').trim(),
-      duration: Number(data.duration) || Number(video()?.duration) || 0,
+      duration: Number(selected?.duration) || Number(video()?.duration) || Number(data.duration) || 0,
       url,
       site: id,
       language: '',
       videoId: bvid,
       // 交给下游拼接口用，不属于展示信息
       aid: Number(data.aid) || Number(state?.aid) || 0,
-      cid: Number(data.pages?.[(Number(part) || 1) - 1]?.cid) || Number(state?.cid) || Number(data.cid) || 0,
+      cid: Number(selected?.cid) || Number(state?.cid) || Number(data.cid) || 0,
     };
   }
 

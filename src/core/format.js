@@ -38,6 +38,8 @@ export function seekUrl(sourceUrl, sec) {
  * @property {number} [duration]
  * @property {string} [url]
  * @property {string} [site]
+ * @property {string} [videoId]
+ * @property {number} [cid]
  * @property {string} [language]
  * @property {string} [source] 文字来源（model.js 的 SOURCE）
  */
@@ -86,13 +88,16 @@ export function seekUrl(sourceUrl, sec) {
 export function buildDoc(meta, sections) {
   return {
     schemaVersion: SCHEMA_VERSION,
-    generator: { name: 'course2md-web', version: '0.1.0' },
+    generator: { name: 'course2md-web', version: globalThis.chrome?.runtime?.getManifest?.().version ?? '0.0.0' },
     meta: {
+      ...meta,
       title: meta.title ?? '',
       uploader: meta.uploader ?? '',
       duration: Number(meta.duration) || 0,
       url: meta.url ?? '',
       site: meta.site ?? '',
+      videoId: meta.videoId ?? '',
+      cid: meta.cid ?? 0,
       language: meta.language ?? '',
       source: meta.source ?? '',
     },
@@ -100,6 +105,7 @@ export function buildDoc(meta, sections) {
       title: s.title ?? '',
       t: s.t,
       end: s.end,
+      ...(s.frames ? { frames: s.frames.map((frame) => ({ ...frame })) } : {}),
       segments: s.segments
         .filter((seg) => seg.state !== 'skipped')
         .map((seg) => {
@@ -195,7 +201,7 @@ export function toPlainText(doc, opts = {}) {
 }
 
 /**
- * 结构化 JSON，字段名与 course2md 的 structured.json 对齐。
+ * 网页文档 JSON；course2md document.json 用 desktopSnapshot 显式转换。
  * @param {Doc} doc
  * @param {{pretty?: boolean}} [opts]
  */
@@ -267,4 +273,68 @@ export function fileNameFor(title, ext = 'md') {
     .trim()
     .slice(0, 80);
   return `${base || 'notes'}.${ext}`;
+}
+
+/** @param {DocSection[]} sections @param {boolean} original */
+export function shownSections(sections, original) {
+  return original ? sections.map((section) => ({ ...section,
+    segments: section.segments.map((p) => ({ ...p, text: p.raw ?? p.text, state: /** @type {const} */ ('kept') })) })) : sections;
+}
+
+/** @typedef {{schema: number, meta: {title: string, uploader: string, duration: number, webpage_url: string, extractor: string, id: string}, sections: {t: number, end: number, image: string, speech: import('./model.js').TranscriptEvent[]}[], summary?: {tldr: string, key_points: string[], outline: {t: number, title: string, detail: string}[]}|null}} DesktopDocument */
+
+/**
+ * 一段只归属一次；章节与所有图片保存在网页伴随文档中，course2md 每节只接收一张图。
+ * @param {Doc} doc
+ * @param {DocSection[]} sections
+ */
+export function desktopSnapshot(doc, sections) {
+  /** @type {Record<string, string>} */
+  const images = {};
+  const web = buildDoc(doc.meta, sections);
+  web.sections = sections.map((s) => ({ ...s, segments: s.segments.map((p) => ({ ...p })), frames: (s.frames ?? []).map((f) => ({ ...f })) }));
+  web.generator = doc.generator;
+  let count = 0;
+  /** @type {Map<number, {data: string, path: string}>} */
+  const framePaths = new Map();
+  for (const section of web.sections) {
+    for (const frame of section.frames ?? []) {
+      if (!frame.image) continue;
+      const previous = framePaths.get(frame.t);
+      if (previous) {
+        if (previous.data !== frame.image) throw new Error('同一时刻出现不同画面');
+        frame.image = previous.path;
+        continue;
+      }
+      const match = /^data:image\/(jpeg|png|webp);base64,/.exec(frame.image);
+      if (!match) throw new Error('只能保存已取得的本机画面');
+      const name = `frames/slide_${String(++count).padStart(4, '0')}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`;
+      images[name] = frame.image;
+      framePaths.set(frame.t, { data: frame.image, path: name });
+      frame.image = name;
+    }
+  }
+  const marks = new Map(web.sections.map((s) => [s.t, '']));
+  for (const s of web.sections) for (const f of s.frames ?? []) if (f.image) marks.set(f.t, f.image);
+  /** @type {DesktopDocument} */
+  const document = {
+    schema: 1,
+    meta: { title: doc.meta.title ?? '', uploader: doc.meta.uploader ?? '', duration: doc.meta.duration ?? 0,
+      webpage_url: doc.meta.url ?? '', extractor: doc.meta.site ?? '', id: doc.meta.videoId ?? '' },
+    sections: [...marks].sort(([a], [b]) => a - b).map(([t, image]) => ({ t, end: 0, image, speech: [] })),
+    summary: null,
+  };
+  const native = document.sections;
+  const end = web.sections.flatMap((s) => s.segments).reduce((last, p) => Math.max(last, p.end), doc.meta.duration ?? 0);
+  for (let i = 0; i < native.length; i++) native[i].end = native[i + 1]?.t ?? Math.max(end, native[i].t);
+  let index = 0;
+  const shown = shownSections(web.sections, doc.meta.polished === false);
+  for (const p of shown.flatMap((s) => s.segments).filter((p) => p.state !== 'skipped').sort((a, b) => a.start - b.start)) {
+    const mid = (p.start + p.end) / 2;
+    // ponytail: linear scan per paragraph keeps out-of-order/overlapping cue midpoints correct.
+    index = 0;
+    while (index + 1 < native.length && native[index + 1].t <= mid) index++;
+    native[index]?.speech.push({ start: p.start, end: p.end, text: p.text, ...(p.raw !== undefined ? { raw: p.raw } : {}) });
+  }
+  return { document, web, images, markdown: toMarkdown({ ...web, sections: shown }, { timestamps: doc.meta.showTimestamps, images: true }) };
 }

@@ -86,6 +86,12 @@ def finish(kind, payload):
 
 def main():
     executable = cli().resolve()
+    env = dict(os.environ, C2MD_UPSTREAM_EXE=str(executable))
+    test_file = Path(__file__).resolve().parents[1] / "tests/desktop-sync.test.py"
+    # Source checkouts test interoperability; the connection ZIP contains no test fixtures.
+    if test_file.is_file():
+        subprocess.run([sys.executable, str(test_file), "DesktopSyncTest.test_latest_engine_reprocesses_and_shares_publish_lock"],
+                       env=env, check=True, **bridge.hidden())
     with tempfile.TemporaryDirectory(prefix="course2md-cli-", suffix=" space") as scratch:
         root = Path(scratch)
         os.environ.update(C2MD_DATA_DIR=str(root / "data"), C2MD_UPSTREAM_EXE=str(executable), XDG_CONFIG_HOME=str(root / "config"), C2MD_UPSTREAM_CONFIG=str(root / "config/course2md/config.toml"))

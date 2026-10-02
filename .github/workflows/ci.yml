@@ -41,7 +41,7 @@ jobs:
         run: brew install ffmpeg
       - run: npm ci
       - name: Python syntax
-        run: python -m py_compile tools/cli_bridge.py tools/check-cli.py
+        run: python -m py_compile tools/cli_bridge.py tools/desktop_sync.py tools/check-cli.py
       - name: Native browser connection
         env:
           C2MD_DATA_DIR: ${{ runner.temp }}/course2md-browser

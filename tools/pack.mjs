@@ -27,6 +27,7 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 /** Files required to register, run and check the CLI browser connection. */
 const HELPER_FILES = [
   'tools/cli_bridge.py',
+  'tools/desktop_sync.py',
   'tools/run-cli.mjs',
   'tools/check-cli.py',
   'tools/engine-pins.json',
