@@ -137,7 +137,7 @@ async function makeZip(name, stage, populate) {
   const args = packer.cmd.endsWith('zip')
     ? ['-r', '-q', zipPath, ...expected]
     : ['-a', '-cf', zipPath, '-C', stage, ...expected];
-  const packed = spawnSync(packer.cmd, args, { stdio: 'inherit' });
+  const packed = spawnSync(packer.cmd, args, { cwd: packer.cwd, stdio: 'inherit' });
   if (packed.status !== 0) {
     console.error(`打包失败：${packer.cmd}`);
     process.exit(packed.status ?? 1);
@@ -151,6 +151,13 @@ async function makeZip(name, stage, populate) {
   const bad = fileEntries.filter((entry) => entry.includes('\\'));
   if (bad.length || fileEntries.length !== expected.length) {
     console.error(`${name} 包内容不对：条目 ${fileEntries.length}/${expected.length}${bad.length ? `，反斜杠路径 ${bad.length} 个` : ''}`);
+    process.exit(1);
+  }
+  const metadata = expected.includes('manifest.json') ? 'manifest.json' : 'package.json';
+  const unpacked = spawnSync(packer.cmd.endsWith('zip') ? 'unzip' : packer.cmd,
+    packer.cmd.endsWith('zip') ? ['-p', zipPath, metadata] : ['-xOf', zipPath, metadata], { encoding: 'utf8' });
+  if (unpacked.status !== 0 || JSON.parse(unpacked.stdout || '{}').version !== version) {
+    console.error(`${name} 包内版本与发行版本 ${version} 不符`);
     process.exit(1);
   }
   rmSync(stage, { recursive: true, force: true });
