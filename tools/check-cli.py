@@ -11,7 +11,8 @@ import tempfile
 import threading
 import time
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+from unittest.mock import patch
 import cli_bridge as bridge
 
 
@@ -88,7 +89,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="course2md-cli-", suffix=" space") as scratch:
         root = Path(scratch)
         os.environ.update(C2MD_DATA_DIR=str(root / "data"), C2MD_UPSTREAM_EXE=str(executable), XDG_CONFIG_HOME=str(root / "config"), C2MD_UPSTREAM_CONFIG=str(root / "config/course2md/config.toml"))
-        endpoint = ThreadingHTTPServer(("127.0.0.1", 0), Endpoint)
+        with patch("socket.getfqdn", side_effect=AssertionError("Loopback must not use DNS")):
+            endpoint = bridge.LoopbackServer(("127.0.0.1", 0), Endpoint)
         threading.Thread(target=endpoint.serve_forever, daemon=True).start()
         base = f"http://127.0.0.1:{endpoint.server_port}/v1"
         config = Path(os.environ["C2MD_UPSTREAM_CONFIG"])

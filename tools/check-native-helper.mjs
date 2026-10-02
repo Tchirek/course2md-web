@@ -117,7 +117,8 @@ async function checkHost({ label, command, scriptSource = null, configEol }) {
       hostPath = join(dir, 'host.exe');
       await copyFile(command, hostPath);
     }
-    await writeFile(join(dir, 'fixture.py'), `from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nclass Handler(BaseHTTPRequestHandler):\n def log_message(self, *args): pass\n def do_GET(self):\n  self.send_response(200); self.end_headers(); self.wfile.write(b'{"engine":"course2md-cli"}')\n  if self.path == '/shutdown': self.server.shutdown()\nThreadingHTTPServer(('127.0.0.1', ${port}), Handler).serve_forever()\n`);
+    await copyFile(join(HERE, 'cli_bridge.py'), join(dir, 'cli_bridge.py'));
+    await writeFile(join(dir, 'fixture.py'), `from http.server import BaseHTTPRequestHandler\nfrom cli_bridge import LoopbackServer\nclass Handler(BaseHTTPRequestHandler):\n def log_message(self, *args): pass\n def do_GET(self):\n  self.send_response(200); self.end_headers(); self.wfile.write(b'{"engine":"course2md-cli"}')\n  if self.path == '/shutdown': self.server.shutdown()\nLoopbackServer(('127.0.0.1', ${port}), Handler).serve_forever()\n`);
     // 宿主确认启动后要把配置第 4 行指向的访问令牌交出来
     const token = randomBytes(32).toString('hex');
     await writeFile(join(dir, 'helper-token'), token);

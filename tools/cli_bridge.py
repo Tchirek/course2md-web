@@ -21,6 +21,14 @@ import urllib.parse
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
+
+
+class LoopbackServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer's optional reverse DNS can hang on macOS; loopback needs no lookup.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address
 
 
 def data_dir():
@@ -476,5 +484,5 @@ if __name__ == "__main__":
         native_host()
     else:
         token()
-        with ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("C2MD_HELPER_PORT", 8766))), Handler) as server:
+        with LoopbackServer(("127.0.0.1", int(os.environ.get("C2MD_HELPER_PORT", 8766))), Handler) as server:
             server.serve_forever()
