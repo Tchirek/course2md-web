@@ -44,7 +44,7 @@ jobs:
       - run: npm run pack
         env:
           C2MD_VERSION: ${{ steps.version.outputs.value }}
-      - name: Install Linux helper and verify native registration
+      - name: Install Linux MizoreLink and verify native registration
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
@@ -76,7 +76,7 @@ jobs:
         env:
           VERSION: ${{ needs.check.outputs.version }}
         run: node tools/build-installer.mjs "dist/course2md-helper-$VERSION.zip"
-      - name: Install Windows helper and verify native registration
+      - name: Install Windows MizoreLink and verify native registration
         if: runner.os == 'Windows'
         shell: pwsh
         env:
@@ -89,7 +89,7 @@ jobs:
           if ($taskProcess.ExitCode -ne 0) { throw 'Installer failed' }
           node tools/check-native-helper.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Native host check failed' }
-      - name: Install macOS helper and verify native registration
+      - name: Install macOS MizoreLink and verify native registration
         if: runner.os == 'macOS'
         shell: bash
         env:

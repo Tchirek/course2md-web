@@ -78,7 +78,7 @@ function buttonById(id) {
 }
 
 /**
- * 本机服务（转录、润色）的状态，由后台转述本机助手的回答。
+ * 本机服务（转录、润色）的状态，由后台转述 MizoreLink 的回答。
  * @typedef {{state: string, message?: string, model?: string}} LocalServiceStatus
  */
 
@@ -210,7 +210,7 @@ async function bindActions() {
   helperAsset = suffix ? `https://github.com/Tchirek/course2md-web/releases/download/v${version}/course2md-helper-${version}-${suffix}` : '';
   helperCanOpen = os === 'win' || os === 'mac';
   if (os === 'linux') byId('helper-description').textContent = '提供转录、截图和本机模型。Linux 首次安装需运行下载的 .run 文件；之后自动连接。';
-  if (!suffix) byId('helper-description').textContent = '当前系统暂不支持本机助手。';
+  if (!suffix) byId('helper-description').textContent = '当前系统暂不支持 MizoreLink。';
   buttonById('helper-install').addEventListener('click', installHelper);
   byId('helper-check').addEventListener('click', () => checkHelper());
   refreshHelperDownload();
@@ -257,13 +257,13 @@ async function checkHelper(quiet = false) {
   if (helperChecking) return;
   helperChecking = true;
   clearTimeout(helperConnectPoll);
-  if (!quiet) flash('helper-result', '正在连接本机助手', null);
+  if (!quiet) flash('helper-result', '正在连接 MizoreLink', null);
   try {
     await send({ type: 'helper.check' });
     helperReady = true;
     helperWaitUntil = 0;
     clearTimeout(helperConnectPoll);
-    if (!helperDownload || helperDownload.state === 'complete') flash('helper-result', '本机助手已连接', true);
+    if (!helperDownload || helperDownload.state === 'complete') flash('helper-result', 'MizoreLink 已连接', true);
   } catch (error) {
     helperReady = false;
     if (!quiet) flash('helper-result', errorText(error), false);
@@ -281,7 +281,7 @@ function renderHelperInstaller() {
   button.disabled = helperInstalling || !helperAsset || (downloading && !needsConfirmation && !helperDownload?.paused) || (helperDownload?.state === 'complete' && !helperCanOpen);
   button.textContent = needsConfirmation ? '确认下载' : downloading ? (helperDownload?.paused ? '继续下载' : '正在下载')
     : helperDownload?.state === 'complete' && (!helperReady || !helperCanOpen) ? (helperCanOpen ? '打开安装器' : '安装器已下载')
-    : helperReady ? '更新助手' : '安装本机助手';
+    : helperReady ? '更新 MizoreLink' : '安装 MizoreLink';
   button.classList.toggle('c2md-button--quiet', helperReady);
 }
 

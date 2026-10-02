@@ -1,4 +1,4 @@
-//! 本機モデルによる文字起こしの流れ：本機助手での高速抽出、ブラウザでのオフライン復号、再生録音の順に試す。
+//! 本機モデルによる文字起こしの流れ：MizoreLinkでの高速抽出、ブラウザでのオフライン復号、再生録音の順に試す。
 
 import { fmtTs } from '../core/time.js';
 import { MissingSourceError, AbortError } from '../core/errors.js';

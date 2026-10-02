@@ -1,8 +1,8 @@
-//! 打包发布：扩展、通用助手源码包，以及当前系统的单文件安装器。
+//! 打包发布：扩展、通用 MizoreLink 源码包，以及当前系统的单文件安装器。
 //!
 //! 1. course2md-<ver>.zip —— 扩展本体。浏览器扩展不区分操作系统与 CPU 架构，
 //!    Windows、Linux、Intel/Apple Silicon macOS 加载的是同一个包。
-//! 2. course2md-helper-<ver>.zip —— 本机助手：提取服务、原生宿主、安装与检查
+//! 2. course2md-helper-<ver>.zip —— MizoreLink：提取服务、原生宿主、安装与检查
 //!    脚本。纯 Node/Python 实现，同样全平台一份；目录保持 tools/ 前缀，
 //!    安装脚本里的相对路径才能原样工作。
 //!
@@ -24,7 +24,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
 const version = releaseVersion(process.env.C2MD_VERSION, manifest.version);
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 
-/** 助手运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
+/** MizoreLink 运行/安装/自检所需的全部文件（check-local-asr.mjs 依赖扩展源码，不在内）。 */
 const HELPER_FILES = [
   'tools/install-helper.ps1',
   'tools/install-helper.py',
@@ -81,7 +81,7 @@ artifacts.push(await makeZip(`course2md-${version}.zip`, join(DIST, 'stage-ext')
   return ['manifest.json', ...LEGAL_FILES, ...allFiles(join(ROOT, 'src'), 'src')];
 }));
 
-// ---------- 2. 本机助手 zip ----------
+// ---------- 2. MizoreLink zip ----------
 artifacts.push(await makeZip(`course2md-helper-${version}.zip`, join(DIST, 'stage-helper'), async (stage) => {
   writeFileSync(join(stage, 'package.json'), JSON.stringify({
     name: pkg.name,

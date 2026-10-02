@@ -172,7 +172,7 @@
         }
         if (type === 'file.save') return { ok: true, value: { filename: 'notes.md' } };
         if (type === 'helper.check') return !helperReady
-          ? { ok: false, error: '首次使用请安装本机助手。', setupRequired: true }
+          ? { ok: false, error: '首次使用请安装 MizoreLink。', setupRequired: true }
           : { ok: true, value: { ready: true } };
         if (type === 'desktop.publish') return { ok: true, value: { saved: true, course: 'demo', version: 'web-demo' } };
         return { ok: true, value: null };

@@ -101,4 +101,4 @@ if ([IO.Path]::GetFullPath($PSScriptRoot) -ne [IO.Path]::GetFullPath($taskDeploy
     }
 }
 & $taskNode (Join-Path $taskDeploy 'install-local-asr.mjs') @ExtensionId
-if ($LASTEXITCODE -ne 0) { throw 'Helper registration failed' }
+if ($LASTEXITCODE -ne 0) { throw 'MizoreLink registration failed' }

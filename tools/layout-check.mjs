@@ -537,11 +537,11 @@ try {
       const disabled = await page.evaluate(() => document.getElementById('desktop-sync')?.checked === false);
       disabled ? pass('options 同步默认关闭') : fail('options', '同步默认开启');
 
-      await page.waitForFunction(() => document.getElementById('helper-install').textContent === '更新助手');
+      await page.waitForFunction(() => document.getElementById('helper-install').textContent === '更新 MizoreLink');
       pass('options 已安装时自动连接并收起安装提示');
       await page.click('#helper-check');
       await page.waitForFunction(() => document.getElementById('helper-result').textContent.includes('已连接'));
-      pass('options 可以检查助手连接');
+      pass('options 可以检查 MizoreLink 连接');
     }
     await page.close();
   }
@@ -617,7 +617,7 @@ try {
     id === 1 ? pass('options 仅复用本扩展发起的安装器下载') : fail('options/download-owner', String(id));
     await page.evaluate(() => { chrome.__mock.downloadItems[0].exists = false; });
     await page.click('#helper-install');
-    await page.waitForFunction(() => document.getElementById('helper-install').textContent === '安装本机助手');
+    await page.waitForFunction(() => document.getElementById('helper-install').textContent === '安装 MizoreLink');
     pass('options 安装器被删除后可重新下载');
     await page.close();
   }

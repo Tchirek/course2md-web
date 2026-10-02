@@ -1,4 +1,4 @@
-//! 画面（フレーム）の取得：密度に応じて各節の取得時刻を決め、本機助手から一枚ずつ受け取る。
+//! 画面（フレーム）の取得：密度に応じて各節の取得時刻を決め、MizoreLinkから一枚ずつ受け取る。
 //! FrameLoader owns the request lifetime, queue, cache and signatures.
 
 import { keepChanged } from '../core/similarity.js';

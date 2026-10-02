@@ -1,4 +1,4 @@
-// Removes the local helper: stops its services, undoes the browser registration and autostart,
+// Removes MizoreLink: stops its services, undoes the browser registration and autostart,
 // and deletes the host files. Downloaded runtimes and polish models are kept unless --purge is given,
 // so a later reinstall does not download them again. The speech model is never deleted here: it is
 // shared with the original course2md, which may be using it.
@@ -26,8 +26,8 @@ if (purge) {
 }
 for (const item of removed) process.stdout.write(`已删除：${item}\n`);
 process.stdout.write(purge
-  ? '本机助手已卸载，专用运行库已删除；共享模型与 course2md 配置已保留。\n'
-  : '本机助手已卸载。下载的模型与运行库仍保留，重装时无须再下；要一并删除请运行 npm run local:uninstall -- --purge。\n');
+  ? 'MizoreLink 已卸载，专用运行库已删除；共享模型与 course2md 配置已保留。\n'
+  : 'MizoreLink 已卸载。下载的模型与运行库仍保留，重装时无须再下；要一并删除请运行 npm run local:uninstall -- --purge。\n');
 
 /**
  * Where this project's runtimes are downloaded: the chosen data directory and, if the data was moved

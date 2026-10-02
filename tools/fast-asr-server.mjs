@@ -1,7 +1,7 @@
 // 可选本机桥：yt-dlp 下载音轨，ffmpeg 快速切片，再交给现有 OpenAI 兼容 ASR。
 // node tools/fast-asr-server.mjs；只监听 127.0.0.1。
 //
-// 除 GET /health 外，所有请求都必须带访问令牌（x-c2md-token）。这个助手能读本机文件
+// 除 GET /health 外，所有请求都必须带访问令牌（x-c2md-token）。MizoreLink 能读本机文件
 // （file: URL）、带 Cookie 下载、启动外部程序；只看 Origin 是否以 chrome-extension://
 // 开头，别的扩展也能进来。令牌只经原生消息交给本扩展——那条通道由 allowed_origins
 // 限定到本扩展的 ID。
@@ -27,7 +27,7 @@ const ASR_PORT = Number(process.env.C2MD_ASR_PORT) || 8081;
 const ASR_HEALTH = `http://127.0.0.1:${ASR_PORT}/health`;
 const BUILTIN_ASR = new Set([`http://127.0.0.1:${ASR_PORT}`, `http://localhost:${ASR_PORT}`]);
 const MAX_BODY = 128 * 1024;
-/** この助手（ポートごと）の一時ファイルの置き場。起動時に空にする。 */
+/** このMizoreLink（ポートごと）の一時ファイルの置き場。起動時に空にする。 */
 const TEMP_ROOT = path.join(os.tmpdir(), `c2md-helper-${PORT}`);
 const jobs = new Map();
 const controllers = new Map();
@@ -42,7 +42,7 @@ let asrDevice = process.env.C2MD_ASR_DEVICE === 'cpu' ? 'cpu' : 'auto';
 let polishProcess = null;
 let polishStatus = { state: 'idle', message: '本机润色尚未启动' };
 ensureHelperToken();
-// 升级代码后，宿主注册可能过时（旧宿主不交令牌等）。在开始监听前静默修复：拉起本助手的
+// 升级代码后，宿主注册可能过时（旧宿主不交令牌等）。在开始监听前静默修复：拉起 MizoreLink 的
 // 旧宿主要等健康检查通过才应答，扩展随后再唤醒一次就会用上新宿主，用户无须重跑安装命令
 try {
   const reason = registrationOutdated();
@@ -162,7 +162,7 @@ http.createServer(async (req, res) => {
     res.end(JSON.stringify({ error: String(error?.message ?? error) }));
   }
 }).listen(PORT, '127.0.0.1', () => {
-  // 端口已归本进程：同一端口不会有另一个助手在用这些临时文件
+  // 端口已归本进程：同一端口不会有另一个 MizoreLink 在用这些临时文件
   sweepStaleTemp();
   // 更新代码不会重跑安装：旧版的 faster-whisper 环境在这里清掉（与宿主注册的自动修复同理）
   try {
@@ -170,11 +170,11 @@ http.createServer(async (req, res) => {
   } catch (error) {
     process.stderr.write(`清理旧版转录环境失败：${error?.message ?? error}\n`);
   }
-  process.stdout.write(`course2md 本机提取服务：http://127.0.0.1:${PORT}\n`);
+  process.stdout.write(`course2md MizoreLink：http://127.0.0.1:${PORT}\n`);
 });
 
 /**
- * 上一个助手被强制结束时留下的临时文件（下载到一半的媒体、画面缓存、cookie）。
+ * 上一个 MizoreLink 被强制结束时留下的临时文件（下载到一半的媒体、画面缓存、cookie）。
  * 平时它们在任务结束或一小时后删除；进程提前退出就等不到，所以启动时清一次。
  * 同步执行，赶在第一个请求之前。
  */
@@ -182,7 +182,7 @@ function sweepStaleTemp() {
   rmSync(TEMP_ROOT, { recursive: true, force: true });
   mkdirSync(TEMP_ROOT, { recursive: true });
   if (PORT !== 8766) return;
-  // 旧版助手直接放在系统临时目录里（mkdtemp 的 c2md-XXXXXX、c2md-video-XXXXXX），取帧的还夹着登录 cookie
+  // 旧版 MizoreLink 直接放在系统临时目录里（mkdtemp 的 c2md-XXXXXX、c2md-video-XXXXXX），取帧的还夹着登录 cookie
   for (const name of readdirSync(os.tmpdir())) {
     if (/^c2md-(?:video-)?[A-Za-z0-9]{6}$/.test(name)) rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
   }
@@ -191,7 +191,7 @@ function sweepStaleTemp() {
 /**
  * 调用 yt-dlp。给了浏览器登录态时，cookie 只在 yt-dlp 运行期间存在：写进单独的临时目录，
  * yt-dlp 一退出（成功、失败或取消）就删掉。以前取帧路径把它和视频缓存放在一起，要等一小时，
- * 助手在那之前退出的话，登录 cookie 就一直留在临时目录里。
+ * MizoreLink 在那之前退出的话，登录 cookie 就一直留在临时目录里。
  */
 async function ytDlp(args, url, cookieFile, signal) {
   if (process.platform === 'win32' && existsSync(path.join(dataDir(), 'bin', 'yt-dlp.exe'))) args = ['--js-runtimes', `node:${process.execPath}`, ...args];

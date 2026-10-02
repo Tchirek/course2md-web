@@ -1,6 +1,6 @@
 //! 原生消息宿主的注册与修复。
 //!
-//! 安装脚本首次注册；之后本机助手每次启动都检查注册是否过时（宿主源码更新、配置缺令牌行、
+//! 安装脚本首次注册；之后 MizoreLink 每次启动都检查注册是否过时（宿主源码更新、配置缺令牌行、
 //! Node 换了位置），过时就静默重做——升级代码后不必再手动运行安装命令。
 //! Windows 上正在运行的宿主 exe 无法覆盖，所以新 exe 按源码哈希命名，清单改指向新文件，
 //! 旧文件等不再被占用时再删。
@@ -105,13 +105,13 @@ export function registerHost({ extensionIds = [] } = {}) {
     chmodSync(host, 0o755);
   }
   writeFileSync(manifestPath, JSON.stringify({
-    name: HOST_NAME, description: 'course2md local helper launcher', path: host, type: 'stdio', allowed_origins: allowedOrigins,
+    name: HOST_NAME, description: 'MizoreLink Standalone launcher', path: host, type: 'stdio', allowed_origins: allowedOrigins,
   }, null, 2));
 
   for (const location of manifestLocations()) {
     if (isWin) {
       const result = spawnSync('reg.exe', ['add', location, '/ve', '/t', 'REG_SZ', '/d', manifestPath, '/f'], { encoding: 'utf8' });
-      if (result.status !== 0) throw new Error(result.stderr || '无法注册本机助手');
+      if (result.status !== 0) throw new Error(result.stderr || '无法注册 MizoreLink');
     } else {
       mkdirSync(path.dirname(location), { recursive: true });
       copyFileSync(manifestPath, location);
@@ -123,7 +123,7 @@ export function registerHost({ extensionIds = [] } = {}) {
   return { host, allowedOrigins, detected, token };
 }
 
-/** 清理清单不再指向的旧宿主 exe（本机助手每次启动时调用）。 */
+/** 清理清单不再指向的旧宿主 exe（MizoreLink 每次启动时调用）。 */
 export function cleanStaleHosts() {
   if (!isWin) return;
   const dir = dataDir();
@@ -173,7 +173,7 @@ function registerAutostart(dir) {
     const quote = (value) => `"${value.replaceAll('"', '\\"')}"`;
     mkdirSync(path.join(home, '.config', 'autostart'), { recursive: true });
     writeFileSync(path.join(home, '.config', 'autostart', 'course2md-helper.desktop'),
-      `[Desktop Entry]\nType=Application\nName=course2md local helper\nExec=${quote(process.execPath)} ${quote(helper)}\nX-GNOME-Autostart-enabled=true\n`);
+      `[Desktop Entry]\nType=Application\nName=MizoreLink\nExec=${quote(process.execPath)} ${quote(helper)}\nX-GNOME-Autostart-enabled=true\n`);
   }
 }
 

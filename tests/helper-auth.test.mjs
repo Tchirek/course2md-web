@@ -16,7 +16,7 @@ const freePort = () => new Promise((resolve) => {
   });
 });
 
-test('本机助手除 /health 外，没有访问令牌一律拒绝', async (t) => {
+test('MizoreLink 除 /health 外，没有访问令牌一律拒绝', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'c2md-auth-'));
   const port = await freePort();
   const helper = spawn(process.execPath, ['tools/fast-asr-server.mjs'], {

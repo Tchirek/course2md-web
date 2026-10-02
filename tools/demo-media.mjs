@@ -5,7 +5,7 @@
 //   npm run media -- deferred     名前に "deferred" を含む場面だけ
 //   C2MD_MEDIA_KEEP=1 npm run media   合成したコマを消さずに残す
 //
-// 要るもの：Edge、ffmpeg、ネットワーク、本機助手（截图を取るため。npm run local:install）。
+// 要るもの：Edge、ffmpeg、ネットワーク、MizoreLink（截图を取るため。npm run local:install）。
 //
 // 仕上げは録画ソフトと同じ考え方：
 // - 画面は CDP の screencast で記録する（変化したときだけ一枚届く）。待ち時間は早送りにする。

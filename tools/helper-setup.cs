@@ -72,7 +72,7 @@ class HelperSetup
         }
         using (Mutex single = new Mutex(false, "Local\\course2md-helper-setup"))
         {
-        if (!single.WaitOne(0)) { MessageBox.Show("本机助手正在安装，请等待安装完成。", "course2md"); return 1; }
+        if (!single.WaitOne(0)) { MessageBox.Show("MizoreLink 正在安装，请等待安装完成。", "MizoreLink"); return 1; }
         if (args.Length == 1 && args[0] == "--quiet")
         {
             Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
@@ -82,10 +82,10 @@ class HelperSetup
         }
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Form form = new Form { Text = "course2md 本机助手", ClientSize = new Size(520, 270),
+        Form form = new Form { Text = "MizoreLink", ClientSize = new Size(520, 270),
             StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false, MinimizeBox = false, Font = SystemFonts.MessageBoxFont, AutoScaleMode = AutoScaleMode.Dpi };
-        Label title = new Label { Text = "正在安装本机助手", Left = 24, Top = 24, Width = 470,
+        Label title = new Label { Text = "正在安装 MizoreLink", Left = 24, Top = 24, Width = 470,
             Height = 32, Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 14) };
         Label status = new Label { Text = "准备运行环境，完成后即可返回浏览器。", Left = 24, Top = 66, Width = 470, Height = 36 };
         ProgressBar progress = new ProgressBar { Left = 24, Top = 109, Width = 472, Height = 8,
@@ -108,7 +108,7 @@ class HelperSetup
             {
                 await Task.Run(() => Install(log));
                 result = 0;
-                title.Text = "本机助手已就绪";
+                title.Text = "MizoreLink 已就绪";
                 status.Text = "返回 course2md 即可使用；模型会在首次使用时自动准备。";
             }
             catch (Exception error) { title.Text = "安装未完成"; status.Text = error.Message; close.Text = "关闭"; }

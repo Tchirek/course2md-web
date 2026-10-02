@@ -64,7 +64,7 @@ function unixInstaller() {
   const payload = readFileSync(ZIP);
   const digest = createHash('sha256').update(payload).digest('hex');
   return `#!/bin/sh
-# course2md ${version}: self-contained helper installer; downloads only missing runtimes.
+# MizoreLink ${version}: self-contained installer; downloads only missing runtimes.
 set -eu
 umask 077
 case "$(uname -s)-$(uname -m)" in
@@ -108,7 +108,7 @@ with zipfile.ZipFile(root / 'helper.zip') as archive:
             raise RuntimeError('Invalid installer archive path')
     archive.extractall(root)
 C2MD_UNPACK
-echo 'Installing course2md helper…'
+echo 'Installing MizoreLink…'
 "$task_python" "$task_stage/tools/install-helper.py" "$@"
 echo 'Ready. Return to course2md in your browser.'
 exit 0

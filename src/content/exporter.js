@@ -55,7 +55,7 @@ export function imageBundle(doc, previewSections, settings) {
           return { ...frame, image: `frames/slide_${String(images.length).padStart(4, '0')}.jpg` };
         }),
     }));
-  if (!images.length) throw new Error('未能取得离线视频画面，请检查本机助手与媒体下载。');
+  if (!images.length) throw new Error('未能取得离线视频画面，请检查 MizoreLink 与媒体下载。');
   return {
     markdown: toMarkdown({ ...doc, sections }, { timestamps: settings.showTimestamps, images: true }),
     images,

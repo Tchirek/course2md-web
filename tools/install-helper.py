@@ -33,7 +33,7 @@ os.environ['PATH'] = str(binary) + os.pathsep + os.environ.get('PATH', '')
 
 
 def download(pin):
-    return pinned_download(pin['url'], cache / pin['url'].rsplit('/', 1)[-1], pin['sha256'], '正在准备本机助手运行环境')
+    return pinned_download(pin['url'], cache / pin['url'].rsplit('/', 1)[-1], pin['sha256'], '正在准备 MizoreLink 运行环境')
 
 
 with file_lock(cache / '.setup.lock'):

@@ -1,4 +1,4 @@
-// One-time setup for the local helper: registered as a native messaging host, the extension can wake it up; start automatically at login.
+// One-time setup for MizoreLink: registered as a native messaging host, the extension can wake it up; start automatically at login.
 // Windows: compiled exe host + registry; macOS/Linux: shebang script host + NativeMessagingHosts directory
 // (autostart uses LaunchAgent / XDG autostart respectively). The host behaviors on both sides are consistent (tools/native-host.mjs).
 //
@@ -32,29 +32,29 @@ const qwen = fileURLToPath(new URL('./qwen-asr.py', import.meta.url));
 const pythonEnv = { ...process.env, C2MD_DATA_DIR: dataDir() };
 const check = spawnSync(python, ['-c', 'import sys, tomllib; print("%d.%d" % sys.version_info[:2])'], { encoding: 'utf8', windowsHide: true });
 if (check.status !== 0) {
-  process.stdout.write('本机转录需要 Python 3.11 或更新版本（只用标准库）；装好后无须重跑本命令。本机助手照常安装。\n');
+  process.stdout.write('本机转录需要 Python 3.11 或更新版本（只用标准库）；装好后无须重跑本命令。MizoreLink 照常安装。\n');
 } else {
   // A data directory on another drive usually means the system drive is short of space. Unless the original
   // already has its own choice or its own copy of the model, both programs then keep the model there
   const target = sharedModelTarget();
   const shared = spawnSync(python, [qwen, ...(target ? ['--configure-models', target] : ['--model-dir'])],
     { encoding: 'utf8', windowsHide: true, env: pythonEnv });
-  if (shared.status !== 0) process.stdout.write(`没能确定与 course2md 共用的模型目录（本机助手照常安装）：${(shared.stdout || shared.stderr).trim()}\n`);
+  if (shared.status !== 0) process.stdout.write(`没能确定与 course2md 共用的模型目录（MizoreLink 照常安装）：${(shared.stdout || shared.stderr).trim()}\n`);
   else process.stdout.write(`本机转录与 course2md 共用模型目录：${shared.stdout.trim()}\n`);
 }
 removeObsoleteWhisper((target) => process.stdout.write(`已删除不再使用的 faster-whisper 转录环境与模型：${target}\n`));
-// 注册逻辑在 host-registration.mjs：本机助手启动时也用它自动修复过时的注册
+// 注册逻辑在 host-registration.mjs：MizoreLink 启动时也用它自动修复过时的注册
 const { host, allowedOrigins, detected, token } = registerHost({ extensionIds: requested });
 stopServices();
 
-// ヘルパーを直接起動せず、ブラウザと同じく登録したてのホスト経由で起こす。ホストの不具合は
+// MizoreLinkを直接起動せず、ブラウザと同じく登録したてのホスト経由で起こす。ホストの不具合は
 // 再起動後に拡張が起こせなくなって初めて気づくのではなく、今ここで報告される
 const reply = await wakeThroughHost(host);
-if (!reply.ok) throw new Error(`本机宿主已注册，但未能拉起助手：${reply.error}`);
-if (reply.token !== token) throw new Error('本机宿主没有交出正确的访问令牌；扩展将无法使用本机助手');
-process.stdout.write('本机助手已安装并设置为登录后运行。生成笔记时会自动启动转录模型。\n');
+if (!reply.ok) throw new Error(`本机宿主已注册，但未能拉起 MizoreLink：${reply.error}`);
+if (reply.token !== token) throw new Error('本机宿主没有交出正确的访问令牌；扩展将无法使用 MizoreLink');
+process.stdout.write('MizoreLink 已安装并设置为登录后运行。生成笔记时会自动启动转录模型。\n');
 if (detected.length) {
-  process.stdout.write(`已允许这些扩展调用本机助手：${allowedOrigins.map((origin) => origin.slice('chrome-extension://'.length, -1)).join('、')}\n`);
+  process.stdout.write(`已允许这些扩展调用 MizoreLink：${allowedOrigins.map((origin) => origin.slice('chrome-extension://'.length, -1)).join('、')}\n`);
 } else {
   process.stdout.write('没有在 Edge / Chrome 里找到已加载的 course2md，暂按默认扩展 ID 注册。\n' +
     '先在浏览器加载扩展再重新运行本命令即可自动识别；也可以直接带上 ID：node tools/install-local-asr.mjs <扩展ID>\n');

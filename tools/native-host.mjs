@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-//! 本机消息宿主（跨平台）：收到扩展的 start 消息就把本机助手拉起来。
+//! 本机消息宿主（跨平台）：收到扩展的 start 消息就把 MizoreLink 拉起来。
 //!
 //! Windows 上用的是 native-helper.cs 编译出的 exe（.cmd/.bat 会被浏览器拒绝）；
 //! macOS/Linux 允许带 shebang 的脚本直接作宿主，所以这一个 Node 脚本在两类
 //! 系统上行为一致。两者读同一份 `native-helper.config`（自己目录下的三行：
-//! node 路径、助手脚本路径、健康检查 URL），协议也一致：4 字节小端长度 + JSON。
+//! node 路径、MizoreLink 脚本路径、健康检查 URL），协议也一致：4 字节小端长度 + JSON。
 //!
-//! 配置第 4 行是助手访问令牌的文件路径。确认助手已启动后把令牌放进应答；这条通道
+//! 配置第 4 行是 MizoreLink 访问令牌的文件路径。确认 MizoreLink 已启动后把令牌放进应答；这条通道
 //! 只对 allowed_origins 里的扩展开放，所以令牌只会交给本扩展。
 
 import { spawn } from 'node:child_process';
@@ -58,11 +58,11 @@ async function main() {
   if (!(await healthy())) {
     // インストール時に記録したパスは無効になり得る（Node の更新で場所が変わった、プロジェクトを移動した等）。どれかを明示する
     if (!nodePath || !existsSync(nodePath)) throw new Error(`找不到 Node：${nodePath}`);
-    if (!helperPath || !existsSync(helperPath)) throw new Error(`找不到助手脚本：${helperPath}`);
+    if (!helperPath || !existsSync(helperPath)) throw new Error(`找不到 MizoreLink 脚本：${helperPath}`);
     const child = spawn(nodePath, [helperPath], { detached: true, stdio: 'ignore', windowsHide: true });
     let exited = null;
-    child.on('error', (error) => { exited = `无法启动助手进程：${error.message}`; });
-    child.on('exit', (code) => { exited ??= `助手进程启动后立即退出（代码 ${code}），可在项目目录运行 npm run fast-asr 查看报错`; });
+    child.on('error', (error) => { exited = `无法启动 MizoreLink 进程：${error.message}`; });
+    child.on('exit', (code) => { exited ??= `MizoreLink 进程启动后立即退出（代码 ${code}），可在项目目录运行 npm run fast-asr 查看报错`; });
     child.unref();
     // 最大 10 秒待つ：モデルのコールドスタートはホストの管轄外で、ここでは HTTP サービス自体の起動だけを待つ。プロセスが終了済みなら待たない
     for (let i = 0; i < 50 && !(await healthy()); i++) {
@@ -70,11 +70,11 @@ async function main() {
       await sleep(200);
     }
   }
-  if (!(await healthy())) return reply(false, `助手进程 10 秒内未在 ${healthUrl} 应答`);
+  if (!(await healthy())) return reply(false, `MizoreLink 进程 10 秒内未在 ${healthUrl} 应答`);
   reply(true, '', readToken(tokenFile));
 }
 
-/** 读取令牌文件；缺失或损坏（例如旧版助手）就不附带令牌。 */
+/** 读取令牌文件；缺失或损坏（例如旧版 MizoreLink）就不附带令牌。 */
 function readToken(file) {
   try {
     const token = readFileSync(file, 'utf8').trim();

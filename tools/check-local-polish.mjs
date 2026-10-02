@@ -1,4 +1,4 @@
-// 已启动本机助手后的真实模型冒烟测试。
+// 已启动 MizoreLink 后的真实模型冒烟测试。
 import assert from 'node:assert/strict';
 
 const base = 'http://127.0.0.1:8082/v1/chat/completions';

@@ -3,7 +3,7 @@
 import { SIGNATURE_WIDTH, signatureHeight } from '../core/similarity.js';
 
 /**
- * @param {string} dataUrl `data:image/jpeg;base64,…`（本机助手取回的画面）
+ * @param {string} dataUrl `data:image/jpeg;base64,…`（MizoreLink 取回的画面）
  * @returns {Promise<import('../core/similarity.js').Signature>}
  */
 export async function signatureOf(dataUrl) {
