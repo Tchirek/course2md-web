@@ -9,7 +9,7 @@ export function stopServices() {
   if (process.platform === 'win32') {
     const pattern = SERVICES.map((name) => name.replaceAll('.', '\\.')).join('|');
     spawnSync('powershell.exe', ['-NoProfile', '-Command',
-      `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '${pattern}' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`],
+      `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(node|python|pythonw)\\.exe$' -and $_.CommandLine -match '${pattern}' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`],
     { stdio: 'ignore' });
   } else {
     for (const name of SERVICES) spawnSync('pkill', ['-f', name], { stdio: 'ignore' });
