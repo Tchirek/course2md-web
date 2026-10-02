@@ -105,11 +105,14 @@ jobs:
             dist/*-macos.pkg
           if-no-files-found: error
 
-  # main への push はすべて、検査が通ればそのままリリースになる（版は tools/next-version.mjs が決める）
+  # Publish checked Standalone builds with the same two-edition download menu.
   release:
     needs: [check, installers]
     if: github.event_name == 'push' && github.ref == 'refs/heads/legacy/standalone-helper'
     runs-on: ubuntu-latest
+    concurrency:
+      group: course2md-release-downloads
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -121,6 +124,9 @@ jobs:
           pattern: '*'
           path: dist/
           merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Checksums
         working-directory: dist
         run: sha256sum *.zip *.exe *.pkg *.run > SHA256SUMS.txt
@@ -129,7 +135,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: v${{ needs.check.outputs.version }}
         run: |
+          node tools/release-choices.mjs standalone "$VERSION" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$VERSION" dist/*.zip dist/*.exe dist/*.pkg dist/*.run dist/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --title "course2md Web $VERSION · standalone helper" --latest=false \
-            --notes "Standalone helper, reader and library edition. Continued on legacy/standalone-helper." \
+            --target "$GITHUB_SHA" --title "course2md Web $VERSION · Standalone" --latest=false \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^)" --generate-notes
+          node tools/release-choices.mjs --sync

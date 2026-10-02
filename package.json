@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/speech-segments.test.mjs tests/next-version.test.mjs tests/manifest.test.mjs tests/frame-loader.test.mjs tests/polish-lifetime.test.mjs tests/library.test.mjs",
+    "test": "node --test tests/core.test.mjs tests/adapters.test.mjs tests/bilibili-tracks.test.mjs tests/download.test.mjs tests/stream.test.mjs tests/net.test.mjs tests/helper-auth.test.mjs tests/extension-ids.test.mjs tests/data-dir.test.mjs tests/speech-segments.test.mjs tests/next-version.test.mjs tests/manifest.test.mjs tests/frame-loader.test.mjs tests/polish-lifetime.test.mjs tests/library.test.mjs tests/release-choices.test.mjs",
     "test:core": "node --test tests/core.test.mjs",
     "serve": "node tools/serve.mjs",
     "pack": "node tools/pack.mjs",
