@@ -44,12 +44,12 @@ export function choiceNotes({ standalone, cli }, body = '') {
   const menu = `<!-- edition-choices:start -->
 ## 选择版本 · Choose your edition
 
-两版都有页面浮窗、字幕快取、时间戳、图片密度和自备 API。两条版本线独立更新，选一个扩展包即可。
-Both keep floating notes, fast subtitles, timestamps, image controls and custom APIs. Version numbers advance independently; choose one extension ZIP.
+两版都有页面浮窗、字幕快取、时间戳、图片密度和自备 API。阅读与课程管理交给 course2md 桌面端。两条版本线独立更新，选一个扩展包即可。
+Both keep floating notes, fast subtitles, timestamps, image controls and custom APIs. Reading and course management belong to the course2md desktop app. Version numbers advance independently; choose one extension ZIP.
 
 | 版本 · Edition | 侧重 · Best for | 本机处理需要 · Local processing needs | 下载 · Download |
 | --- | --- | --- | --- |
-| **独立版 · Standalone ${standalone.tag_name}** | 内置阅读器与课程库 · Built-in reader and course library | Web 本机助手，无需另装 CLI · Web helper, no separate CLI | ${ext(standalone)} |
+| **独立版 · Standalone ${standalone.tag_name}** | Web 管理模型与本机处理 · Web-managed models and processing | Web 本机助手，无需另装 CLI · Web helper, no separate CLI | ${ext(standalone)} |
 | **CLI 版 · CLI ${cli.tag_name}** | 复用 CLI 模型、配置与处理能力 · Reuse CLI models, settings and processing | course2md 2.0 CLI + 浏览器连接 · CLI + browser connection | ${ext(cli)} |
 
 - **独立版组件 · Standalone helper:** ${installer('Windows .exe', 'windows.exe')} · ${installer('macOS .pkg', 'macos.pkg')} · ${installer('Linux .run', 'linux.run')} · ${link(standalone, `course2md-helper-${version(standalone)}.zip`, '脚本包 · Script ZIP')} · ${link(standalone, 'SHA256SUMS.txt', 'SHA-256')}. [安装说明 · Setup](${repo}/blob/${standalone.tag_name}/README.md).
