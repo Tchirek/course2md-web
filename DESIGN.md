@@ -6,6 +6,8 @@
 
 ## 1. 与 course2md 的关系
 
+两版都以 0.4.5 的页面笔记流程为界，不内置独立阅读器、库浏览或课程管理。需要长期保存时，可在设置页启用默认关闭的「同步到 course2md」入口；它只写入桌面默认保存位置，读取与管理由桌面端负责。两版区别在本机处理：独立版使用 Web 助手，主线使用 course2md CLI。保存契约见 [桌面同步](docs/UPSTREAM-INTEGRATION.md)。
+
 [mizorewww/course2md](https://github.com/mizorewww/course2md) 是 Rust 写的命令行 + 桌面工具：
 把视频变成「截图 + 按截图分段的文字」的图文讲义。它是本地程序，靠 `yt-dlp` 下载、
 靠 `ffmpeg` 抽帧和抽音轨。

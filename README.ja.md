@@ -19,7 +19,7 @@
 
 </div>
 
-Web には Standalone 版と CLI 版があり、[リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)で選べます。このブランチは Standalone 版のヘルパー、リーダー、ライブラリを開発し、CLI 版のソースは [main](https://github.com/Tchirek/course2md-web/tree/main) にあります。
+Web には Standalone 版と CLI 版があり、[リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)で選べます。このブランチは Standalone 版のヘルパーとローカル処理を開発し、CLI 版のソースは [main](https://github.com/Tchirek/course2md-web/tree/main) にあります。
 
 # course2md — ブラウザ拡張版
 
@@ -214,13 +214,19 @@ OpenAI 互換の `/chat/completions` エンドポイントなら何でも使え�
 
 「润色文本」を外すとすぐに原文が表示されます。原文は常に残してあるので、原文を見るのにモデルへ問い合わせ直す必要はありません。
 
+## course2md にノートを送る
+
+同期ボタンは既定で非表示です。設定で「显示 course2md 同步按钮」を有効にし、生成後に浮動パネルの同期アイコンを押します。ノートをデスクトップの既定の保存先に書き込むだけで、閲覧と講義管理はデスクトップ側で行います。どちらの Web 版にも独立リーダーやライブラリ画面はありません。
+
+登録済みの保存先を使い、デスクトップ未導入なら同じ設定ディレクトリの `desktop-local-library` に保存します。絶対パスの入力は不要です。登録先が消えた場合はデスクトップ側で選び直してください。本文、原文、画像、字幕の時間線は course2md 2.0 schema 1 で保存し、再送しても新しい版を古い版に戻しません。選んだ版のローカル接続が必要で、デスクトップのタスク履歴は作成しません。
+
 ## インストール
 
 [リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)に両方の最新版の検証済み拡張 ZIP、対応する部品と手順を載せています。版番号は別々に進むので、用途に合わせて拡張を一つ選んでください。
 
 | 版 | 向いている用途 | 文字起こし・画像抽出に必要なもの |
 | --- | --- | --- |
-| **Standalone** | 内蔵リーダー、講義ライブラリ、Web が管理するローカルモデル | Web ヘルパー（Windows / macOS / Linux インストーラあり）。CLI の別途導入は不要 |
+| **Standalone** | Web がモデル、文字起こし、画像、校正を管理 | Web ヘルパー（Windows / macOS / Linux インストーラあり）。CLI の別途導入は不要 |
 | **CLI** | 小さな接続層で course2md CLI のモデル・設定・処理を共用 | course2md 2.0 CLI と一度のブラウザ接続登録 |
 
 両方とも浮動ノート、字幕の高速取得、画像密度、独自 API に対応します。字幕から文字だけのノートを作るなら拡張だけで動きます。この README は Standalone 版の説明です。
