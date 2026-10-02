@@ -26,12 +26,15 @@
 | [SoAIHQ/Qwen3.5-2B-GGUF](https://huggingface.co/SoAIHQ/Qwen3.5-2B-GGUF)（Q4_K_M） | 提交 `dcd0300` | Apache-2.0 |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) 运行库（转录与润色共用） | 发布 `b11235` | MIT |
 
-Windows 安装器在缺少运行环境时按固定版本与 SHA-256 下载下列组件；已有程序可以继续使用，下载的二进制不随发布包分发：
+各系统安装器在缺少运行环境时按固定版本与 SHA-256 下载下列组件（Unix 清单见 `tools/bootstrap-pins.json`）；已有程序可以继续使用，下载的二进制不随发布包分发，下载包保留在 `bootstrap/`：
 
 | 组件 | 固定版本 | 许可 |
 | --- | --- | --- |
 | [Node.js](https://nodejs.org/dist/v24.13.0/) | 24.13.0 | MIT，附带组件见下载包许可 |
 | [Python](https://www.python.org/downloads/release/python-31312/) | 3.13.12 | PSF，附带组件见安装包许可 |
+| [Python standalone（macOS / Linux）](https://github.com/astral-sh/python-build-standalone/releases/tag/20260901) | CPython 3.13.15 / 20260901 | PSF；附带组件及许可见下载包与项目发布说明 |
 | [FFmpeg Windows 构建](https://www.gyan.dev/ffmpeg/builds/) | 8.1.2 essentials | GPL-3.0；完整构建、许可和对应源码入口保留在 `bootstrap/` 下载包与构建站点 |
+| [FFmpeg Linux 构建](https://github.com/yt-dlp/FFmpeg-Builds/releases/tag/autobuild-2026-10-01-19-27) | N-127083-g65a3870462 | GPL-3.0；构建说明与源码见发布项目 |
+| [FFmpeg macOS 构建](https://www.osxexperts.net/) | Intel 8.0 / Apple Silicon 9.0 | GPL-3.0；构建说明与对应源码入口见构建站点 |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19) | 2026.08.19 | 主程序 Unlicense；Windows 打包及附带组件见发布说明 |
 | [course2md CLI](https://github.com/mizorewww/course2md/releases/tag/v2.0.0-rc.6) | 2.0.0-rc.6 | MIT，按 `tools/engine-pins.json` 校验 |
