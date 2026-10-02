@@ -24,7 +24,7 @@ const isMac = process.platform === 'darwin';
 /** 宿主相关源码的指纹；变了就说明已注册的宿主过时。 */
 function hostFingerprint() {
   const digest = createHash('sha256');
-  for (const file of ['native-helper.cs', 'native-host.mjs']) digest.update(readFileSync(path.join(tools, file)));
+  for (const file of ['native-helper.cs', 'native-host.mjs', 'host-registration.mjs']) digest.update(readFileSync(path.join(tools, file)));
   digest.update(`${process.execPath}\n${helper}\n${tokenPath()}`);
   return digest.digest('hex').slice(0, 16);
 }
@@ -97,8 +97,11 @@ export function registerHost({ extensionIds = [] } = {}) {
     }
   } else {
     // 宿主必须是可执行脚本且行尾为 LF：CRLF 会让 shebang 认不到解释器
-    host = path.join(dir, 'native-host.mjs');
-    writeFileSync(host, readFileSync(path.join(tools, 'native-host.mjs'), 'utf8').replaceAll('\r\n', '\n'));
+    const script = path.join(dir, 'native-host.mjs');
+    writeFileSync(script, readFileSync(path.join(tools, 'native-host.mjs'), 'utf8').replaceAll('\r\n', '\n'));
+    host = path.join(dir, 'native-host.sh');
+    const quote = (value) => `'${value.replaceAll("'", "'\"'\"'")}'`;
+    writeFileSync(host, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} "$@"\n`);
     chmodSync(host, 0o755);
   }
   writeFileSync(manifestPath, JSON.stringify({
@@ -209,7 +212,7 @@ export function unregisterHost() {
   const dir = dataDir();
   if (existsSync(dir)) {
     for (const name of readdirSync(dir)) {
-      if (!/^(native-helper.*|native-host\.mjs|start-helper\.vbs|helper-token|host-fingerprint)$/.test(name)) continue;
+      if (!/^(native-helper.*|native-host\.(mjs|sh)|start-helper\.vbs|helper-token|host-fingerprint)$/.test(name)) continue;
       try {
         unlinkSync(path.join(dir, name));
         removed.push(path.join(dir, name));

@@ -28,6 +28,20 @@ for (const problem of problems) console.error(`注册：${problem}`);
 if (problems.length) failed = true;
 else console.log(`注册：浏览器能找到宿主，且允许扩展 ${extensionIds.join('、')} 调用`);
 
+if (!problems.length && process.platform !== 'win32') {
+  // Browsers do not inherit an installer's PATH. Probe the actual registered launcher without it.
+  try {
+    const host = JSON.parse(readFileSync(join(dataDir(), 'native-helper.json'), 'utf8')).path;
+    const body = Buffer.from('{"action":"start"}');
+    const header = Buffer.alloc(4); header.writeUInt32LE(body.length);
+    const child = spawnSync(host, [], { input: Buffer.concat([header, body]), env: { ...process.env, PATH: '/nonexistent' }, timeout: 15000 });
+    if (child.status !== 0 || child.stdout.length < 4) throw new Error(child.error || child.stderr.toString() || 'Launcher did not reply');
+    const reply = JSON.parse(child.stdout.subarray(4, 4 + child.stdout.readUInt32LE(0)));
+    if (!reply.ok || reply.token !== readFileSync(join(dataDir(), 'helper-token'), 'utf8').trim()) throw new Error('Launcher did not return the helper token');
+    console.log('已登记宿主在没有 Node PATH 的浏览器环境中可运行');
+  } catch (error) { failed = true; console.error(error.message); }
+}
+
 const hosts = [];
 if (process.platform === 'win32') {
   // exe 按源码哈希命名，以清单里登记的路径为准
