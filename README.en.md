@@ -8,7 +8,7 @@
 [简体中文](README.md) · [正體中文](README.zh-Hant.md) · **English** · [日本語](README.ja.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![Download](https://img.shields.io/badge/download-two_editions-246a50?style=flat-square)](https://github.com/Tchirek/course2md-web/releases/latest)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
@@ -33,7 +33,7 @@ Turns a video page into lecture notes **with slides, timestamps, click-to-seek a
 
 course2md Web provides the floating reader, subtitle fast path and browser note controls; [course2md CLI](https://github.com/mizorewww/course2md) handles transcription and screenshots. Text-only platform-subtitle notes work directly in the browser.
 
-Main continues from 0.4.5. The 0.5.0–0.7.x standalone helper, reader and library remain on [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper).
+Web offers Standalone and CLI editions. Pick either on the [release page](https://github.com/Tchirek/course2md-web/releases/latest). This branch maintains the CLI edition; Standalone source lives on [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper).
 
 The interface and design choices follow [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop).
 
@@ -173,10 +173,19 @@ Turning off 「润色文本」 shows the original immediately — it is always k
 
 ## Installation
 
+The [release page](https://github.com/Tchirek/course2md-web/releases/latest) lists both editions' latest checked extension ZIPs, matching components and setup instructions. Their versions advance independently; choose one extension:
+
+| Edition | Best for | Transcription and screenshots need |
+| --- | --- | --- |
+| **Standalone** | Built-in reader, course library and Web-managed local models | Web helper, with Windows / macOS / Linux installers; no separate CLI |
+| **CLI** | A smaller connection layer that reuses course2md CLI models, settings and processing | course2md 2.0 CLI + one-time browser registration |
+
+Both keep floating notes, fast subtitles, image controls and custom APIs. Text-only platform-subtitle notes need just the extension. This README covers the CLI edition.
+
 Not in the stores yet. Use "Load unpacked":
 
 1. Open `chrome://extensions` (`edge://extensions` in Edge) and switch on **Developer mode** at the top right;
-2. Click **Load unpacked** and choose this repository folder;
+2. Click **Load unpacked** and choose the extracted extension ZIP folder (or the matching branch's repository folder for development);
 3. Open a video on YouTube or Bilibili and click the icon in the toolbar.
 
 Requires Chrome/Edge 116 or later.

@@ -8,7 +8,7 @@
 [简体中文](README.md) · **正體中文** · [English](README.en.md) · [日本語](README.ja.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![Download](https://img.shields.io/badge/download-two_editions-246a50?style=flat-square)](https://github.com/Tchirek/course2md-web/releases/latest)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
@@ -33,7 +33,7 @@
 
 course2md Web 提供頁面浮窗、字幕快取與筆記控制，轉錄和截圖使用 [course2md CLI](https://github.com/mizorewww/course2md)。平臺字幕的純文字筆記可直接在瀏覽器生成。
 
-主線從 0.4.5 繼續；0.5.0–0.7.x 的獨立助手、閱讀器與課程庫保存在 [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper)。
+Web 提供獨立版和 CLI 版，可在[發行頁](https://github.com/Tchirek/course2md-web/releases/latest)直接選擇。本分支維護 CLI 版；獨立版原始碼位於 [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper)。
 
 介面與設計取捨遵循 [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop)。
 
@@ -171,10 +171,19 @@ CLI 從 PATH、應用資料目錄的 `bin/` 或 `C2MD_UPSTREAM_EXE` 取得。沿
 
 ## 安裝
 
+[發行頁](https://github.com/Tchirek/course2md-web/releases/latest)同時列出兩版最近已驗證的擴充功能包、對應元件及安裝說明。版本號各自遞增，依用途選擇一個擴充功能包：
+
+| 版本 | 適合 | 轉錄與截圖需要 |
+| --- | --- | --- |
+| **獨立版 · Standalone** | 內建閱讀器、課程庫與 Web 管理的本機模型 | Web 本機助手，提供 Windows / macOS / Linux 安裝器；無須另裝 CLI |
+| **CLI 版 · CLI** | 透過精簡連接層沿用 course2md CLI 的模型、設定與處理能力 | course2md 2.0 CLI + 一次瀏覽器連接登記 |
+
+兩版都有浮窗、字幕快取、圖片密度與自備 API；平臺字幕的純文字筆記可直接使用擴充功能。本說明對應 CLI 版。
+
 還沒上架商店。用「載入未封裝項目」：
 
 1. 開啟 `chrome://extensions`（Edge 是 `edge://extensions`），開啟右上角的**開發人員模式**；
-2. 點**載入未封裝項目**，選擇這個儲存庫資料夾；
+2. 點**載入未封裝項目**，選擇所選擴充功能 ZIP 的解壓縮資料夾（開發時也可選對應分支的儲存庫資料夾）；
 3. 到 YouTube 或 B 站點開一個影片，點工具列裡的圖示。
 
 需要 Chrome/Edge 116 或更高。

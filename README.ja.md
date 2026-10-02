@@ -8,7 +8,7 @@
 [简体中文](README.md) · [正體中文](README.zh-Hant.md) · [English](README.en.md) · **日本語**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![Download](https://img.shields.io/badge/download-two_editions-246a50?style=flat-square)](https://github.com/Tchirek/course2md-web/releases/latest)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
@@ -33,7 +33,7 @@
 
 course2md Web は浮動パネル、字幕の高速取得、ブラウザ内のノート操作を担当し、文字起こしと画像抽出には [course2md CLI](https://github.com/mizorewww/course2md) を使います。字幕から文字だけのノートを作る場合はブラウザだけで動きます。
 
-main は 0.4.5 から継続します。0.5.0–0.7.x の独立ヘルパー、リーダー、ライブラリは [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper) に残しています。
+Web には Standalone 版と CLI 版があり、[リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)で選べます。このブランチは CLI 版を開発し、Standalone 版のソースは [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper) にあります。
 
 画面と設計上の取捨は [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop) に従っています。
 
@@ -171,10 +171,19 @@ CLI は PATH、アプリデータ領域の `bin/`、または `C2MD_UPSTREAM_EXE
 
 ## インストール
 
+[リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)に両方の最新版の検証済み拡張 ZIP、対応する部品と手順を載せています。版番号は別々に進むので、用途に合わせて拡張を一つ選んでください。
+
+| 版 | 向いている用途 | 文字起こし・画像抽出に必要なもの |
+| --- | --- | --- |
+| **Standalone** | 内蔵リーダー、講義ライブラリ、Web が管理するローカルモデル | Web ヘルパー（Windows / macOS / Linux インストーラあり）。CLI の別途導入は不要 |
+| **CLI** | 小さな接続層で course2md CLI のモデル・設定・処理を共用 | course2md 2.0 CLI と一度のブラウザ接続登録 |
+
+両方とも浮動ノート、字幕の高速取得、画像密度、独自 API に対応します。字幕から文字だけのノートを作るなら拡張だけで動きます。この README は CLI 版の説明です。
+
 ストアにはまだ出していません。「パッケージ化されていない拡張機能を読み込む」を使います：
 
 1. `chrome://extensions`（Edge は `edge://extensions`）を開き、右上の**デベロッパー モード**をオンにする。
-2. **パッケージ化されていない拡張機能を読み込む**を押し、このリポジトリのフォルダを選ぶ。
+2. **パッケージ化されていない拡張機能を読み込む**を押し、選んだ拡張 ZIP を展開したフォルダ（開発時は対応ブランチのリポジトリ）を選ぶ。
 3. YouTube か Bilibili で動画を開き、ツールバーのアイコンを押す。
 
 Chrome/Edge 116 以上が必要です。

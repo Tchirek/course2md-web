@@ -8,7 +8,7 @@
 **简体中文** · [正體中文](README.zh-Hant.md) · [English](README.en.md) · [日本語](README.ja.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/latest)
+[![Download](https://img.shields.io/badge/download-two_editions-246a50?style=flat-square)](https://github.com/Tchirek/course2md-web/releases/latest)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
@@ -31,7 +31,7 @@
 
 course2md Web 提供页面浮窗、字幕快取与笔记控制，转录和截图使用 [course2md CLI](https://github.com/mizorewww/course2md)。平台字幕的纯文字笔记可直接在浏览器生成。
 
-主线从 0.4.5 继续；0.5.0–0.7.x 的独立助手、阅读器与课程库功能保存在 [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper)。
+Web 提供独立版和 CLI 版，[发行页](https://github.com/Tchirek/course2md-web/releases/latest) 可直接自选。本分支维护 CLI 版；独立版的源代码在 [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper)。
 
 界面与设计取舍遵循 [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop)。
 
@@ -171,10 +171,19 @@ CLI 可从 PATH、应用数据目录的 `bin/` 或 `C2MD_UPSTREAM_EXE` 找到。
 
 ## 安装
 
+[发行页](https://github.com/Tchirek/course2md-web/releases/latest) 同时列出两版最近已验证的扩展包、对应组件和安装说明。版本号分别递增，按用途选择一个扩展包：
+
+| 版本 | 适合 | 转录与截图需要 |
+| --- | --- | --- |
+| **独立版 · Standalone** | 使用内置阅读器、课程库和 Web 管理的本机模型 | Web 本机助手，提供 Windows / macOS / Linux 安装器；无需另装 CLI |
+| **CLI 版 · CLI** | 通过精简连接层复用 course2md CLI 的模型、配置与处理能力 | course2md 2.0 CLI + 一次浏览器连接登记 |
+
+两版都有浮窗、字幕快取、图片密度与自备 API；平台字幕的纯文字笔记可直接使用扩展。本说明对应 CLI 版。
+
 还没上架商店。用「加载已解压的扩展」：
 
 1. 打开 `chrome://extensions`（Edge 是 `edge://extensions`），打开右上角的**开发者模式**；
-2. 点**加载已解压的扩展程序**，选择这个仓库目录；
+2. 点**加载已解压的扩展程序**，选择所选扩展 ZIP 的解压目录（开发时也可选择对应分支的仓库目录）；
 3. 到 YouTube 或 B 站点开一个视频，点工具栏里的图标。
 
 需要 Chrome/Edge 116 或更高。
