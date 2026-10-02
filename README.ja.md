@@ -8,7 +8,7 @@
 [简体中文](README.md) · [正體中文](README.zh-Hant.md) · [English](README.en.md) · **日本語**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=legacy%2Fstandalone-helper&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/tag/v0.7.1)
+[![Download](https://img.shields.io/badge/download-two_editions-246a50?style=flat-square)](https://github.com/Tchirek/course2md-web/releases/latest)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
@@ -19,7 +19,7 @@
 
 </div>
 
-このブランチは 0.5.0 以降の独立ヘルパー、リーダー、ライブラリを保持します。CLI 版は [main](https://github.com/Tchirek/course2md-web/tree/main) で続きます。以下のダウンロードリンクは本系統の v0.7.1 を指し、以降のリリースには standalone helper と表示します。
+Web には Standalone 版と CLI 版があり、[リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)で選べます。このブランチは Standalone 版のヘルパー、リーダー、ライブラリを開発し、CLI 版のソースは [main](https://github.com/Tchirek/course2md-web/tree/main) にあります。
 
 # course2md — ブラウザ拡張版
 
@@ -216,10 +216,19 @@ OpenAI 互換の `/chat/completions` エンドポイントなら何でも使え�
 
 ## インストール
 
+[リリースページ](https://github.com/Tchirek/course2md-web/releases/latest)に両方の最新版の検証済み拡張 ZIP、対応する部品と手順を載せています。版番号は別々に進むので、用途に合わせて拡張を一つ選んでください。
+
+| 版 | 向いている用途 | 文字起こし・画像抽出に必要なもの |
+| --- | --- | --- |
+| **Standalone** | 内蔵リーダー、講義ライブラリ、Web が管理するローカルモデル | Web ヘルパー（Windows / macOS / Linux インストーラあり）。CLI の別途導入は不要 |
+| **CLI** | 小さな接続層で course2md CLI のモデル・設定・処理を共用 | course2md 2.0 CLI と一度のブラウザ接続登録 |
+
+両方とも浮動ノート、字幕の高速取得、画像密度、独自 API に対応します。字幕から文字だけのノートを作るなら拡張だけで動きます。この README は Standalone 版の説明です。
+
 ストアにはまだ出していません。「パッケージ化されていない拡張機能を読み込む」を使います：
 
 1. `chrome://extensions`（Edge は `edge://extensions`）を開き、右上の**デベロッパー モード**をオンにする。
-2. **パッケージ化されていない拡張機能を読み込む**を押し、このリポジトリのフォルダを選ぶ。
+2. **パッケージ化されていない拡張機能を読み込む**を押し、選んだ拡張 ZIP を展開したフォルダ（開発時は対応ブランチのリポジトリ）を選ぶ。
 3. YouTube か Bilibili で動画を開き、ツールバーのアイコンを押す。
 
 Chrome/Edge 116 以上が必要です。
@@ -241,7 +250,7 @@ npm run check:layout # 幾何の検証だけ：パネルのレイアウト、ボ
 npm run check:sites  # 本物の YouTube / Bilibili のページで本物の拡張を動かす（ネットワークが必要、CI には入れない）
 npm run check:image  # 場面が三回変わる実際の動画で、画像密度の四段階を確かめる
 npm run shots        # 各状態のスクリーンショット → tools/shots/
-npm run pack         # まず全検査を通し、通ったときだけ二つの配布パッケージを dist/ に出力（main への push ごとに CI が版を繰り上げて自動でリリース）
+npm run pack         # 全検査後に dist/ へ出力。このブランチを CI が公開し、両方の版のダウンロードを更新
 npm run media        # 本物の YouTube のページでこの拡張を動かし、README の実演素材を録る → docs/media/
 npm run icons        # 拡張のアイコンを作り直す（自前のラスタライズ＋自前の PNG エンコード、ネイティブ依存なし）
 npm run serve        # 自己テスト用サーバー：http://127.0.0.1:8787/tools/selftest.html

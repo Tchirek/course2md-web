@@ -8,7 +8,7 @@
 [简体中文](README.md) · **正體中文** · [English](README.en.md) · [日本語](README.ja.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Tchirek/course2md-web/ci.yml?branch=legacy%2Fstandalone-helper&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/Tchirek/course2md-web/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Tchirek/course2md-web?style=flat-square&color=246a50)](https://github.com/Tchirek/course2md-web/releases/tag/v0.7.1)
+[![Download](https://img.shields.io/badge/download-two_editions-246a50?style=flat-square)](https://github.com/Tchirek/course2md-web/releases/latest)
 [![License](https://img.shields.io/github/license/Tchirek/course2md-web?style=flat-square&color=246a50)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-246a50?style=flat-square&logo=googlechrome&logoColor=white)
 ![Chrome / Edge 116+](https://img.shields.io/badge/Chrome%20%2F%20Edge-116%2B-246a50?style=flat-square&logo=microsoftedge&logoColor=white)
@@ -19,7 +19,7 @@
 
 </div>
 
-此分支保留 0.5.0 起的獨立助手、閱讀器與課程庫。CLI 主線見 [main](https://github.com/Tchirek/course2md-web/tree/main)；下方下載連結固定至此分支的 v0.7.1，後續發行標為 standalone helper。
+Web 提供獨立版和 CLI 版，可在[發行頁](https://github.com/Tchirek/course2md-web/releases/latest)直接選擇。本分支維護獨立版的助手、閱讀器與課程庫；CLI 版原始碼位於 [main](https://github.com/Tchirek/course2md-web/tree/main)。
 
 # course2md — 瀏覽器擴充功能版
 
@@ -216,10 +216,19 @@ YouTube 的 JavaScript 挑戰由現有 Node.js 執行環境處理，需 Node.js 
 
 ## 安裝
 
+[發行頁](https://github.com/Tchirek/course2md-web/releases/latest)同時列出兩版最近已驗證的擴充功能包、對應元件及安裝說明。版本號各自遞增，依用途選擇一個擴充功能包：
+
+| 版本 | 適合 | 轉錄與截圖需要 |
+| --- | --- | --- |
+| **獨立版 · Standalone** | 內建閱讀器、課程庫與 Web 管理的本機模型 | Web 本機助手，提供 Windows / macOS / Linux 安裝器；無須另裝 CLI |
+| **CLI 版 · CLI** | 透過精簡連接層沿用 course2md CLI 的模型、設定與處理能力 | course2md 2.0 CLI + 一次瀏覽器連接登記 |
+
+兩版都有浮窗、字幕快取、圖片密度與自備 API；平臺字幕的純文字筆記可直接使用擴充功能。本說明對應獨立版。
+
 還沒上架商店。用「載入未封裝項目」：
 
 1. 開啟 `chrome://extensions`（Edge 是 `edge://extensions`），開啟右上角的**開發人員模式**；
-2. 點**載入未封裝項目**，選擇這個儲存庫資料夾；
+2. 點**載入未封裝項目**，選擇所選擴充功能 ZIP 的解壓縮資料夾（開發時也可選對應分支的儲存庫資料夾）；
 3. 到 YouTube 或 B 站點開一個影片，點工具列裡的圖示。
 
 需要 Chrome/Edge 116 或更高。
@@ -241,7 +250,7 @@ npm run check:layout # 只跑幾何斷言：面板佈局、按鈕底色、無橫
 npm run check:sites  # 在真實 YouTube / B 站頁面上跑真擴充功能（需要網路，不進 CI）
 npm run check:image  # 用三次場景變化的實際影片檢查四個圖片密度檔位
 npm run shots        # 各狀態截圖 → tools/shots/
-npm run pack         # 先跑完整檢查，通過才打出兩個發行套件到 dist/（推送到 main 後 CI 會自動發布 release，版本號自動遞增）
+npm run pack         # 先跑完整檢查，通過才打包到 dist/（推送本分支後 CI 自動發布，兩版下載入口同步更新）
 npm run media        # 在真實 YouTube 頁面上用本擴充功能錄製 README 的示範素材 → docs/media/
 npm run icons        # 重新生成擴充功能圖示（自己柵格化 + 自己編碼 PNG，無原生依賴）
 npm run serve        # 自測伺服器：http://127.0.0.1:8787/tools/selftest.html
