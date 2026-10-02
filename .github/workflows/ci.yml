@@ -5,40 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+# Keep version selection, checks and publication in the same queue.
+concurrency:
+  group: course2md-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: npm ci
-      - name: Python syntax
-        run: python -m py_compile tools/*.py
-      # pack runs the full check first (manifest, typecheck, unit tests, layout assertions)
-      # and refuses to build the zips if anything fails, so this is both the gate and a pack smoke test.
-      - run: npm run pack
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  # main への push はすべて、検査が通ればそのままリリースになる（版は tools/next-version.mjs が決める）
-  release:
-    needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    # 続けて push しても版が重ならないよう、一つずつ順に出す
-    concurrency:
-      group: release
-      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      C2MD_DATA_DIR: ${{ runner.temp }}/course2md-browser
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,18 +29,67 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Media tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+      - name: Media tools (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress -y
+      - name: Media tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
       - run: npm ci
+      - name: Python syntax
+        run: python -m py_compile tools/cli_bridge.py tools/check-cli.py
+      - name: Native browser connection
+        run: |
+          npm run local:install
+          npm run local:check-host
+      - name: Core and real CLI checks
+        if: runner.os != 'Linux'
+        run: |
+          npm run lint
+          npm test
+          npm run check:cli
       - name: Version
         id: version
+        shell: bash
         run: echo "value=$(node tools/next-version.mjs)" >> "$GITHUB_OUTPUT"
-      - name: Package
+      # Pack runs the full gate, including the real CLI and browser layout checks.
+      - name: Checked release packages
+        if: runner.os == 'Linux'
         env:
           C2MD_VERSION: ${{ steps.version.outputs.value }}
         run: npm run pack
-      - name: Publish
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish checked artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: v${{ steps.version.outputs.value }}
+          VERSION: v${{ needs.check.outputs.version }}
         run: |
+          previous=$(git describe --tags --abbrev=0 HEAD^)
           gh release create "$VERSION" dist/*.zip dist/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --title "course2md $VERSION" --generate-notes
+            --target "$GITHUB_SHA" --title "course2md Web $VERSION" --latest \
+            --generate-notes --notes-start-tag "$previous"
