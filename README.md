@@ -26,7 +26,7 @@
 <p align="center">
   <img src="docs/media/demo-launch.gif" alt="点标题末尾的 ↗，浮窗先出文字，再补上课件截图" width="880">
   <br>
-  <sub>点标题末尾的 ↗ 即开始：几秒内先出文字，截图随后补齐（等截图的那段已快进）</sub>
+  <sub>点标题末尾的 ↗ 即开始：几秒内先出文字，截图随后补齐</sub>
 </p>
 
 course2md Web 提供页面浮窗、字幕快取与笔记控制，转录和截图使用 [course2md CLI](https://github.com/mizorewww/course2md)。平台字幕的纯文字笔记可直接在浏览器生成。
