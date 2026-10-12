@@ -33,7 +33,6 @@ course2md Web 提供页面浮窗、字幕快取与笔记控制，转录和截图
 
 Web 提供独立版和 CLI 版，[发行页](https://github.com/Tchirek/course2md-web/releases/latest) 可直接自选。本分支维护 CLI 版；独立版的源代码在 [legacy/standalone-helper](https://github.com/Tchirek/course2md-web/tree/legacy/standalone-helper)。
 
-界面与设计取舍遵循 [yetone/kill-ai-slop](https://github.com/yetone/kill-ai-slop)。
 
 ---
 
